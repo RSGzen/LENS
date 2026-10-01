@@ -1,0 +1,31 @@
+[project]
+name = "lens"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Ge Rui Sen", email = "greyson.rg@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "gliner>=0.2.29",
+    "ijson>=3.5.1",
+    "lxml>=6.1.3",
+    "networkx>=3.6.1",
+    "openai>=3.22.1",
+    "pgvector>=0.5.0",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.13.5",
+    "python-dotenv>=1.2.3",
+    "requests>=2.34.2",
+    "sentence-transformers>=6.1.0",
+    "torch>=2.6.0",
+    "transformers>=5.16.1",
+]
+
+[project.scripts]
+lens = "lens:main"
+
+[build-system]
+requires = ["uv_build>=0.12.20,<0.13.0"]
+build-backend = "uv_build"
