@@ -21,7 +21,6 @@ from dotenv import load_dotenv
 
 from lens.models import Role
 
-# A gitignored `.env` may mirror the OS env var (MVP Roadmap §3).
 load_dotenv()
 
 # --------------------------------------------------------------------- paths
@@ -44,7 +43,7 @@ MAX_RETRIES = 3
 # ------------------------------------------------------------- model registry
 @dataclass(frozen=True)
 class ModelSpec:
-    """A frozen description of one model role (Tech Stack §2a).
+    """A frozen description of one model role
 
     Callers ask for a *role* ("root"/"sub"/"dev"); they never pass a raw model
     ID. This is where the exact ID, capability flags, and provider pinning live.
@@ -58,6 +57,7 @@ class ModelSpec:
     # OpenRouter provider pinning (recorded runs): allow_fallbacks=False + these.
     provider_only: tuple[str, ...] = ()
     provider_order: tuple[str, ...] = ()
+    allow_fallbacks: bool = False
     # Append ":exacto" when tool-calling reliability is required.
     exacto: bool = False
 
@@ -69,8 +69,8 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         reasoning_effort="medium",
         supports_tools=True,
         supports_response_format=True,
-        # TODO(student): fill provider_only / provider_order / exacto from a live
-        # OpenRouter provider lookup before the first *recorded* run (LOG-29).
+        provider_only=("openai",),
+        provider_order=("openai",)
     ),
     "sub": ModelSpec(
         id="openai/gpt-5-mini",
@@ -78,7 +78,8 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         reasoning_effort="low",
         supports_tools=True,
         supports_response_format=True,
-        # TODO(student): provider pinning as above.
+        provider_only=("openai",),
+        provider_order=("openai",)
     ),
     "dev": ModelSpec(
         id="qwen/qwen3-coder",
@@ -86,7 +87,8 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         reasoning_effort=None,
         supports_tools=True,
         supports_response_format=False,
-        # TODO(student): qwen3-coder is multi-host -> provider pinning is required.
+        provider_only=("google-vertex",),
+        provider_order=("google-vertex",),
     ),
 }
 
