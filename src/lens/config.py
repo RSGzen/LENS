@@ -33,12 +33,13 @@ TRAJECTORY_FILENAME = "trajectory.jsonl"
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
+# Decision layer is single-provider and NOT part of MODEL_REGISTRY (LOG-29).
+JEV_MODEL_ID = "typesafe/jev-1.13"
 
 # ---------------------------------------------------------------- guardrails
 # R-05: 120 s per execution block, max 3 retries.
 DEFAULT_TIMEOUT_S = 120
 MAX_RETRIES = 3
-
 
 # ------------------------------------------------------------- model registry
 @dataclass(frozen=True)
@@ -60,6 +61,11 @@ class ModelSpec:
     allow_fallbacks: bool = False
     # Append ":exacto" when tool-calling reliability is required.
     exacto: bool = False
+    # Sampling controls. None = omit the key (provider default applies). Only
+    # meaningful for non-reasoning models; GPT-5 reasoning roles use reasoning_effort.
+    temperature: float | None = None
+    # Determinism is NOT guaranteed on all models/providers (OpenRouter docs).
+    seed: int | None = None
 
 
 MODEL_REGISTRY: dict[Role, ModelSpec] = {
@@ -89,9 +95,9 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         supports_response_format=False,
         provider_only=("google-vertex",),
         provider_order=("google-vertex",),
+        temperature=0.1
     ),
 }
-
 
 def require_api_key() -> str:
     """Return ``OPENROUTER_API_KEY`` or fail loudly.
