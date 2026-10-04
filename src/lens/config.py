@@ -1,7 +1,5 @@
-"""Central configuration: paths, endpoints, guardrail constants, model registry.
-
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §2a (model routing / pinning) and
-``MVP Build Roadmap.md`` §3 (paths) / §7 (guardrails).
+"""
+Central configuration: paths, endpoints, guardrail constants, model registry.
 
 Rules
 -----
@@ -29,6 +27,55 @@ load_dotenv()
 LENS_RUNS_ROOT_PATH = os.environ.get("LENS_RUNS_ROOT", r"D:\lens-data\runs")
 BLOBS_DIR_NAME = "blobs"
 TRAJECTORY_FILENAME = "trajectory.jsonl"
+
+# --------------------------------------------------------------- dataset (M1)
+# Source corpus locations and manifest-build knobs. Same env-override pattern as the runs root.
+
+TARGET_CATEGORY = "cs.AI"
+
+MANIFEST_FILENAME = "manifest.json"
+CHECKPOINT_FILENAME = "manifest.checkpoint.json"
+
+# Filter on the arXiv id prefix (YYMM), NOT update_date: the first two digits are
+# the submission year. PAPER_YEAR_RANGE is the set of valid two-digit prefixes, so
+# old-style ids ("acc-phys/9411001") are excluded with no int() cast (no crash).
+# START/END are ints, used only for the manifest's provenance ``year_range``.
+PAPER_YEAR_RANGE = {"15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26"}
+PAPER_START_YEAR = 2015
+PAPER_END_YEAR = 2026
+
+LENS_MANIFESTS_ROOT_PATH = os.environ.get("LENS_MANIFESTS_ROOT", r"D:\lens-data\manifests")
+ARXIV_METADATA_JSON_PATH = os.environ.get(
+    "LENS_ARXIV_METADATA",
+    r"D:\Thesis Dataset\Dataset\kaggle_arxiv-metadata-oai-snapshot.json",
+)
+GROBID_XML_DIR_PATH = os.environ.get("LENS_GROBID_XML_DIR", r"D:\Thesis Dataset\cs_AI_Extracted_XML")
+# Source lines between checkpoint writes during the scan.
+MANIFEST_CHECKPOINT_INTERVAL = 3000
+
+# -------------------------------------------------------------- database (M2)
+# Local pgvector container (MVP Roadmap §2.1/§3). These are DEV defaults only;
+# override any of them via the environment. A real password is never committed
+# (AGENTS §3) — the defaults match the `docker run` flags documented in
+# `db/schema.py`.
+LENS_DB_HOST = os.environ.get("LENS_DB_HOST", "localhost")
+LENS_DB_PORT = int(os.environ.get("LENS_DB_PORT", "5432"))
+LENS_DB_NAME = os.environ.get("LENS_DB_NAME", "lens")
+LENS_DB_USER = os.environ.get("LENS_DB_USER", "lens")
+LENS_DB_PASSWORD = os.environ.get("LENS_DB_PASSWORD", "lens")
+
+# Read-only role the RLM/sandbox would use: SELECT only, never write.
+LENS_DB_RO_USER = os.environ.get("LENS_DB_RO_USER", "lens_ro")
+LENS_DB_RO_PASSWORD = os.environ.get("LENS_DB_RO_PASSWORD", "lens_ro")
+
+# Container / image / volume used by `scripts/setup_db.py` docs and M2 evidence.
+LENS_DB_CONTAINER_NAME = os.environ.get("LENS_DB_CONTAINER", "lens-pg")
+LENS_DB_IMAGE = "pgvector/pgvector:pg16"
+LENS_DB_VOLUME_PATH = os.environ.get("LENS_DB_VOLUME", r"D:\lens-data\postgres")
+
+# Embedding width: nomic-embed-text-v1.5 Matryoshka truncation 768 -> 256
+# (Tech Stack §3). Shared by the M2 DDL (`vector(256)`) and M3/M4 embedding.
+EMBEDDING_DIM = 256
 
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
