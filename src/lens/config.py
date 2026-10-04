@@ -44,10 +44,11 @@ MAX_RETRIES = 3
 # ------------------------------------------------------------- model registry
 @dataclass(frozen=True)
 class ModelSpec:
-    """A frozen description of one model role
+    """A frozen description of one model role.
 
-    Callers ask for a *role* ("root"/"sub"/"dev"); they never pass a raw model
-    ID. This is where the exact ID, capability flags, and provider pinning live.
+    Callers ask for a *role* ("root"/"sub"/"dev"); they never pass a raw model ID.
+    This is where the exact id, capability flags, sampling controls, and provider
+    pinning live (Tech Stack §2a).
     """
 
     id: str
@@ -76,7 +77,7 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         supports_tools=True,
         supports_response_format=True,
         provider_only=("openai",),
-        provider_order=("openai",)
+        provider_order=("openai",),
     ),
     "sub": ModelSpec(
         id="openai/gpt-5-mini",
@@ -85,7 +86,7 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         supports_tools=True,
         supports_response_format=True,
         provider_only=("openai",),
-        provider_order=("openai",)
+        provider_order=("openai",),
     ),
     "dev": ModelSpec(
         id="qwen/qwen3-coder",
@@ -95,9 +96,10 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         supports_response_format=False,
         provider_only=("google-vertex",),
         provider_order=("google-vertex",),
-        temperature=0.1
+        temperature=0.1,
     ),
 }
+
 
 def require_api_key() -> str:
     """Return ``OPENROUTER_API_KEY`` or fail loudly.

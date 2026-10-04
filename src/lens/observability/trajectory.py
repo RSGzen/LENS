@@ -1,11 +1,20 @@
-# For self-refencing in TraceCtx dataclass params
+"""Observability sink: content-addressed blobs + one-schema JSONL trajectory.
+
+Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §5 (trajectory fields + payloads,
+LOG-31) and §4a (Observability layer).
+
+Design: :class:`Trajectory` is the *injected* sink — ``clients.py`` receives one
+in its constructor and calls :meth:`Trajectory.store_blob` /
+:meth:`Trajectory.log_event` for every LLM/JEV call, so no call escapes logging.
+One instance = one run, writing to ``<runs_root>/<run_id>/trajectory.jsonl``.
+"""
+
 from __future__ import annotations
 
-import json
 import hashlib
-
-from datetime import datetime, timezone
+import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,32 +32,34 @@ except ModuleNotFoundError as e:
         "package with `uv sync`."
     ) from e
 
-# Who performed the action
+# Who performed the action (Tech Stack §5 `actor`).
 Actor = Literal["root", "sub", "tool"]
 
-# Normal chat (GPT-5, GPT-5-mini, Qwen3-Coder) vs JEV have different log types
+# The two transports sharing the one trajectory schema (LOG-31).
 CallType = Literal["chat", "jev"]
+
 
 @dataclass(frozen=True)
 class TraceCtx:
-    """
-    Identity of one step within one query's trajectory.
+    """Identity of one step within one query's trajectory.
 
-    trace_id  --> ID for prompts that belong to the same LLM
-    step_idx  --> Current number of prompts under the same LLM
-    actor     --> Who performed this action
+    ``trace_id`` is stable for a whole query/run, ``step_idx`` increments per
+    step, and ``actor`` says who acted. Frozen so it can be passed around and
+    logged safely.
     """
 
     trace_id: str
     step_idx: int
     actor: Actor
 
-class Trajectory:
-    """
-    Single JSONL sink + content-addressed blob store for one run.
 
-    <run_id>/trajectory.jsonl --> For saving trajectory metadata via log_event()
-    blobs/<hexdigest>         --> For saving prompt / answer text via hexdigest naming for idempotent operations
+class Trajectory:
+    """Single JSONL sink + content-addressed blob store for one run.
+
+    Layout (MVP Roadmap §3)::
+
+        <runs_root>/<run_id>/trajectory.jsonl   # metadata via log_event()
+        <runs_root>/blobs/<hexdigest>           # prompt / completion payloads
     """
 
     def __init__(self, run_id: str) -> None:
@@ -59,20 +70,20 @@ class Trajectory:
         self.blobs_dir = root / BLOBS_DIR_NAME
         self.trajectory_path = self.run_dir / TRAJECTORY_FILENAME
 
-        # Create if folder does not exists
+        # Created eagerly so the run workspace always exists.
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.blobs_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------ blobs
     def store_blob(self, text: str) -> str:
-        """
-        Store ``text`` once under a content-derived name; return its ref.
+        """Store ``text`` once under a content-derived name; return its ref.
 
-        1. Hash content with text to obtain hexdigest that acts as filename
-        - **Idempotent**: if the file already exists, do not rewrite it.
-
-        2. Save <hexdigest> with input text
-        3. Return hexdigest as text reference ID
+        Contract:
+          - SHA-256 of the UTF-8 bytes; the **filename is the hex digest itself**
+            (no extension, no timestamp).
+          - **Idempotent**: if the file already exists, do not rewrite it.
+          - Return ``"sha256:<hexdigest>"`` — the value used as ``prompt_ref`` /
+            ``completion_ref`` in trajectory events.
         """
 
         hexdigest = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -110,13 +121,13 @@ class Trajectory:
         error: dict[str, Any] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        """
-        Append exactly one JSON object as one line to ``trajectory.jsonl``.
+        """Append exactly one JSON object as one line to ``trajectory.jsonl``.
 
-        1. Create information dictionary with all params
-        2. Inject dictionary with current UTC timestamp
-        3. Check for <None> value fields and exclude that key value pair
-        4. Save as JSONL file
+        Contract:
+          - Merge ``trace_id`` / ``step_idx`` / ``actor`` from ``trace_ctx`` and
+            add a UTC ISO-8601 ``timestamp``; keep every other argument.
+          - **Omit ``None`` fields** so events stay compact.
+          - Append one UTF-8 JSON line per call (never buffer or batch here).
         """
         iso_string = datetime.now(timezone.utc).isoformat()
 

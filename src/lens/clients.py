@@ -1,25 +1,46 @@
+"""Host transport for OpenRouter: ``chat()`` and ``jev()``.
+
+Spec: ``Thesis Drafts/Tech Stack (Draft).md``
+  - §4a Transport — auth, retries, provider pinning, ``usage``/``cost`` extraction.
+    **No orchestration**: the client is stateless; the orchestrator owns history.
+  - §2a model routing + provider pinning (LOG-29).
+  - §5 trajectory schema + content-addressed payloads (LOG-31).
+
+Call contract
+-------------
+- Outgoing HTTP goes through ``self.session.post(url, headers=...,
+  data=json.dumps(payload), timeout=self.timeout)``; the response exposes
+  ``.status_code`` (int) and ``.json()`` (dict).
+- ``chat()`` logs one event with ``call_type="chat"``; ``jev()`` one with
+  ``call_type="jev"``; each failed attempt logs an event carrying an ``error`` dict.
+- Full request/response payloads are content-addressed via
+  ``trajectory.store_blob()``; events carry ``prompt_ref`` / ``completion_ref``
+  (never the raw text or the API key).
+"""
+
 from __future__ import annotations
 
 import json
 import time
-from typing import Any
 from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 import requests
 
 from lens import config
 from lens.config import ModelSpec
 from lens.models import CallResult, JevResult, Question, Role
-from lens.observability.trajectory import TraceCtx, Trajectory, CallType
+from lens.observability.trajectory import CallType, TraceCtx, Trajectory
 
 # Transient HTTP statuses worth retrying (R-05).
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
-class LensTransportError(RuntimeError):
-    """A transport call failed after exhausting retries
 
-    - `status` --> last HTTP status (or `None` for a network error);
-    - `attempts` --> the number of POSTs made.
+class LensTransportError(RuntimeError):
+    """A transport call failed after exhausting retries (F-02).
+
+    ``status`` is the last HTTP status (or ``None`` for a network error);
+    ``attempts`` is the number of POSTs made.
     """
 
     def __init__(self, message: str, *, status: int | None = None, attempts: int = 0) -> None:
@@ -85,8 +106,6 @@ class LensClient:
     ) -> CallResult:
         """One chat-completions call for ``role``; return a :class:`CallResult`.
 
-        Steps (see module docstring for the exact logging contract)
-        -----------------------------------------------------------
         1. Resolve ``spec = self.registry[role]``; build the model slug (append
            ``":exacto"`` when ``spec.exacto``).
         2. Build the request body: ``model``, ``messages`` (as a list), plus
@@ -99,7 +118,7 @@ class LensClient:
            :meth:`_provider_payload` **only when it returns a non-empty dict**.
         3. ``store_blob`` the serialized request body -> ``prompt_ref``.
         4. POST via ``self._post(self.chat_endpoint, body, trace_ctx=trace_ctx,
-           call_type="chat", action="chat.completion")`` (handles retries + error logs).
+           call_type="chat")`` (handles retries + error logs).
         5. Extract text (``choices[0].message.content``), token counts and cost;
            ``store_blob`` the raw completion text -> ``completion_ref``; measure latency.
         6. ``log_event(call_type="chat", action="chat.completion", ...)`` once.
@@ -108,8 +127,6 @@ class LensClient:
            or the first pinned provider, else ``"unknown"``).
 
         ``result_ref`` is **not** used here (it is for host-tool / ``emit()`` outputs).
-
-        TODO(student): implement.
         """
 
         model_spec = self.registry[role]
@@ -195,25 +212,16 @@ class LensClient:
     ) -> JevResult:
         """One JEV decisions call; return a :class:`JevResult`.
 
-        Steps
-        -----
-        1. Build the body: ``{"model": config.??? }`` — the pinned decision-layer id
-           is the single-provider ``typesafe/jev-1.13`` (use it directly; JEV is not
-           in ``MODEL_REGISTRY``), plus ``"state": state`` and ``"questions":
-           {name: q.model_dump() for name, q in questions.items()}``.
-        2. ``store_blob`` the serialized body -> ``prompt_ref``.
-        3. POST via ``self._post(self.jev_endpoint, body, trace_ctx=trace_ctx,
-           call_type="jev", action="jev.decisions")``.
-        4. ``store_blob`` the raw response JSON text -> ``completion_ref``; extract
-           ``answers`` (top-level), ``model`` (dated snapshot), ``provider``,
-           ``usage.input_tokens`` and ``usage.cost``; measure latency.
-        5. ``log_event(call_type="jev", action="jev.decisions", ...)`` once.
-        6. Return ``JevResult``.
+        The body is ``{"model": config.JEV_MODEL_ID, "state": state, "questions":
+        {name: q.model_dump() for name, q in questions.items()}}`` — JEV is
+        single-provider and not in ``MODEL_REGISTRY`` (LOG-29). The serialized
+        body is blobbed, POSTed via ``_post`` (retries + error logs), and the
+        **top-level** ``usage`` / ``answers`` / dated ``model`` are extracted; the
+        raw response is blobbed as ``completion_ref``, one ``log_event`` is
+        written, and a :class:`JevResult` is returned.
 
-        Note: JEV ``usage`` is at the **top level** of the response, not inside
+        Note: JEV ``usage`` is at the top level of the response, not inside
         ``answers`` (an easy mistake).
-
-        TODO(student): implement.
         """
 
         if not questions:
@@ -232,7 +240,7 @@ class LensClient:
         prompt_ref = self.trajectory.store_blob(json.dumps(payload))
 
         start_timer = time.perf_counter()
-        
+
         response_json = self._post(endpoint=self.jev_endpoint,
                                    payload=payload,
                                    trace_ctx=trace_ctx,
@@ -270,10 +278,8 @@ class LensClient:
         """Auth + content headers for every request.
 
         Contract: ``{"Authorization": f"Bearer {self.api_key}",
-        "Content-Type": "application/json"}``. Do **not** add the key to any log,
-        blob, or trajectory event.
-
-        TODO(student): implement.
+        "Content-Type": "application/json"}``. The key is never written to a log
+        or blob.
         """
 
         headers = {
@@ -286,15 +292,9 @@ class LensClient:
     def _provider_payload(self, spec: ModelSpec) -> dict[str, Any]:
         """Build the OpenRouter ``provider`` routing object for ``spec``.
 
-        Contract:
-          - Return ``{}`` (empty) when both ``spec.provider_only`` and
-            ``spec.provider_order`` are empty (do **not** send a bare
-            ``allow_fallbacks`` with no provider list).
-          - Otherwise return a dict containing ``"allow_fallbacks":
-            spec.allow_fallbacks`` and, when non-empty, ``"only":
-            list(spec.provider_only)`` and ``"order": list(spec.provider_order)``.
-
-        TODO(student): implement.
+        Returns ``{}`` when there are no provider pins (so no bare
+        ``allow_fallbacks`` is sent); otherwise a dict with ``allow_fallbacks``
+        and, when set, ``only`` / ``order``.
         """
         if not spec.provider_only and not spec.provider_order:
             return {}
@@ -307,25 +307,25 @@ class LensClient:
         return provider
 
     def _model_slug(self, spec: ModelSpec) -> str:
-        """Return the request model id, appending ``":exacto"`` when ``spec.exacto``.
-
-        TODO(student): implement.
-        """
+        """Return the request model id, appending ``":exacto"`` when ``spec.exacto``."""
 
         return f"{spec.id}:exacto" if spec.exacto else spec.id
 
-    def _request_error_handling(self, 
-                               error_type: str,
-                               status_code: int | None, 
-                               attempt: int, 
-                               wait_time: float | int,
-                               trace_ctx: TraceCtx,
-                               call_type: CallType,
+    def _request_error_handling(
+        self,
+        error_type: str,
+        status_code: int | None,
+        attempt: int,
+        wait_time: float | int,
+        trace_ctx: TraceCtx,
+        call_type: CallType,
     ) -> None:
+        """Log one failed attempt as a ``{call_type}.retry`` event, then back off."""
+
         error_dict = {"type": error_type,
                       "status": status_code,
                       "attempt": attempt}
-        
+
         self.trajectory.log_event(trace_ctx=trace_ctx,
                                   call_type=call_type,
                                   action=f"{call_type}.retry",
@@ -344,22 +344,19 @@ class LensClient:
     ) -> dict[str, Any]:
         """POST ``payload`` with bounded retries; return the parsed response dict.
 
-        Contract:
-          - Attempt at most ``self.max_retries + 1`` times.
-          - Retry when ``status in RETRYABLE_STATUS`` or on ``requests.RequestException``.
-          - Between attempts call ``self.sleeper(delay)`` with exponential backoff
-            ``base * 2 ** attempt`` (e.g. base 1.0 s); no jitter needed.
-          - On every failed attempt, ``log_event(call_type=call_type,
-            action=f"{action_prefix}.retry", error={...})`` where the error dict
-            carries at least ``type`` and, when known, ``status`` + ``attempt``.
-          - After the final failure, raise :class:`LensTransportError` with the last
-            status + attempt count.
-          - On success, return ``response.json()`` (do not log here; the caller
-            logs the single success event).
-
-        TODO(student): implement.
+        - Attempt at most ``self.max_retries + 1`` times.
+        - Retry when ``status in RETRYABLE_STATUS`` or on ``requests.RequestException``.
+        - Between attempts call ``self.sleeper(delay)`` with exponential backoff
+          ``base * 2 ** attempt`` (e.g. base 1.0 s); no jitter needed.
+        - On every failed attempt, log an error event
+          (``action=f"{call_type}.retry"``) carrying ``type``, ``status`` (when
+          known), and ``attempt``.
+        - After the final failure, raise :class:`LensTransportError` with the last
+          status + attempt count.
+        - On success, return ``response.json()`` (do not log here; the caller logs
+          the single success event).
         """
-        
+
         attempts_made = 0
         last_status = None
         last_exc = None
@@ -369,7 +366,7 @@ class LensClient:
             try:
                 response = self.session.post(url=endpoint, headers=self._headers(),
                                             data=json.dumps(payload), timeout=self.timeout)
-                
+
             except requests.exceptions.RequestException as e:
                 last_exc, last_status = e, None
                 self._request_error_handling("RequestException", None, attempt, 1.0 * 2 ** attempt,
@@ -378,7 +375,7 @@ class LensClient:
 
             if response.status_code == 200:
                 return response.json()
-            
+
             last_status = response.status_code
 
             if response.status_code in RETRYABLE_STATUS:
@@ -398,11 +395,10 @@ class LensClient:
         """Extract ``(tokens_in, tokens_out, cost_usd)`` from an OpenRouter response.
 
         Chat uses ``usage.prompt_tokens`` / ``usage.completion_tokens``; JEV uses
-        ``usage.input_tokens`` / ``usage.output_tokens``. ``cost_usd`` is
+        ``usage.input_tokens`` / ``usage.output_tokens``; ``cost_usd`` is
         ``usage.cost`` in both. Missing values default to ``0`` / ``0.0``.
-
-        TODO(student): implement.
         """
+
         usage = response.get("usage", {})
         # Chat uses prompt_tokens/completion_tokens; JEV uses input_tokens/output_tokens.
         tokens_in = usage.get("prompt_tokens", usage.get("input_tokens", 0))
