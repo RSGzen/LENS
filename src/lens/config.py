@@ -62,11 +62,12 @@ LENS_DB_HOST = os.environ.get("LENS_DB_HOST", "localhost")
 LENS_DB_PORT = int(os.environ.get("LENS_DB_PORT", "5432"))
 LENS_DB_NAME = os.environ.get("LENS_DB_NAME", "lens")
 LENS_DB_USER = os.environ.get("LENS_DB_USER", "lens")
-LENS_DB_PASSWORD = os.environ.get("LENS_DB_PASSWORD", "lens")
+LENS_DB_PASSWORD = os.environ.get("LENS_DB_PASSWORD")
 
-# Read-only role the RLM/sandbox would use: SELECT only, never write.
+# Read-only role the host tool layer uses on the RLM's behalf: SELECT only,
+# never write. The sandbox itself holds no DB credentials (LOG-32).
 LENS_DB_RO_USER = os.environ.get("LENS_DB_RO_USER", "lens_ro")
-LENS_DB_RO_PASSWORD = os.environ.get("LENS_DB_RO_PASSWORD", "lens_ro")
+LENS_DB_RO_PASSWORD = os.environ.get("LENS_DB_RO_PASSWORD")
 
 # Container / image / volume used by `scripts/setup_db.py` docs and M2 evidence.
 LENS_DB_CONTAINER_NAME = os.environ.get("LENS_DB_CONTAINER", "lens-pg")
