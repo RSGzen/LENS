@@ -1,0 +1,72 @@
+classDiagram
+  class CallResult {
+    cost_usd : float
+    finish_reason : str | None
+    latency_ms : int
+    message : dict[str, Any]
+    model : str
+    model_snapshot : str | None
+    provider : str
+    text : str
+    tokens_in : int
+    tokens_out : int
+  }
+  class JevResult {
+    answers : dict[str, dict[str, Any]]
+    cost_usd : float
+    latency_ms : int
+    model : str
+    provider : str
+    tokens_in : int
+  }
+  class LensClient {
+    api_key : NoneType
+    base_url : str
+    chat_endpoint : str
+    jev_endpoint : str
+    max_retries : int
+    registry : dict
+    session : Session
+    sleeper
+    timeout : int
+    trajectory
+    chat(role: Role, messages: Sequence[Mapping[str, Any]]) CallResult
+    jev(state: str, questions: Mapping[str, Question]) JevResult
+  }
+  class LensTransportError {
+    attempts : int
+    status : NoneType
+  }
+  class ModelSpec {
+    allow_fallbacks : bool
+    exacto : bool
+    id : str
+    provider_only : tuple[str, ...]
+    provider_order : tuple[str, ...]
+    reasoning_effort : str | None
+    seed : int | None
+    supports_reasoning : bool
+    supports_response_format : bool
+    supports_tools : bool
+    temperature : float | None
+  }
+  class Question {
+    criteria : dict[str, str] | list[str]
+    instructions : str
+    type : Literal
+  }
+  class TraceCtx {
+    actor : Literal
+    step_idx : int
+    trace_id : str
+  }
+  class Trajectory {
+    blobs_dir
+    run_dir
+    run_id : str
+    runs_root : Path
+    trajectory_path
+    log_event() None
+    store_blob(text: str) str
+  }
+  Trajectory --o LensClient : trajectory

@@ -1,0 +1,39 @@
+classDiagram
+  class lens {
+  }
+  class clients {
+  }
+  class config {
+  }
+  class dataset {
+  }
+  class manifest {
+  }
+  class db {
+  }
+  class connect {
+  }
+  class schema {
+  }
+  class models {
+  }
+  class observability {
+  }
+  class trajectory {
+  }
+  clients --> lens
+  clients --> config
+  clients --> models
+  clients --> trajectory
+  config --> models
+  dataset --> manifest
+  manifest --> lens
+  manifest --> config
+  db --> connect
+  db --> schema
+  connect --> lens
+  connect --> config
+  schema --> lens
+  schema --> config
+  observability --> trajectory
+  trajectory --> config
