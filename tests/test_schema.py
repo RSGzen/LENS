@@ -65,8 +65,8 @@ class SchemaLiveTest(unittest.TestCase):
         apply_schema(self.admin)
         self.assertTrue(all(tables_exist(self.admin).values()))
 
-    def test_embedding_columns_are_vector_256(self) -> None:
-        expected = f"vector({config.EMBEDDING_DIM})"
+    def test_embedding_columns_are_halfvec_512(self) -> None:
+        expected = f"{config.EMBEDDING_PGVECTOR_TYPE}({config.EMBEDDING_DIM})"
         checks = [("papers", "abstract_embedding"), ("chunks", "chunk_embedding")]
         with self.admin.cursor() as cur:
             for table, column in checks:
@@ -76,6 +76,14 @@ class SchemaLiveTest(unittest.TestCase):
                     (table, column),
                 )
                 self.assertEqual(cur.fetchone()[0], expected)
+
+    def test_embedding_index_uses_matching_op_class(self) -> None:
+        with self.admin.cursor() as cur:
+            for index in ("papers_abstract_embedding_hnsw", "chunks_chunk_embedding_hnsw"):
+                cur.execute(
+                    "SELECT indexdef FROM pg_indexes WHERE indexname = %s", (index,)
+                )
+                self.assertIn(config.EMBEDDING_INDEX_OPS, cur.fetchone()[0])
 
     def test_chunks_fk_to_papers(self) -> None:
         # A chunk for an unknown paper must be rejected by the FK.

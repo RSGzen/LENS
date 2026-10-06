@@ -74,9 +74,29 @@ LENS_DB_CONTAINER_NAME = os.environ.get("LENS_DB_CONTAINER", "lens-pg")
 LENS_DB_IMAGE = "pgvector/pgvector:pg16"
 LENS_DB_VOLUME_PATH = os.environ.get("LENS_DB_VOLUME", r"D:\lens-data\postgres")
 
-# Embedding width: nomic-embed-text-v1.5 Matryoshka truncation 768 -> 256
-# (Tech Stack §3). Shared by the M2 DDL (`vector(256)`) and M3/M4 embedding.
-EMBEDDING_DIM = 256
+# Embedding width + pgvector storage type: nomic-embed-text-v1.5, Matryoshka
+# 768 -> 512, stored as `halfvec` (fp16). Note 2*512+8 == 4*256+8 bytes/row —
+# the same storage as the retired fp32 vector(256) but with 512 dims; `halfvec`
+# is native + HNSW-indexable with no quantization calibration (Tech Stack §3).
+EMBEDDING_DIM = int(os.environ.get("LENS_EMBEDDING_DIM", "512"))
+# pgvector column type + HNSW op class must match what the embedder produces.
+EMBEDDING_PGVECTOR_TYPE = os.environ.get("LENS_EMBEDDING_TYPE", "halfvec")
+EMBEDDING_INDEX_OPS = os.environ.get("LENS_EMBEDDING_INDEX_OPS", "halfvec_cosine_ops")
+
+# ------------------------------------------------- papers + embeddings (M3)
+# No paper subset: the full manifest is loaded (advisor decision, 6 Oct 2026).
+
+# nomic-embed-text-v1.5, Matryoshka-truncated 768 -> 512, stored halfvec
+# (Tech Stack §2 stage 7). EMBEDDING_VERSION is copied into every row so a
+# re-index is detectable (T-08); bump it on any model/width/precision/prefix change.
+EMBEDDING_MODEL_ID = os.environ.get(
+    "LENS_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5"
+)
+EMBEDDING_VERSION = os.environ.get("LENS_EMBEDDING_VERSION", "nomic-embed-text-v1.5@512-halfvec")
+# nomic is prefix-conditioned: documents and queries use different task tokens.
+# A missing prefix does not error — it silently degrades matching, so it lives here.
+EMBEDDING_DOC_PREFIX = "search_document: "
+EMBEDDING_QUERY_PREFIX = "search_query: "
 
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

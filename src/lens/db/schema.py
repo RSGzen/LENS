@@ -48,20 +48,21 @@ def apply_schema(conn: psycopg.Connection) -> None:
        ``arxiv_id TEXT PRIMARY KEY`` · ``title TEXT`` · ``authors TEXT`` ·
        ``categories TEXT[]`` · ``arxiv_doi TEXT`` · ``journal_ref TEXT`` ·
        ``current_ver TEXT`` · ``update_date DATE`` · ``abstract TEXT`` ·
-       ``abstract_embedding vector(<config.EMBEDDING_DIM>)`` ·
+       ``abstract_embedding <config.EMBEDDING_PGVECTOR_TYPE>(<config.EMBEDDING_DIM>)`` ·
        ``embedding_version TEXT``.
     3. ``CREATE TABLE IF NOT EXISTS chunks``:
        ``chunk_uuid UUID PRIMARY KEY`` (default ``gen_random_uuid()`` — core in
        PG13+, no extension) · ``arxiv_id TEXT NOT NULL REFERENCES papers(arxiv_id)`` ·
        ``section_type TEXT`` · ``chunk_text TEXT`` ·
-       ``chunk_embedding vector(<config.EMBEDDING_DIM>)`` · ``token_count INT`` ·
+       ``chunk_embedding <config.EMBEDDING_PGVECTOR_TYPE>(<config.EMBEDDING_DIM>)`` · ``token_count INT`` ·
        ``section_order INT`` · ``embedding_version TEXT``.
-    4. HNSW indexes on both embeddings with cosine distance::
+     4. HNSW indexes on both embeddings with cosine distance — the op class
+        matches the stored type (``<config.EMBEDDING_INDEX_OPS>``)::
 
-           CREATE INDEX IF NOT EXISTS papers_abstract_embedding_hnsw
-               ON papers USING hnsw (abstract_embedding vector_cosine_ops);
-           CREATE INDEX IF NOT EXISTS chunks_chunk_embedding_hnsw
-               ON chunks USING hnsw (chunk_embedding vector_cosine_ops);
+            CREATE INDEX IF NOT EXISTS papers_abstract_embedding_hnsw
+                ON papers USING hnsw (abstract_embedding halfvec_cosine_ops);
+            CREATE INDEX IF NOT EXISTS chunks_chunk_embedding_hnsw
+                ON chunks USING hnsw (chunk_embedding halfvec_cosine_ops);
 
     5. The read-only role ``config.LENS_DB_RO_USER`` with ``LOGIN PASSWORD``
        ``config.LENS_DB_RO_PASSWORD``. ``CREATE ROLE`` has no ``IF NOT EXISTS``,
@@ -79,12 +80,15 @@ def apply_schema(conn: psycopg.Connection) -> None:
     """
 
     embedding_dim = int(config.EMBEDDING_DIM)
+    embedding_type = config.EMBEDDING_PGVECTOR_TYPE
+    if embedding_type not in {"vector", "halfvec"}:
+        raise ValueError(f"unsupported EMBEDDING_PGVECTOR_TYPE: {embedding_type!r}")
     role_name = config.LENS_DB_RO_USER
     role_password = str(config.LENS_DB_RO_PASSWORD)
 
     # psycopg.sql composition keeps the role name an identifier and the password a
     # literal (a role name cannot be passed as a plain query parameter). The
-    # vector width is a literal inside vector(...), not a column constraint.
+    # vector width is a literal inside <type>(<dims>), not a column constraint.
     create_papers_query = sql.SQL(
         """
         CREATE TABLE IF NOT EXISTS papers (
@@ -97,11 +101,11 @@ def apply_schema(conn: psycopg.Connection) -> None:
             current_ver TEXT,
             update_date DATE,
             abstract TEXT,
-            abstract_embedding vector({dims}),
+            abstract_embedding {emb_type}({dims}),
             embedding_version TEXT
         )
         """
-    ).format(dims=sql.Literal(embedding_dim))
+    ).format(emb_type=sql.SQL(embedding_type), dims=sql.Literal(embedding_dim))
 
     create_chunks_query = sql.SQL(
         """
@@ -110,13 +114,13 @@ def apply_schema(conn: psycopg.Connection) -> None:
             arxiv_id TEXT NOT NULL REFERENCES papers(arxiv_id),
             section_type TEXT,
             chunk_text TEXT,
-            chunk_embedding vector({dims}),
+            chunk_embedding {emb_type}({dims}),
             token_count INT,
             section_order INT,
             embedding_version TEXT
         )
         """
-    ).format(dims=sql.Literal(embedding_dim))
+    ).format(emb_type=sql.SQL(embedding_type), dims=sql.Literal(embedding_dim))
 
     create_role_query = sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD {}").format(
         sql.Identifier(role_name), sql.Literal(role_password)
@@ -134,11 +138,11 @@ def apply_schema(conn: psycopg.Connection) -> None:
 
         cur.execute(
             "CREATE INDEX IF NOT EXISTS papers_abstract_embedding_hnsw "
-            "ON papers USING hnsw (abstract_embedding vector_cosine_ops)"
+            f"ON papers USING hnsw (abstract_embedding {config.EMBEDDING_INDEX_OPS})"
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS chunks_chunk_embedding_hnsw "
-            "ON chunks USING hnsw (chunk_embedding vector_cosine_ops)"
+            f"ON chunks USING hnsw (chunk_embedding {config.EMBEDDING_INDEX_OPS})"
         )
 
         # Guard the role creation (CREATE ROLE has no IF NOT EXISTS).
