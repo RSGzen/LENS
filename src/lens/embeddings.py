@@ -59,12 +59,11 @@ class Embedder:
     def _load(self) -> Any:
         """Build the real ``SentenceTransformer`` (heavy import kept inside).
 
-        Fill point. Contract:
-          - ``from sentence_transformers import SentenceTransformer`` (inside this
-            method, so importing :mod:`lens.embeddings` never loads torch);
-          - return ``SentenceTransformer(self.model_id, trust_remote_code=True)``
-            **without** ``truncate_dim`` — the model emits the full 768 dims and
-            :meth:`encode_documents` performs the Matryoshka slice.
+        Returns ``SentenceTransformer(self.model_id, trust_remote_code=True)``
+        **without** ``truncate_dim`` — the model emits the full 768 dims, and
+        :meth:`encode_documents` passes ``truncate_dim`` so ``encode`` performs the
+        Matryoshka slice. The import stays inside this method so importing
+        :mod:`lens.embeddings` never loads torch.
 
         ``trust_remote_code=True`` is required: nomic ships custom modelling code.
 
@@ -84,16 +83,13 @@ class Embedder:
         return model
 
     def encode_documents(self, texts: Sequence[str], task_prefix: str, batch_size: int) -> np.ndarray:
-        """Embed document texts -> ``np.ndarray``, shape ``(len(texts), dim)``.
+        """Embed ``texts`` -> ``np.ndarray`` of shape ``(len(texts), dim)``.
 
-        Fill point. Contract:
-          - prefix every text with :data:`config.EMBEDDING_DOC_PREFIX`; nomic is
-            prefix-conditioned, and a missing/incorrect prefix silently degrades
-            retrieval, so the prefix is applied here and nowhere else;
-          - encode the prefixed texts (the model emits the full 768 dims), then
-            Matryoshka-slice to ``self.dim``: ``encoded[..., : self.dim]``;
-          - L2-normalize the sliced vectors (required for the cosine/HNSW index);
-          - return a float numpy array (``np.asarray(...)``).
+        Each text is prefixed with ``task_prefix`` (nomic is prefix-conditioned:
+        ``search_document:`` for indexing, ``search_query:`` for queries; a missing
+        prefix silently degrades retrieval), encoded at the full 768 dims,
+        Matryoshka-sliced to ``self.dim`` via ``truncate_dim``, and L2-normalized —
+        required for the cosine/HNSW index.
 
         The nomic reference ``layer_norm`` step is a **separate** scoped item; this
         method is slice-only for now (see the ``_load`` scoping note).

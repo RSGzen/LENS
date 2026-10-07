@@ -1,7 +1,7 @@
 r"""Contract tests for the host embedder (no network, no model, zero cost).
 
 A ``FakeModel`` stands in for ``SentenceTransformer``, so these tests never load
-torch. They fail with ``NotImplementedError`` until the fill points are done.
+torch or the model.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

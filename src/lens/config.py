@@ -27,6 +27,8 @@ load_dotenv()
 LENS_RUNS_ROOT_PATH = os.environ.get("LENS_RUNS_ROOT", r"D:\lens-data\runs")
 BLOBS_DIR_NAME = "blobs"
 TRAJECTORY_FILENAME = "trajectory.jsonl"
+# Long-running dev-run logs (e.g. the M3 bulk load) kept for thesis evidence.
+LENS_LOGS_ROOT_PATH = os.environ.get("LENS_LOGS_ROOT", r"D:\lens-data\logs")
 
 # --------------------------------------------------------------- dataset (M1)
 # Source corpus locations and manifest-build knobs. Same env-override pattern as the runs root.

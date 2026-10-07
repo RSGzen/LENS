@@ -18,10 +18,12 @@ skips when the container is down (no API key, zero cost).
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 import psycopg
+from pgvector import HalfVector
 from pgvector.psycopg import register_vector
 
 
@@ -42,57 +44,60 @@ def load_papers(
     *,
     embedding_version: str = config.EMBEDDING_VERSION,
 ) -> int:
-    """Embed each abstract and upsert one ``papers`` row per entry.
+    """Embed each abstract and upsert one ``papers`` row per entry; return the count.
 
-    ``conn`` is an admin connection (this writes). Fill point. Contract:
+    ``conn`` is an admin connection (this writes). The load is **chunked** to bound
+    memory and expose per-chunk timing:
 
-      1. ``vectors = embedder.encode_documents([e["abstract"] for e in entries])``
-         -> ``np.ndarray`` of shape ``(len(entries), config.EMBEDDING_DIM)`` (512).
-      2. ``register_vector(conn)`` once — pgvector's psycopg3 adapter registers
-         ``vector``, ``bit``, ``halfvec``, and ``sparsevec``. The column is
-         ``halfvec(512)``, whose dumper accepts **only** ``pgvector.HalfVector``
-         (unlike ``vector``, which also accepts a raw ``np.ndarray``), so wrap each
-         row: ``HalfVector(vectors[i])``.
-      3. Upsert keyed on the primary key, so re-running the load is idempotent::
+      1. Split ``entries`` into ``process_chunk_size`` batches.
+      2. Per batch: ``encode_documents(abstracts, task_prefix=EMBEDDING_DOC_PREFIX,
+         batch_size=encode_batch_size)``; each 512-d vector is wrapped in
+         :class:`pgvector.HalfVector` (the ``halfvec`` dumper accepts only that).
+      3. ``register_vector(conn)`` once — pgvector's psycopg3 adapter — so the
+         ``halfvec(512)`` column accepts a ``HalfVector``.
+      4. ``executemany`` an ``INSERT … ON CONFLICT (arxiv_id) DO UPDATE`` keyed on
+         the PK (idempotent re-run). Manifest ``version`` -> ``current_ver``;
+         ``categories`` is a list (``TEXT[]``); ``arxiv_doi`` / ``journal_ref`` may
+         be ``None``; ``update_date`` is an ISO ``YYYY-MM-DD`` string.
+      5. Print one line per chunk (``encode`` / ``insert`` / ``chunk`` seconds and
+         cumulative progress); the runner mirrors these lines to the run log.
+      6. Do **not** commit here — the caller owns the transaction.
 
-             INSERT INTO papers (arxiv_id, title, authors, categories, arxiv_doi,
-                                 journal_ref, current_ver, update_date, abstract,
-                                 abstract_embedding, embedding_version)
-             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-             ON CONFLICT (arxiv_id) DO UPDATE SET
-                 title = EXCLUDED.title, ..., abstract_embedding = EXCLUDED.abstract_embedding
-             -- (set every non-key column from EXCLUDED)
-
-         Manifest -> column mapping: ``version`` -> ``current_ver``;
-         ``categories`` is a ``list`` (``TEXT[]``); ``arxiv_doi`` / ``journal_ref``
-         may be ``None``; ``update_date`` is an ISO ``YYYY-MM-DD`` string (Postgres
-         casts it to ``DATE``). Zip each entry with its row of ``vectors``.
-      4. Do **not** commit here — the caller owns the transaction.
-      5. Return ``len(entries)``.
-
-    The caller passes ``manifest["papers"]``; on the real corpus that is all
-    166,704 papers, so batch/commit in the runner rather than one giant
-    transaction (Roadmap §10).
+    The caller passes ``manifest["papers"]`` (all 166,704). Build the HNSW indexes
+    **after** this load (``scripts/build_indexes.py``) — pgvector recommends it, and
+    inserts are much faster without graph maintenance (Roadmap §10).
     """
     num_processed_entries = 0
 
     task_prefix = config.EMBEDDING_DOC_PREFIX
 
+    # pgvector's psycopg3 adapter: required so a HalfVector can be sent to the
+    # halfvec(512) column (the halfvec dumper accepts only HalfVector).
+    register_vector(conn)
+
+    total_entries = len(entries)
+    run_start = time.perf_counter()
+
     with conn.cursor() as cur:
-        for chunk in chunked_iterable(entries, process_chunk_size):
+        for chunk_index, chunk in enumerate(
+            chunked_iterable(entries, process_chunk_size), start=1
+        ):
+            chunk_start = time.perf_counter()
 
             # 1. Extract abstract just for this chunk
             abstract_lists = [e["abstract"] for e in chunk]
 
             # 2. Encode the abstract embeddings
+            encode_start = time.perf_counter()
             embeddings = embedder.encode_documents(abstract_lists,
                                                 task_prefix=task_prefix,
                                                 batch_size=encode_batch_size)
+            encode_s = time.perf_counter() - encode_start
 
             # 3. Prepare list of parameter tuples
             records = [
-                (m["arxiv_id"], m["title"], m["authors"], m["categories"], m["arxiv_doi"], m["journal_ref"], m["current_ver"], m["update_date"], m["abstract"], emb, embedding_version)
-                for m, emb in zip(entries, embeddings)
+                (m["arxiv_id"], m["title"], m["authors"], m["categories"], m["arxiv_doi"], m["journal_ref"], m["version"], m["update_date"], m["abstract"], HalfVector(emb), embedding_version)
+                for m, emb in zip(chunk, embeddings)
             ]
 
             # 4. Define the SQL query with placeholders
@@ -107,17 +112,28 @@ def load_papers(
                     categories = EXCLUDED.categories,
                     arxiv_doi = EXCLUDED.arxiv_doi,
                     journal_ref = EXCLUDED.journal_ref,
-                    current_ref = EXCLUDED.current_ref,
+                    current_ver = EXCLUDED.current_ver,
                     update_date = EXCLUDED.update_date,
                     abstract = EXCLUDED.abstract,
                     abstract_embedding = EXCLUDED.abstract_embedding,
-                    embedding_version = EXCLUDED.embedding_version,
+                    embedding_version = EXCLUDED.embedding_version
             """
 
             # 5. Execute the batch
+            insert_start = time.perf_counter()
             cur.executemany(query, records)
+            insert_s = time.perf_counter() - insert_start
 
             # 6. Record number of inserted entries
             num_processed_entries += len(abstract_lists)
+
+            # 7. Per-chunk progress (mirrored to the run log by the runner)
+            chunk_s = time.perf_counter() - chunk_start
+            elapsed_s = time.perf_counter() - run_start
+            print(
+                f"[chunk {chunk_index}] rows={len(abstract_lists)} "
+                f"encode={encode_s:.2f}s insert={insert_s:.2f}s chunk={chunk_s:.2f}s "
+                f"| processed={num_processed_entries}/{total_entries} elapsed={elapsed_s:.1f}s"
+            )
 
     return num_processed_entries
