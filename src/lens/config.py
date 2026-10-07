@@ -102,7 +102,7 @@ EMBEDDING_DOC_PREFIX = "search_document: "
 EMBEDDING_QUERY_PREFIX = "search_query: "
 
 # Number of chunks (entries) to extract, encode, re-format and insert into the DB table
-PROCESS_CHUNK_SIZE = 5000
+PROCESS_CHUNK_SIZE = 3500
 
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
