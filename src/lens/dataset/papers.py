@@ -24,13 +24,20 @@ from typing import Any
 import psycopg
 from pgvector.psycopg import register_vector
 
+
 from lens import config
 from lens.embeddings import Embedder
 
+def chunked_iterable(iterable, size):
+    """Yield successive chunks from the data source."""
+    for i in range(0, len(iterable), size):
+        yield iterable[i:i + size]
 
 def load_papers(
     conn: psycopg.Connection,
     entries: Sequence[Mapping[str, Any]],
+    process_chunk_size: int,
+    encode_batch_size: int,
     embedder: Embedder,
     *,
     embedding_version: str = config.EMBEDDING_VERSION,
@@ -67,4 +74,50 @@ def load_papers(
     166,704 papers, so batch/commit in the runner rather than one giant
     transaction (Roadmap §10).
     """
-    raise NotImplementedError("M3 fill point: embed + upsert papers")
+    num_processed_entries = 0
+
+    task_prefix = config.EMBEDDING_DOC_PREFIX
+
+    with conn.cursor() as cur:
+        for chunk in chunked_iterable(entries, process_chunk_size):
+
+            # 1. Extract abstract just for this chunk
+            abstract_lists = [e["abstract"] for e in chunk]
+
+            # 2. Encode the abstract embeddings
+            embeddings = embedder.encode_documents(abstract_lists,
+                                                task_prefix=task_prefix,
+                                                batch_size=encode_batch_size)
+
+            # 3. Prepare list of parameter tuples
+            records = [
+                (m["arxiv_id"], m["title"], m["authors"], m["categories"], m["arxiv_doi"], m["journal_ref"], m["current_ver"], m["update_date"], m["abstract"], emb, embedding_version)
+                for m, emb in zip(entries, embeddings)
+            ]
+
+            # 4. Define the SQL query with placeholders
+            query = """
+                INSERT INTO papers (arxiv_id, title, authors, categories, arxiv_doi,
+                                   journal_ref, current_ver, update_date, abstract,
+                                   abstract_embedding, embedding_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (arxiv_id) DO UPDATE SET
+                    title = EXCLUDED.title,
+                    authors = EXCLUDED.authors,
+                    categories = EXCLUDED.categories,
+                    arxiv_doi = EXCLUDED.arxiv_doi,
+                    journal_ref = EXCLUDED.journal_ref,
+                    current_ref = EXCLUDED.current_ref,
+                    update_date = EXCLUDED.update_date,
+                    abstract = EXCLUDED.abstract,
+                    abstract_embedding = EXCLUDED.abstract_embedding,
+                    embedding_version = EXCLUDED.embedding_version,
+            """
+
+            # 5. Execute the batch
+            cur.executemany(query, records)
+
+            # 6. Record number of inserted entries
+            num_processed_entries += len(abstract_lists)
+
+    return num_processed_entries

@@ -25,8 +25,15 @@ def main() -> None:
 
     embedder = Embedder()
 
+    process_chunk_size = config.PROCESS_CHUNK_SIZE
+    embedding_batch_size = config.EMBEDDING_ABSTRACT_BATCH_SIZE
+
     with connect(autocommit=True) as conn:
-        count = load_papers(conn, manifest["papers"], embedder)
+        count = load_papers(conn=conn, 
+                            entries=manifest["papers"], 
+                            process_chunk_size=process_chunk_size, 
+                            encode_batch_size=embedding_batch_size,
+                            embedder=embedder)
 
     print(f"loaded {count} papers (embedding_version={config.EMBEDDING_VERSION})")
 

@@ -79,6 +79,9 @@ LENS_DB_VOLUME_PATH = os.environ.get("LENS_DB_VOLUME", r"D:\lens-data\postgres")
 # the same storage as the retired fp32 vector(256) but with 512 dims; `halfvec`
 # is native + HNSW-indexable with no quantization calibration (Tech Stack §3).
 EMBEDDING_DIM = int(os.environ.get("LENS_EMBEDDING_DIM", "512"))
+EMBEDDING_PRECISION = "float16"
+EMBEDDING_ABSTRACT_BATCH_SIZE = 64
+
 # pgvector column type + HNSW op class must match what the embedder produces.
 EMBEDDING_PGVECTOR_TYPE = os.environ.get("LENS_EMBEDDING_TYPE", "halfvec")
 EMBEDDING_INDEX_OPS = os.environ.get("LENS_EMBEDDING_INDEX_OPS", "halfvec_cosine_ops")
@@ -97,6 +100,9 @@ EMBEDDING_VERSION = os.environ.get("LENS_EMBEDDING_VERSION", "nomic-embed-text-v
 # A missing prefix does not error — it silently degrades matching, so it lives here.
 EMBEDDING_DOC_PREFIX = "search_document: "
 EMBEDDING_QUERY_PREFIX = "search_query: "
+
+# Number of chunks (entries) to extract, encode, re-format and insert into the DB table
+PROCESS_CHUNK_SIZE = 5000
 
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

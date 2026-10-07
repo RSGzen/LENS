@@ -42,11 +42,13 @@ class Embedder:
         self,
         model_id: str = config.EMBEDDING_MODEL_ID,
         dim: int = config.EMBEDDING_DIM,
+        precision: str = config.EMBEDDING_PRECISION,
         *,
         model: Any | None = None,
     ) -> None:
         self.model_id = model_id
         self.dim = dim
+        self.precision = precision
         self._model = model
 
     @property
@@ -80,10 +82,10 @@ class Embedder:
         # Load Nomic embed model
         model = SentenceTransformer(model_name_or_path=self.model_id,
                                     trust_remote_code=True)
-
+    
         return model
 
-    def encode_documents(self, texts: Sequence[str], task_prefix: str) -> np.ndarray:
+    def encode_documents(self, texts: Sequence[str], task_prefix: str, batch_size: int) -> np.ndarray:
         """Embed document texts -> ``np.ndarray``, shape ``(len(texts), dim)``.
 
         Fill point. Contract:
@@ -99,8 +101,16 @@ class Embedder:
         method is slice-only for now (see the ``_load`` scoping note).
         """
 
+        # Prepend the task prefix variable to each text
+        formatted_texts = [f"{task_prefix}{text}" for text in texts]
+
         embeddings = self.model.encode(
-            texts,
+            formatted_texts,
+            batch_size=batch_size,
+            truncate_dim=self.dim,
+            precision=self.precision,
+            normalize_embeddings=True,
+            convert_to_numpy=True
         )
 
         return embeddings
