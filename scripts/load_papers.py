@@ -10,6 +10,7 @@ Run:  .\\.venv\\Scripts\\python.exe scripts\\load_papers.py
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from lens import config
@@ -28,14 +29,20 @@ def main() -> None:
     process_chunk_size = config.PROCESS_CHUNK_SIZE
     embedding_batch_size = config.EMBEDDING_ABSTRACT_BATCH_SIZE
 
+    start = time.perf_counter()
     with connect(autocommit=True) as conn:
-        count = load_papers(conn=conn, 
-                            entries=manifest["papers"], 
-                            process_chunk_size=process_chunk_size, 
+        count = load_papers(conn=conn,
+                            entries=manifest["papers"],
+                            process_chunk_size=process_chunk_size,
                             encode_batch_size=embedding_batch_size,
                             embedder=embedder)
+    elapsed_s = time.perf_counter() - start
 
-    print(f"loaded {count} papers (embedding_version={config.EMBEDDING_VERSION})")
+    rate = count / elapsed_s if elapsed_s > 0 else 0.0
+    print(
+        f"loaded {count} papers in {elapsed_s:.1f}s "
+        f"({rate:.1f} papers/s; embedding_version={config.EMBEDDING_VERSION})"
+    )
 
 
 if __name__ == "__main__":

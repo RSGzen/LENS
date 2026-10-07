@@ -1,8 +1,8 @@
 r"""Contract tests for M3 paper loading (no key, zero cost).
 
 The load tests need a **running** ``lens-pg`` container; if the DB is
-unreachable the class is skipped. They fail with ``NotImplementedError`` until
-the fill point is done.
+unreachable the class is skipped. They exercise the M3 loader (chunked embed +
+upsert) with a fake embedder.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """
@@ -43,7 +43,7 @@ class FakeEmbedder:
         self.dim = dim
         self.seen: list[list[str]] = []
 
-    def encode_documents(self, texts) -> np.ndarray:
+    def encode_documents(self, texts, task_prefix: str, batch_size: int) -> np.ndarray:
         texts = list(texts)
         self.seen.append(texts)
         return np.arange(len(texts) * self.dim, dtype=np.float32).reshape(len(texts), self.dim)
@@ -79,7 +79,7 @@ class LoadPapersLiveTest(unittest.TestCase):
             return cur.fetchone()
 
     def test_load_papers_inserts_rows_with_embeddings(self) -> None:
-        count = load_papers(self.admin, self.entries, FakeEmbedder())
+        count = load_papers(self.admin, self.entries, process_chunk_size=2, encode_batch_size=2, embedder=FakeEmbedder())
 
         self.assertEqual(count, len(self.entries))
         total, embedded = self._paper_counts()
@@ -89,11 +89,13 @@ class LoadPapersLiveTest(unittest.TestCase):
     def test_load_papers_embeds_abstracts(self) -> None:
         embedder = FakeEmbedder()
 
-        load_papers(self.admin, self.entries, embedder)
+        load_papers(self.admin, self.entries, process_chunk_size=2, encode_batch_size=2, embedder=embedder)
 
-        self.assertEqual(embedder.seen, [[e["abstract"] for e in self.entries]])
+        seen = [text for call in embedder.seen for text in call]
+        self.assertEqual(seen, [e["abstract"] for e in self.entries])
 
-    def test_load_papers_maps_manifest_fields(self) -> None:        load_papers(self.admin, self.entries, FakeEmbedder())
+    def test_load_papers_maps_manifest_fields(self) -> None:
+        load_papers(self.admin, self.entries, process_chunk_size=2, encode_batch_size=2, embedder=FakeEmbedder())
 
         with self.admin.cursor() as cur:
             cur.execute(
@@ -107,15 +109,15 @@ class LoadPapersLiveTest(unittest.TestCase):
         self.assertEqual(abstract, self.entries[0]["abstract"])
 
     def test_load_papers_stores_configured_dims(self) -> None:
-        load_papers(self.admin, self.entries, FakeEmbedder())
+        load_papers(self.admin, self.entries, process_chunk_size=2, encode_batch_size=2, embedder=FakeEmbedder())
 
         with self.admin.cursor() as cur:
             cur.execute("SELECT vector_dims(abstract_embedding) FROM papers LIMIT 1")
             self.assertEqual(cur.fetchone()[0], config.EMBEDDING_DIM)
 
     def test_load_papers_is_idempotent(self) -> None:
-        load_papers(self.admin, self.entries, FakeEmbedder())
-        load_papers(self.admin, self.entries, FakeEmbedder())
+        load_papers(self.admin, self.entries, process_chunk_size=2, encode_batch_size=2, embedder=FakeEmbedder())
+        load_papers(self.admin, self.entries, process_chunk_size=2, encode_batch_size=2, embedder=FakeEmbedder())
 
         total, _ = self._paper_counts()
         self.assertEqual(total, len(self.entries))

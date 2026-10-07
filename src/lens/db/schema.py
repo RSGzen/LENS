@@ -83,6 +83,22 @@ def apply_schema(conn: psycopg.Connection) -> None:
     embedding_type = config.EMBEDDING_PGVECTOR_TYPE
     if embedding_type not in {"vector", "halfvec"}:
         raise ValueError(f"unsupported EMBEDDING_PGVECTOR_TYPE: {embedding_type!r}")
+    # Type name + matching HNSW op class as literal SQL. Emitted as
+    # `sql.SQL(<literal>)` rather than built from a runtime `str`, because
+    # `sql.SQL(...)` is typed for `LiteralString`s (a bare `str` trips Pyright);
+    # the op class must also match the column type.
+    if embedding_type == "halfvec":
+        embedding_type_sql = sql.SQL("halfvec")
+        expected_ops = "halfvec_cosine_ops"
+    else:
+        embedding_type_sql = sql.SQL("vector")
+        expected_ops = "vector_cosine_ops"
+    if config.EMBEDDING_INDEX_OPS != expected_ops:
+        raise ValueError(
+            f"EMBEDDING_INDEX_OPS={config.EMBEDDING_INDEX_OPS!r} does not match "
+            f"EMBEDDING_PGVECTOR_TYPE={embedding_type!r} (expected {expected_ops!r})"
+        )
+    index_ops_sql = sql.SQL(expected_ops)
     role_name = config.LENS_DB_RO_USER
     role_password = str(config.LENS_DB_RO_PASSWORD)
 
@@ -105,7 +121,7 @@ def apply_schema(conn: psycopg.Connection) -> None:
             embedding_version TEXT
         )
         """
-    ).format(emb_type=sql.SQL(embedding_type), dims=sql.Literal(embedding_dim))
+    ).format(emb_type=embedding_type_sql, dims=sql.Literal(embedding_dim))
 
     create_chunks_query = sql.SQL(
         """
@@ -120,7 +136,7 @@ def apply_schema(conn: psycopg.Connection) -> None:
             embedding_version TEXT
         )
         """
-    ).format(emb_type=sql.SQL(embedding_type), dims=sql.Literal(embedding_dim))
+    ).format(emb_type=embedding_type_sql, dims=sql.Literal(embedding_dim))
 
     create_role_query = sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD {}").format(
         sql.Identifier(role_name), sql.Literal(role_password)
@@ -137,12 +153,16 @@ def apply_schema(conn: psycopg.Connection) -> None:
         cur.execute(create_chunks_query)
 
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS papers_abstract_embedding_hnsw "
-            f"ON papers USING hnsw (abstract_embedding {config.EMBEDDING_INDEX_OPS})"
+            sql.SQL(
+                "CREATE INDEX IF NOT EXISTS papers_abstract_embedding_hnsw "
+                "ON papers USING hnsw (abstract_embedding {ops})"
+            ).format(ops=index_ops_sql)
         )
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS chunks_chunk_embedding_hnsw "
-            f"ON chunks USING hnsw (chunk_embedding {config.EMBEDDING_INDEX_OPS})"
+            sql.SQL(
+                "CREATE INDEX IF NOT EXISTS chunks_chunk_embedding_hnsw "
+                "ON chunks USING hnsw (chunk_embedding {ops})"
+            ).format(ops=index_ops_sql)
         )
 
         # Guard the role creation (CREATE ROLE has no IF NOT EXISTS).

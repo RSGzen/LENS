@@ -34,7 +34,7 @@ class EmbedderTest(unittest.TestCase):
         model = FakeModel()
         emb = Embedder(dim=config.EMBEDDING_DIM, model=model)
 
-        emb.encode_documents(["alpha", "beta"])
+        emb.encode_documents(["alpha", "beta"], config.EMBEDDING_DOC_PREFIX, batch_size=2)
 
         self.assertEqual(
             model.calls[0]["texts"],
@@ -45,7 +45,7 @@ class EmbedderTest(unittest.TestCase):
         model = FakeModel()
         emb = Embedder(dim=config.EMBEDDING_DIM, model=model)
 
-        out = emb.encode_documents(["alpha", "beta", "gamma"])
+        out = emb.encode_documents(["alpha", "beta", "gamma"], config.EMBEDDING_DOC_PREFIX, batch_size=2)
 
         self.assertTrue(model.calls[0]["kwargs"].get("normalize_embeddings"))
         self.assertIsInstance(out, np.ndarray)

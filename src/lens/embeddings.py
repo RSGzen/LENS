@@ -42,13 +42,11 @@ class Embedder:
         self,
         model_id: str = config.EMBEDDING_MODEL_ID,
         dim: int = config.EMBEDDING_DIM,
-        precision: str = config.EMBEDDING_PRECISION,
         *,
         model: Any | None = None,
     ) -> None:
         self.model_id = model_id
         self.dim = dim
-        self.precision = precision
         self._model = model
 
     @property
@@ -108,9 +106,8 @@ class Embedder:
             formatted_texts,
             batch_size=batch_size,
             truncate_dim=self.dim,
-            precision=self.precision,
             normalize_embeddings=True,
-            convert_to_numpy=True
+            convert_to_numpy=True,
         )
 
         return embeddings

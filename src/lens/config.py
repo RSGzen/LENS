@@ -79,7 +79,7 @@ LENS_DB_VOLUME_PATH = os.environ.get("LENS_DB_VOLUME", r"D:\lens-data\postgres")
 # the same storage as the retired fp32 vector(256) but with 512 dims; `halfvec`
 # is native + HNSW-indexable with no quantization calibration (Tech Stack §3).
 EMBEDDING_DIM = int(os.environ.get("LENS_EMBEDDING_DIM", "512"))
-EMBEDDING_PRECISION = "float16"
+# Abstracts embedded per model forward pass during the M3 load.
 EMBEDDING_ABSTRACT_BATCH_SIZE = 64
 
 # pgvector column type + HNSW op class must match what the embedder produces.
