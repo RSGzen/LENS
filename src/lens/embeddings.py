@@ -24,6 +24,25 @@ import numpy as np
 from lens import config
 
 
+def _matryoshka(full_vec: np.ndarray, dim: int) -> np.ndarray:
+    """Nomic's Matryoshka transform: layer-norm the full vector, slice, L2-normalize.
+
+    Mirrors the reference recipe for ``nomic-embed-text-v1.5``
+    (``F.layer_norm(full) -> [:, :dim] -> F.normalize``). The checkpoint's ST
+    pipeline is only ``Transformer -> mean Pooling`` (no ``Normalize``/``LayerNorm``
+    module), so this step must be applied explicitly. Pure: numpy in, numpy out —
+    no model, no I/O — and directly unit-tested. ``eps=1e-5`` matches
+    ``torch.nn.functional.layer_norm``'s default.
+    """
+    vec = np.asarray(full_vec, dtype=np.float32)
+    mean = vec.mean(axis=-1, keepdims=True)
+    var = vec.var(axis=-1, keepdims=True)
+    vec = (vec - mean) / np.sqrt(var + 1e-5)   # F.layer_norm, no affine
+    vec = vec[..., :dim]                        # Matryoshka truncation
+    norms = np.linalg.norm(vec, axis=-1, keepdims=True)
+    return vec / np.clip(norms, 1e-12, None)    # F.normalize (p=2)
+
+
 class Embedder:
     """nomic-embed-text-v1.5 wrapper producing 512-dim, L2-normalized vectors.
 
@@ -61,18 +80,11 @@ class Embedder:
 
         Returns ``SentenceTransformer(self.model_id, trust_remote_code=True)``
         **without** ``truncate_dim`` — the model emits the full 768 dims, and
-        :meth:`encode_documents` passes ``truncate_dim`` so ``encode`` performs the
-        Matryoshka slice. The import stays inside this method so importing
+        :func:`_matryoshka` (called by :meth:`encode_documents`) applies nomic's
+        reference truncation. The import stays inside this method so importing
         :mod:`lens.embeddings` never loads torch.
 
         ``trust_remote_code=True`` is required: nomic ships custom modelling code.
-
-        Scoping note: nomic's *reference* recipe layer-norms over the full 768
-        dims **before** slicing (``layer_norm -> slice -> normalize``). That fix is
-        tracked **separately** so the dimension/precision change lands uncounfounded
-        — see the roadmap "layer_norm recipe" item. :meth:`encode_documents` is
-        slice-only for now (same semantics as ST ``truncate_dim``); do not silently
-        add the layer-norm.
         """
         from sentence_transformers import SentenceTransformer
 
@@ -87,23 +99,18 @@ class Embedder:
 
         Each text is prefixed with ``task_prefix`` (nomic is prefix-conditioned:
         ``search_document:`` for indexing, ``search_query:`` for queries; a missing
-        prefix silently degrades retrieval), encoded at the full 768 dims,
-        Matryoshka-sliced to ``self.dim`` via ``truncate_dim``, and L2-normalized —
-        required for the cosine/HNSW index.
-
-        The nomic reference ``layer_norm`` step is a **separate** scoped item; this
-        method is slice-only for now (see the ``_load`` scoping note).
+        prefix silently degrades retrieval), encoded at the full 768 dims, then
+        passed through :func:`_matryoshka` (``layer_norm -> slice -> L2-normalize``),
+        matching nomic's reference recipe.
         """
 
         # Prepend the task prefix variable to each text
         formatted_texts = [f"{task_prefix}{text}" for text in texts]
 
-        embeddings = self.model.encode(
+        full_embeddings = self.model.encode(
             formatted_texts,
             batch_size=batch_size,
-            truncate_dim=self.dim,
-            normalize_embeddings=True,
             convert_to_numpy=True,
         )
 
-        return embeddings
+        return _matryoshka(full_embeddings, self.dim)
