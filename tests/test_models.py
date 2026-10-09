@@ -1,7 +1,6 @@
 r"""Contract tests for shared types (no API key, no network, zero cost).
 
-These define HOW ``Question`` must validate ``criteria`` per ``type``. They fail
-with ``NotImplementedError`` until the validator body is implemented.
+These pin how :class:`lens.models.Question` validates ``criteria`` per ``type``.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

@@ -1,22 +1,24 @@
-r"""Contract tests for the M2 pgvector schema (no API key, zero cost).
+r"""!!! DESTRUCTIVE DB TEST - WIPES ITS DATABASE. DO NOT POINT AT ``lens``. !!!
 
-These tests need a **running** ``lens-pg`` container but no OpenRouter key. If
-the database is unreachable the class is skipped, so ``unittest discover`` still
-passes on a cold machine.
+Contract tests for the M2 pgvector schema (no API key, zero cost).
 
-Start the DB (Docker Desktop running):
+WHY THIS FILE LIVES IN ``tests/DESTRUCTIVE_db_tests/``
+------------------------------------------------------
+Every test calls ``drop_schema()`` + ``apply_schema()``, which **drop the
+``papers`` and ``chunks`` tables**. Against the real ``lens`` database that
+destroys the full-corpus data (166,704 papers / ~4 M chunks). These tests run
+against a **throwaway** database ``<LENS_DB_NAME>_test`` (default ``lens_test``)
+- never ``lens``.
 
-    docker run -d --name lens-pg --restart unless-stopped `
-        -e POSTGRES_USER=lens -e POSTGRES_PASSWORD=lens -e POSTGRES_DB=lens `
-        -p 5433:5432 -v D:\lens-data\postgres:/var/lib/postgresql/data `
-        pgvector/pgvector:pg16
+The normal suite ignores this folder: ``unittest discover -s tests`` does not
+descend into a subdirectory without ``__init__.py``. Run it **only on purpose**:
 
-Host port 5433 keeps clear of the native ``postgresql-x64-17`` service on 5432;
-``LENS_DB_PORT=5433`` in ``.env`` points the harness at it. One-time creation;
-afterwards ``docker start lens-pg`` (or ``--restart`` + Docker Desktop). Compose
-for DB + sandbox is deferred to M8.
+    # one-time: create the throwaway DB (lens-pg container must be up)
+    docker exec lens-pg psql -U lens -d lens -c "CREATE DATABASE lens_test"
 
-Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+    .\.venv\Scripts\python.exe -m unittest discover -s tests\DESTRUCTIVE_db_tests -p "test_*.py" -v
+
+Do NOT run these against ``lens``. See ``tests/DESTRUCTIVE_db_tests/README.md``.
 """
 
 from __future__ import annotations
@@ -29,6 +31,9 @@ from lens import config
 from lens.db.connect import connect
 from lens.db.schema import apply_schema, drop_schema, tables_exist
 
+# Throwaway DB this destructive suite is confined to (NEVER the live ``lens``).
+_TEST_DB = f"{config.LENS_DB_NAME}_test"
+
 
 class SchemaLiveTest(unittest.TestCase):
     """M2 verify clause: papers/chunks exist; lens_ro reads but cannot write."""
@@ -38,9 +43,12 @@ class SchemaLiveTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         try:
-            cls.admin = connect(autocommit=True)
-        except psycopg.Error as exc:  # DB down -> skip, not fail
-            raise unittest.SkipTest(f"no LENS database reachable: {exc}")
+            # connect_timeout so a down container skips fast instead of hanging.
+            cls.admin = connect(autocommit=True, connect_timeout=3, dbname=_TEST_DB)
+        except psycopg.Error as exc:  # DB down / test DB missing -> skip, not fail
+            raise unittest.SkipTest(
+                f"no throwaway {_TEST_DB} database reachable: {exc}"
+            )
 
     @classmethod
     def tearDownClass(cls) -> None:

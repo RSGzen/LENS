@@ -106,6 +106,26 @@ EMBEDDING_QUERY_PREFIX = "search_query: "
 # Number of chunks (entries) to extract, encode, re-format and insert into the DB table
 PROCESS_CHUNK_SIZE = 3500
 
+# --------------------------------------------------------------- chunks (M4)
+# Full-corpus structural chunking (Roadmap §4 M4; Tech Stack §2 stages 5-6).
+# Threshold is the frozen C-02/N-04 value: 512 nomic (BERT WordPiece) tokens.
+# The splitter (a stdlib paragraph-preserving packer, C-01 amendment) keeps a
+# whole GROBID section as one chunk when it is under the threshold, and only
+# splits sections that exceed it.
+CHUNK_TOKEN_THRESHOLD = int(os.environ.get("LENS_CHUNK_TOKEN_THRESHOLD", "512"))
+# Overlap between consecutive chunks within a section (0 = structural, no overlap).
+CHUNK_OVERLAP_TOKENS = int(os.environ.get("LENS_CHUNK_OVERLAP_TOKENS", "0"))
+# Chunks per model forward pass during the M4 load (GPU batch; separate from the
+# paper batch below because one paper yields many chunks).
+EMBEDDING_CHUNK_BATCH_SIZE = int(os.environ.get("LENS_EMBEDDING_CHUNK_BATCH", "128"))
+# Papers parsed+chunked+embedded per DB batch. ~500 papers ~= 11k chunks ~= 25 MB
+# in flight, ~334 batches over the corpus — bounds memory and gives the runner a
+# per-batch checkpoint/resume granularity for a multi-day load.
+PAPERS_PER_BATCH = int(os.environ.get("LENS_PAPERS_PER_BATCH", "500"))
+# Optional dev/test cap: process only the first N manifest papers (0 = all).
+# Used for the timed smoke run before the full-corpus load (e.g. 100).
+PAPERS_LIMIT = int(os.environ.get("LENS_PAPERS_LIMIT", "0"))
+
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"

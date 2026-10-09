@@ -1,8 +1,8 @@
 r"""
 Contract tests for the observability sink (no API key, no network, zero cost).
 
-These define WHAT ``trajectory.py`` must do. They fail with ``NotImplementedError``
-until the fill points are implemented — that failure is the lesson, not a problem.
+These pin the contract of ``trajectory.py`` (content-addressed blobs + one JSONL
+schema) through an injected sink; no torch, no DB, no network.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

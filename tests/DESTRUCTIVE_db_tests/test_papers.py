@@ -1,10 +1,19 @@
-r"""Contract tests for M3 paper loading (no key, zero cost).
+r"""!!! DESTRUCTIVE DB TEST - WIPES ITS DATABASE. DO NOT POINT AT ``lens``. !!!
 
-The load tests need a **running** ``lens-pg`` container; if the DB is
-unreachable the class is skipped. They exercise the M3 loader (chunked embed +
-upsert) with a fake embedder.
+Contract tests for M3 paper loading (no key, zero cost).
 
-Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+WHY THIS FILE LIVES IN ``tests/DESTRUCTIVE_db_tests/``
+------------------------------------------------------
+``setUp`` calls ``drop_schema()`` + ``apply_schema()``, which **drop and recreate**
+``papers``/``chunks``. Against the real ``lens`` database that destroys the
+full-corpus data. These tests run against a **throwaway** database
+``<LENS_DB_NAME>_test`` (default ``lens_test``) - never ``lens``.
+
+Run it **only on purpose** (the normal suite does not descend into this folder):
+
+    .\.venv\Scripts\python.exe -m unittest discover -s tests\DESTRUCTIVE_db_tests -p "test_*.py" -v
+
+See ``tests/DESTRUCTIVE_db_tests/README.md``.
 """
 
 from __future__ import annotations
@@ -18,6 +27,9 @@ from lens import config
 from lens.dataset.papers import load_papers
 from lens.db.connect import connect
 from lens.db.schema import apply_schema, drop_schema
+
+# Throwaway DB this destructive suite is confined to (NEVER the live ``lens``).
+_TEST_DB = f"{config.LENS_DB_NAME}_test"
 
 
 def entry(arxiv_id: str, title: str = "t") -> dict:
@@ -57,9 +69,12 @@ class LoadPapersLiveTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         try:
-            cls.admin = connect(autocommit=True)
-        except psycopg.Error as exc:  # DB down -> skip, not fail
-            raise unittest.SkipTest(f"no LENS database reachable: {exc}")
+            # connect_timeout so a down container skips fast instead of hanging.
+            cls.admin = connect(autocommit=True, connect_timeout=3, dbname=_TEST_DB)
+        except psycopg.Error as exc:  # DB down / test DB missing -> skip, not fail
+            raise unittest.SkipTest(
+                f"no throwaway {_TEST_DB} database reachable: {exc}"
+            )
 
     @classmethod
     def tearDownClass(cls) -> None:

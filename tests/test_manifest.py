@@ -1,8 +1,7 @@
 r"""Contract tests for the M1 manifest builder (no key, no network, zero cost).
 
 Fixtures are tiny fabricated JSONL + ``.tei.xml`` files in a temp dir, so the
-real ~4.9 GB snapshot is never touched. They fail with ``NotImplementedError``
-until the fill points are implemented.
+real ~4.9 GB snapshot is never touched.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

@@ -12,8 +12,8 @@ Pipeline
 
 The **full** manifest is loaded — there is no paper subset (advisor decision,
 6 Oct 2026). M3 verify clause: ``rows == manifest["count"]`` and no NULL
-``abstract_embedding``. ``tests/test_papers.py`` is the contract — the DB test
-skips when the container is down (no API key, zero cost).
+``abstract_embedding``. ``tests/DESTRUCTIVE_db_tests/test_papers.py`` is the
+contract — it drops the schema, so run it only against a throwaway ``lens_test``.
 """
 
 from __future__ import annotations

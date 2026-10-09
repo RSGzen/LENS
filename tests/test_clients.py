@@ -1,7 +1,7 @@
 r"""Contract tests for the transport (no API key, no network, zero cost).
 
 A ``FakeSession`` replaces ``requests.Session``, so these tests never leave the
-machine. They fail with ``NotImplementedError`` until the fill points are done.
+machine.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

@@ -26,7 +26,8 @@ Then ``python scripts/setup_db.py`` (which calls :func:`apply_schema`).
 
 The migration is **safe to run repeatedly** (``IF NOT EXISTS`` / a ``pg_roles``
 guard) because M3/M4 and every fresh session may re-run it.
-``tests/test_schema.py`` is the contract (needs the container, no API key).
+``tests/DESTRUCTIVE_db_tests/test_schema.py`` is the contract (it drops the
+schema; run it only against a throwaway ``lens_test``, needs the container).
 """
 
 from __future__ import annotations
@@ -190,11 +191,18 @@ def drop_schema(conn: psycopg.Connection) -> None:
         cur.execute("DROP TABLE IF EXISTS chunks")
         cur.execute("DROP TABLE IF EXISTS papers")
 
-        cur.execute(
-            sql.SQL("DROP ROLE IF EXISTS {}").format(
-                sql.Identifier(role_name)
+        # The role is *cluster*-scoped: another database (e.g. a `lens_test` run)
+        # may still hold a GRANT that depends on it, so tolerate a failed drop.
+        # drop_schema is dev/test-only and is called on autocommit connections,
+        # where a failed statement does not poison subsequent ones.
+        try:
+            cur.execute(
+                sql.SQL("DROP ROLE IF EXISTS {}").format(
+                    sql.Identifier(role_name)
+                )
             )
-        )
+        except psycopg.errors.DependentObjectsStillExist:
+            pass
 
 
 def tables_exist(conn: psycopg.Connection) -> dict[str, bool]:
