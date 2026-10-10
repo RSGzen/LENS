@@ -51,21 +51,21 @@ from lens.chunking import CHUNK_UUID_NAMESPACE, Chunk, TokenCounter, chunk_tei
 from lens.embeddings import Embedder
 
 
-def eta_calculation(num_processed, total_papers, time_per_batch):
+def eta_calculation(time_per_batch, processed_per_batch, total_processed, total_papers):
     """Return ``(eta_timestamp, remaining "HH:MM:SS")`` from the last batch.
 
     A naive linear projection: ``(total - processed) * (last_batch_s / processed)``,
     where ``last_batch_s`` is the wall-clock of the most recent batch.
     """
-    remaining_papers = total_papers - num_processed
+    remaining_papers = total_papers - total_processed
 
-    estimated_remaining_secs = remaining_papers * (time_per_batch / num_processed)
+    estimated_remaining_secs = remaining_papers * (time_per_batch / processed_per_batch)
 
     current_time = datetime.datetime.now()
 
     eta = current_time + datetime.timedelta(seconds=estimated_remaining_secs)
 
-    return eta.strftime("%Y-%m-%d %H:%M:%S"), time.strftime("%H:%M:%S", time.gmtime(estimated_remaining_secs))
+    return eta.strftime("%Y-%m-%d %H:%M:%S"), time.strftime("%dD %H:%M:%S", time.gmtime(estimated_remaining_secs))
 
 
 def chunked_iterable(iterable, size):
@@ -239,7 +239,10 @@ def load_chunks(
             # 7. Per-chunk progress (mirrored to the run log by the runner)
             batch_s = time.perf_counter() - batch_start
             elapsed_s = time.perf_counter() - run_start
-            eta_str, estimated_hours_str = eta_calculation(num_processed_entries, total_entries, batch_s)
+            eta_str, estimated_hours_str = eta_calculation(time_per_batch=batch_s,
+                                                           processed_per_batch=len(set(arxivID_list)),
+                                                           total_processed=num_processed_entries, 
+                                                           total_papers=total_entries)
 
             print(
                 f"[batch {batch_index}] papers={len(set(arxivID_list))} chunks={len(uuid_list)} "
