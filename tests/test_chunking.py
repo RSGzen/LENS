@@ -147,5 +147,40 @@ class ChunkTeiTest(unittest.TestCase):
         self.assertTrue(all(c.token_count == WORDS(c.chunk_text) for c in chunks))
 
 
+class PackerTokenizationTest(unittest.TestCase):
+    def test_never_tokenises_a_joined_section(self) -> None:
+        # 50 small paragraphs whose *join* is large. The packer must count each
+        # paragraph (and the separator) individually, never the whole joined
+        # string -- counting the join is what raised the >max_seq_length warning.
+        paragraphs = tuple(f"p{i} word" for i in range(50))
+        section = Section("Methodology", paragraphs)
+        seen: list[int] = []
+
+        def counter(text: str) -> int:
+            seen.append(len(text))
+            return len(text.split())
+
+        segment_section(section, counter, threshold=5)
+
+        self.assertTrue(seen)
+        self.assertLess(max(seen), len("\n\n".join(paragraphs)))
+
+    def test_bounded_counting_avoids_huge_tokenisation(self) -> None:
+        # One ~25k-char paragraph (no sentence punctuation). The count must be
+        # taken in pieces so no single tokenizer call sees the whole paragraph.
+        big = " ".join(["word"] * 5000)
+        section = Section("Methodology", (big,))
+        seen: list[int] = []
+
+        def counter(text: str) -> int:
+            seen.append(len(text))
+            return len(text.split())
+
+        segment_section(section, counter, threshold=5)
+
+        self.assertTrue(seen)
+        self.assertLessEqual(max(seen), 4000)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -341,6 +341,30 @@ def extract_sections(tei_path: str | Path) -> list[Section]:
 
 
 # --------------------------------------------------------------- segmenting
+# Counting is done on strings no longer than this many characters, so a single
+# tokenizer call can never see a string long enough to trigger HF's
+# "sequence length > max_seq_length" warning (#tokens <= #chars < 8192).
+_SAFE_COUNT_CHARS = 4000
+
+
+def _count_tokens_bounded(text: str, count_tokens: TokenCounter, cap: int = _SAFE_COUNT_CHARS) -> int:
+    """``count_tokens(text)`` without ever tokenising one huge string.
+
+    Splits long text by sentence -> whitespace -> fixed-width windows and sums
+    the piece counts, so no single tokenizer call sees more than ``cap`` chars
+    (hence at most ``cap`` tokens). The count of an oversized unit is therefore
+    approximate — fine, since it is only used to route the unit to
+    :func:`_split_oversize`.
+    """
+    if len(text) <= cap:
+        return count_tokens(text)
+    for splitter in (split_pattern, r"\s+"):
+        parts = [p for p in re.split(splitter, text) if p]
+        if len(parts) > 1:
+            return sum(_count_tokens_bounded(p, count_tokens, cap) for p in parts)
+    return sum(count_tokens(text[i:i + cap]) for i in range(0, len(text), cap))
+
+
 def _split_oversize(text: str, count_tokens: TokenCounter, threshold: int) -> list[str]:
     """Split a single over-threshold string: sentences -> words -> characters."""
     sentences = [s for s in re.split(split_pattern, text) if s]
@@ -361,25 +385,41 @@ def _pack_flat(
     threshold: int,
     sep: str,
 ) -> list[str]:
-    """Greedily pack pre-split ``units`` into chunks joined by ``sep`` (<= threshold)."""
+    """Greedily pack pre-split ``units`` into chunks joined by ``sep`` (<= threshold).
+
+    Each unit is tokenised **once** (its count is cached), so the packer is O(n)
+    in the number of units and never tokenises a multi-unit concatenation. That
+    avoids the HF tokenizer's "sequence length > max" warning (which the old code
+    triggered by counting the joined section) and removes the O(n^2)
+    re-tokenisation of the growing candidate. ``sep`` tokens are reserved per join
+    so the boundary cost is accounted for.
+    """
+    sep_tokens = _count_tokens_bounded(sep, count_tokens) if sep else 0
     chunks: list[str] = []
     current: list[str] = []
+    current_tokens = 0
 
     for unit in units:
-        candidate = sep.join([*current, unit]) if current else unit
+        unit_tokens = _count_tokens_bounded(unit, count_tokens)
 
-        if count_tokens(candidate) <= threshold:
-            current.append(unit)
-            continue
-
-        # The next unit would overflow -> seal the current chunk first.
-        if current:
-            chunks.append(sep.join(current))
-            current = []
-
-        if count_tokens(unit) <= threshold:
+        if unit_tokens <= threshold:
+            extra = unit_tokens + (sep_tokens if current else 0)
+            if current_tokens + extra <= threshold:
+                current.append(unit)
+                current_tokens += extra
+                continue
+            # The next unit would overflow -> seal the current chunk first.
+            if current:
+                chunks.append(sep.join(current))
+                current = []
             current = [unit]
+            current_tokens = unit_tokens
         else:
+            # This unit alone exceeds the threshold -> seal, then split it.
+            if current:
+                chunks.append(sep.join(current))
+                current = []
+                current_tokens = 0
             chunks.extend(_split_oversize(unit, count_tokens, threshold))
 
     if current:
@@ -415,16 +455,16 @@ def segment_section(
     Paragraph text is preserved verbatim within a chunk (joined with ``"\\n\\n"``)
     so the stored ``chunk_text`` reads as continuous prose.
 
+    Tokenisation is per unit (paragraph / sentence / word), never over the whole
+    joined section — so a large section does not trigger the HF tokenizer's
+    ``> max_seq_length`` warning, and packing stays O(n).
+
     Returns the list of chunk texts in reading order (>= 1 for a non-empty
     section; ``[]`` for an empty section).
     """
     paragraphs = [p for p in section.paragraphs if p and p.strip()]
     if not paragraphs:
         return []
-
-    complete_text = "\n\n".join(paragraphs)
-    if count_tokens(complete_text) <= threshold:
-        return [complete_text]
 
     return _pack_flat(paragraphs, count_tokens, threshold, "\n\n")
 
