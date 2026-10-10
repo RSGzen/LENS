@@ -57,7 +57,13 @@ def main() -> None:
     entries = manifest["papers"]
     if config.PAPERS_LIMIT:
         entries = entries[: config.PAPERS_LIMIT]
-        print(f"PAPERS_LIMIT active -> processing only {len(entries)} papers (dev/test)")
+
+    print(
+        f"config: limit={config.PAPERS_LIMIT or 'all'} papers={len(entries)} "
+        f"papers_per_batch={config.PAPERS_PER_BATCH} "
+        f"encode_batch={config.EMBEDDING_CHUNK_BATCH_SIZE} "
+        f"threshold={config.CHUNK_TOKEN_THRESHOLD} overlap={config.CHUNK_OVERLAP_TOKENS}"
+    )
 
     embedder = Embedder()
     count_tokens = _build_token_counter(embedder)

@@ -51,21 +51,23 @@ from lens.chunking import CHUNK_UUID_NAMESPACE, Chunk, TokenCounter, chunk_tei
 from lens.embeddings import Embedder
 
 
-def eta_calculation(time_per_batch, processed_per_batch, total_processed, total_papers):
-    """Return ``(eta_timestamp, remaining "HH:MM:SS")`` from the last batch.
+def eta_calculation(elapsed_s, total_processed, total_papers):
+    """Return ``(eta_timestamp, remaining)`` from the run's cumulative rate.
 
-    A naive linear projection: ``(total - processed) * (last_batch_s / processed)``,
-    where ``last_batch_s`` is the wall-clock of the most recent batch.
+    ``remaining = (total_papers - total_processed) * (elapsed_s / total_processed)``
+    — i.e. the average seconds/paper so far, so the ETA does **not** jump around
+    with a single slow/fast batch. ``remaining`` is a ``datetime.timedelta``
+    string, e.g. ``"18:58:29"`` or ``"1 day, 14:32:00"``.
     """
-    remaining_papers = total_papers - total_processed
+    processed = max(total_processed, 1)
+    remaining_secs = (total_papers - total_processed) * (elapsed_s / processed)
 
-    estimated_remaining_secs = remaining_papers * (time_per_batch / processed_per_batch)
+    eta = datetime.datetime.now() + datetime.timedelta(seconds=remaining_secs)
 
-    current_time = datetime.datetime.now()
-
-    eta = current_time + datetime.timedelta(seconds=estimated_remaining_secs)
-
-    return eta.strftime("%Y-%m-%d %H:%M:%S"), time.strftime("%dD %H:%M:%S", time.gmtime(estimated_remaining_secs))
+    return (
+        eta.strftime("%Y-%m-%d %H:%M:%S"),
+        str(datetime.timedelta(seconds=int(remaining_secs))),
+    )
 
 
 def chunked_iterable(iterable, size):
@@ -239,16 +241,15 @@ def load_chunks(
             # 7. Per-chunk progress (mirrored to the run log by the runner)
             batch_s = time.perf_counter() - batch_start
             elapsed_s = time.perf_counter() - run_start
-            eta_str, estimated_hours_str = eta_calculation(time_per_batch=batch_s,
-                                                           processed_per_batch=len(set(arxivID_list)),
-                                                           total_processed=num_processed_entries, 
-                                                           total_papers=total_entries)
+            eta_str, remaining_str = eta_calculation(elapsed_s=elapsed_s,
+                                                     total_processed=num_processed_entries,
+                                                     total_papers=total_entries)
 
             print(
                 f"[batch {batch_index}] papers={len(set(arxivID_list))} chunks={len(uuid_list)} "
                 f"encode={encode_s:.2f}s insert={insert_s:.2f}s batch={batch_s:.2f}s "
                 f"| processed={num_processed_entries}/{total_entries} elapsed={elapsed_s:.1f}s "
-                f"| ETA {eta_str} | Remaining {estimated_hours_str}"
+                f"| ETA {eta_str} | Remaining {remaining_str}"
             )
 
     return num_processed_entries, num_processed_chunks

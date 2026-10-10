@@ -117,11 +117,11 @@ CHUNK_TOKEN_THRESHOLD = int(os.environ.get("LENS_CHUNK_TOKEN_THRESHOLD", "512"))
 CHUNK_OVERLAP_TOKENS = int(os.environ.get("LENS_CHUNK_OVERLAP_TOKENS", "0"))
 # Chunks per model forward pass during the M4 load (GPU batch; separate from the
 # paper batch below because one paper yields many chunks).
-EMBEDDING_CHUNK_BATCH_SIZE = int(os.environ.get("LENS_EMBEDDING_CHUNK_BATCH", "128"))
+EMBEDDING_CHUNK_BATCH_SIZE = int(os.environ.get("LENS_EMBEDDING_CHUNK_BATCH", "120"))
 # Papers parsed+chunked+embedded per DB batch. ~500 papers ~= 11k chunks ~= 25 MB
 # in flight, ~334 batches over the corpus — bounds memory and gives the runner a
 # per-batch checkpoint/resume granularity for a multi-day load.
-PAPERS_PER_BATCH = int(os.environ.get("LENS_PAPERS_PER_BATCH", "500"))
+PAPERS_PER_BATCH = int(os.environ.get("LENS_PAPERS_PER_BATCH", "240"))
 # Optional dev/test cap: process only the first N manifest papers (0 = all).
 # Used for the timed smoke run before the full-corpus load (e.g. 100).
 PAPERS_LIMIT = int(os.environ.get("LENS_PAPERS_LIMIT", "0"))
