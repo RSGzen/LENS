@@ -7,8 +7,14 @@ Bring the DB up first (Docker Desktop must be running)::
 
     docker run -d --name lens-pg --restart unless-stopped ^
         -e POSTGRES_USER=lens -e POSTGRES_PASSWORD=lens -e POSTGRES_DB=lens ^
-        -p 5433:5432 -v D:\\lens-data\\postgres:/var/lib/postgresql/data ^
-        pgvector/pgvector:pg16
+        -p 5433:5432 -v lens-pgdata:/var/lib/postgresql/data ^
+        --shm-size=2g pgvector/pgvector:pg16 -c shared_buffers=4GB
+
+``lens-pgdata`` is a Docker **named volume** (native WSL2 ext4). Do **not** bind-mount
+a Windows path for PGDATA — HNSW/index I/O over the WSL2 host-filesystem boundary is
+~100x slower (a 4.7 M-row HNSW build ran for days on a bind mount; ~1 h on the
+volume). ``-c shared_buffers=4GB`` fixes the default 128 MB, which is far too small
+for the 17 GB database. ``--shm-size=2g`` leaves room for parallel index builds.
 
 Host port **5433** (not 5432) is deliberate on this machine: a native
 ``postgresql-x64-17`` service already owns host 5432, so connections to
