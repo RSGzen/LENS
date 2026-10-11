@@ -48,6 +48,24 @@ def _drop_chunks_index(conn) -> None:
     print("dropped chunks_chunk_embedding_hnsw (rebuild after with build_indexes.py)")
 
 
+def _filter_loaded(conn, entries):
+    """Drop manifest entries whose ``arxiv_id`` is already in ``chunks`` (resume).
+
+    Batches commit per batch, so a re-run only needs the papers that are not yet
+    present. ``SELECT DISTINCT arxiv_id`` is a one-off scan (~2 min at 4.5 M rows).
+    """
+    print("resume: scanning chunks for already-loaded papers (can take ~2 min)...")
+    with conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT arxiv_id FROM chunks")
+        loaded = {row[0] for row in cur.fetchall()}
+    if not loaded:
+        print("resume: chunks is empty -> nothing to skip")
+        return entries
+    remaining = [entry for entry in entries if entry["arxiv_id"] not in loaded]
+    print(f"resume: {len(entries) - len(remaining)} papers already loaded, {len(remaining)} remaining")
+    return remaining
+
+
 def main() -> None:
     setup_file_logging("lens.load_chunks", "load_chunks")
 
@@ -70,6 +88,8 @@ def main() -> None:
 
     start = time.perf_counter()
     with connect(autocommit=True) as conn:
+        if config.RESUME:
+            entries = _filter_loaded(conn, entries)
         _drop_chunks_index(conn)
         papers, chunks = load_chunks(
             conn=conn,

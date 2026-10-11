@@ -62,6 +62,17 @@ from lxml import etree
 # ``config.GROBID_XML_DIR_PATH``).
 TEI_NS = {"tei": "http://www.tei-c.org/ns/1.0"}
 
+# Hardened parser for untrusted corpus XML. GROBID TEI needs no external entities,
+# DTDs, or network access, so disabling them removes XXE (local-file read / SSRF)
+# and billion-laughs expansion from files that may contain adversarial content.
+_SAFE_XML_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    load_dtd=False,
+    dtd_validation=False,
+    huge_tree=False,
+)
+
 # Fallback ``section_type`` for a top-level section whose head matches no
 # canonical keyword (e.g. "Acknowledgements", "Reproducibility Statement").
 # Such sections are still embedded and retrievable — no content is dropped.
@@ -293,7 +304,7 @@ def extract_sections(tei_path: str | Path) -> list[Section]:
        - collapse runs of whitespace to a single space and drop empty paragraphs.
     5. Return the sections in document order. A paper with no body/divs -> ``[]``.
     """
-    tree = etree.parse(str(tei_path))
+    tree = etree.parse(str(tei_path), _SAFE_XML_PARSER)
     root = tree.getroot()
 
     # Blank every <formula> (GROBID math is garbled; covers inline formulas too).

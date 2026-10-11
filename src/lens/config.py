@@ -125,6 +125,11 @@ PAPERS_PER_BATCH = int(os.environ.get("LENS_PAPERS_PER_BATCH", "240"))
 # Optional dev/test cap: process only the first N manifest papers (0 = all).
 # Used for the timed smoke run before the full-corpus load (e.g. 100).
 PAPERS_LIMIT = int(os.environ.get("LENS_PAPERS_LIMIT", "0"))
+# Resume a partially-loaded run: skip manifest papers whose ``arxiv_id`` is already
+# in ``chunks`` (batches commit per batch, so completed papers are durable). The
+# load is idempotent either way, but this avoids re-embedding finished papers.
+# Set LENS_RESUME=0 to force a full pass.
+RESUME = os.environ.get("LENS_RESUME", "1").strip().lower() not in {"0", "false", "no", ""}
 
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

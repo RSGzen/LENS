@@ -95,7 +95,9 @@ def chunk_paper(
 
     try:
         return chunk_tei(tei_xml_filepath, count_tokens, threshold, overlap)
-    except etree.XMLSyntaxError:
+    except (OSError, etree.LxmlError, ValueError):
+        # File vanished/locked (e.g. an antivirus quarantined it mid-read) or the
+        # XML is malformed -> skip this paper, do not abort the whole run.
         return []
 
 
