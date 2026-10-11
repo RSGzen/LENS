@@ -11,6 +11,18 @@ classDiagram
     tokens_in : int
     tokens_out : int
   }
+  class Chunk {
+    chunk_text : str
+    section_order : int
+    section_type : str
+    token_count : int
+  }
+  class Embedder {
+    dim : int
+    model : Any
+    model_id : str
+    encode_documents(texts: Sequence[str], task_prefix: str, batch_size: int) np.ndarray
+  }
   class JevResult {
     answers : dict[str, dict[str, Any]]
     cost_usd : float
@@ -54,6 +66,14 @@ classDiagram
     criteria : dict[str, str] | list[str]
     instructions : str
     type : Literal
+  }
+  class Section {
+    paragraphs : tuple[str, ...]
+    section_type : str
+  }
+  class StreamLogger {
+    flush() None
+    write(message: str) int
   }
   class TraceCtx {
     actor : Literal

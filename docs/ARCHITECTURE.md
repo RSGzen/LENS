@@ -48,13 +48,19 @@ Source: `docs/packages_lens.mmd` (pyreverse). Edges are file-level imports.
 classDiagram
   class lens {
   }
+  class chunking {
+  }
   class clients {
   }
   class config {
   }
   class dataset {
   }
+  class chunks {
+  }
   class manifest {
+  }
+  class papers {
   }
   class db {
   }
@@ -62,9 +68,13 @@ classDiagram
   }
   class schema {
   }
+  class embeddings {
+  }
   class models {
   }
   class observability {
+  }
+  class run_logging {
   }
   class trajectory {
   }
@@ -74,15 +84,27 @@ classDiagram
   clients --> trajectory
   config --> models
   dataset --> manifest
+  dataset --> papers
+  chunks --> lens
+  chunks --> chunking
+  chunks --> config
+  chunks --> embeddings
   manifest --> lens
   manifest --> config
+  papers --> lens
+  papers --> config
+  papers --> embeddings
   db --> connect
   db --> schema
   connect --> lens
   connect --> config
   schema --> lens
   schema --> config
+  embeddings --> lens
+  embeddings --> config
   observability --> trajectory
+  run_logging --> lens
+  run_logging --> config
   trajectory --> config
 ```
 
@@ -97,49 +119,96 @@ Source: `docs/classes_lens.mmd` (pyreverse). Attributes/methods omitted for widt
 
 ```mermaid
 classDiagram
-  class CallResult {
-    cost_usd : float
-    message : dict[str, Any]
-    model : str
-    provider : str
-    text : str
-    tokens_in : int
-    tokens_out : int
-  }
-  class JevResult {
-    answers : dict[str, dict[str, Any]]
-    cost_usd : float
-    model : str
-    provider : str
-  }
-  class LensClient {
-    chat(role, messages) CallResult
-    jev(state, questions) JevResult
-  }
-  class LensTransportError {
-    attempts : int
-    status : NoneType
-  }
-  class ModelSpec {
-    id : str
-    reasoning_effort : str | None
-    provider_only : tuple
-    allow_fallbacks : bool
-  }
-  class Question {
-    type : Literal
-    instructions : str
-    criteria : dict | list
-  }
-  class TraceCtx {
-    trace_id : str
-    step_idx : int
-    actor : Literal
-  }
-  class Trajectory {
-    log_event() None
-    store_blob(text) str
-  }
+    class CallResult {
+        cost_usd : float
+        finish_reason : str | None
+        latency_ms : int
+        message : dict[str, Any]
+        model : str
+        model_snapshot : str | None
+        provider : str
+        text : str
+        tokens_in : int
+        tokens_out : int
+    }
+    class Chunk {
+        chunk_text : str
+        section_order : int
+        section_type : str
+        token_count : int
+    }
+    class Embedder {
+        dim : int
+        model : Any
+        model_id : str
+        encode_documents(texts: Sequence[str], task_prefix: str, batch_size: int) np.ndarray
+    }
+    class JevResult {
+        answers : dict[str, dict[str, Any]]
+        cost_usd : float
+        latency_ms : int
+        model : str
+        provider : str
+        tokens_in : int
+    }
+    class LensClient {
+        api_key : NoneType
+        base_url : str
+        chat_endpoint : str
+        jev_endpoint : str
+        max_retries : int
+        registry : dict
+        session : Session
+        sleeper
+        timeout : int
+        trajectory
+        chat(role: Role, messages: Sequence[Mapping[str, Any]]) CallResult
+        jev(state: str, questions: Mapping[str, Question]) JevResult
+    }
+    class LensTransportError {
+        attempts : int
+        status : NoneType
+    }
+    class ModelSpec {
+        allow_fallbacks : bool
+        exacto : bool
+        id : str
+        provider_only : tuple[str, ...]
+        provider_order : tuple[str, ...]
+        reasoning_effort : str | None
+        seed : int | None
+        supports_reasoning : bool
+        supports_response_format : bool
+        supports_tools : bool
+        temperature : float | None
+    }
+    class Question {
+        criteria : dict[str, str] | list[str]
+        instructions : str
+        type : Literal
+    }
+    class Section {
+        paragraphs : tuple[str, ...]
+        section_type : str
+    }
+    class StreamLogger {
+        flush() None
+        write(message: str) int
+    }
+    class TraceCtx {
+        actor : Literal
+        step_idx : int
+        trace_id : str
+    }
+    class Trajectory {
+        blobs_dir
+        run_dir
+        run_id : str
+        runs_root : Path
+        trajectory_path
+        log_event() None
+        store_blob(text: str) str
+    }
   Trajectory --o LensClient : trajectory
 ```
 

@@ -1,13 +1,19 @@
 classDiagram
   class lens {
   }
+  class chunking {
+  }
   class clients {
   }
   class config {
   }
   class dataset {
   }
+  class chunks {
+  }
   class manifest {
+  }
+  class papers {
   }
   class db {
   }
@@ -15,9 +21,13 @@ classDiagram
   }
   class schema {
   }
+  class embeddings {
+  }
   class models {
   }
   class observability {
+  }
+  class run_logging {
   }
   class trajectory {
   }
@@ -27,13 +37,25 @@ classDiagram
   clients --> trajectory
   config --> models
   dataset --> manifest
+  dataset --> papers
+  chunks --> lens
+  chunks --> chunking
+  chunks --> config
+  chunks --> embeddings
   manifest --> lens
   manifest --> config
+  papers --> lens
+  papers --> config
+  papers --> embeddings
   db --> connect
   db --> schema
   connect --> lens
   connect --> config
   schema --> lens
   schema --> config
+  embeddings --> lens
+  embeddings --> config
   observability --> trajectory
+  run_logging --> lens
+  run_logging --> config
   trajectory --> config
