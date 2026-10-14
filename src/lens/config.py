@@ -131,6 +131,31 @@ PAPERS_LIMIT = int(os.environ.get("LENS_PAPERS_LIMIT", "0"))
 # Set LENS_RESUME=0 to force a full pass.
 RESUME = os.environ.get("LENS_RESUME", "1").strip().lower() not in {"0", "false", "no", ""}
 
+# ------------------------------------------------------------- retrieval (M5)
+# The frozen R-01 funnel (Tech Stack §2 stages 10-11, §3, §4i):
+#   shallow_match k candidates -> Stage-A rerank -> n papers
+#   deep_match    C chunk candidates (filtered) -> Stage-B rerank -> c chunks
+# `k`/`C` are the candidate-recall knobs; the cross-encoder cost is linear in
+# them (one pass per candidate). These are the guardrail caps (Roadmap §7).
+RETRIEVAL_K = int(os.environ.get("LENS_RETRIEVAL_K", "100"))         # Stage A candidates
+RETRIEVAL_N = int(os.environ.get("LENS_RETRIEVAL_N", "20"))          # papers after Stage A
+RETRIEVAL_C = int(os.environ.get("LENS_RETRIEVAL_C", "100"))         # Stage B candidates
+RETRIEVAL_C_TOP = int(os.environ.get("LENS_RETRIEVAL_C_TOP", "5"))   # chunks after Stage B
+
+# HNSW query-time recall/latency knob. `m` / `ef_construction` are build-time
+# (see scripts/build_indexes.py); `ef_search` is set per query. Record all three
+# per run (E-04).
+HNSW_EF_SEARCH = int(os.environ.get("LENS_HNSW_EF_SEARCH", "40"))
+
+# Cross-encoder reranker, used at BOTH stages (Stage A = papers, Stage B = chunks;
+# Tech Stack §7 "both levels").
+RERANKER_MODEL_ID = os.environ.get("LENS_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+RERANK_BATCH_SIZE = int(os.environ.get("LENS_RERANK_BATCH", "32"))
+
+# The 4 JEV segmentation buckets, in the order their clause texts are
+# concatenated into the single query string to embed (M6 D-02; §2 stage 9).
+QUERY_BUCKET_ORDER = ("problem", "objective", "constraints", "requirements")
+
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
