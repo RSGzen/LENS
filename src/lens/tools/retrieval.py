@@ -103,11 +103,73 @@ def format_query(buckets: Mapping[str, str] | str) -> str:
 
     Example: ``{"objective": "improve Y", "problem": "why X"}`` -> ``"why X improve Y"``.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement format_query — str passes through; a mapping is "
-        "joined in config.QUERY_BUCKET_ORDER then in insertion order, skipping "
-        "empty values."
-    )
+
+    """
+    I assume the bucket is a dictionary with kv of string: string but wouldn't sometimes each bucket may contain more than 1 string?
+    For example, user prompt sets 4 constraints, so do we create a list of constraints or do we merge them into a single string to maintain this datatype?
+    What is your opinion? I would prefer to have a query bucket dict that contains lists.
+    For example --> {"objective:" ["Improve Y", "Test Y"], "problem": ["Y is resource-demanding"]}
+
+    Also, we need to set the actual key strings for the bucket dictionary. For now I will be using:
+    "objectives", "problems", "constraints", "requirements"
+    - Objectives should be kept concise and are final goals
+    - Problems are the issue that is limiting the objectives to be achived 
+    - Constraints are the activities that the agent cannot do in the session
+    - Requirements are special requirements that supplement the final goals such as formatting, tool calls, specs and etc.  
+
+    I did not use the config.QUERY_BUCKET_ORDER because I assume the Mapping is already in order and I just loop it.
+    Is that ok?
+
+    Additionally, I think the hardest part is to parse the user's prompt into buckets. Is it M5's work or M6's?
+    Given that the user's prompt is just a text string and not structured,
+    
+    So, I imagine that query segmentation with JEV requires parsing the prompt into sentences.
+    Then with these sentences, we do JEV classification but how do we deal with sentences that have multiple requests?
+    Since JEV itself cannot output long-form context like normal LLM's, we need to really figure out a good prompt segmentation strategy.
+
+    I checked and the industry standard is to first use JEV into checking which bucket exists in this prompt.
+    Then, using a weaker LLM injected with JEV's decision + original user prompt, it will output a strict query in JSON format.
+
+    But wouldn't that defeat the whole purpose of using JEV for quick and low cost decisions? 
+    If so, why don't we delegate the query segmentation task to a sub-agent? 
+
+    What do you think?
+    """
+    query_str = ""
+
+    # Loop through each bucket and its list
+    for bucket, bucket_strs in buckets.items():
+
+        # Append start of sentence based on bucket type
+        if bucket == "objectives":
+            query_str = query_str + "The objectives include "
+
+        if bucket == "problems":
+            query_str = query_str + "However, the problems are "
+
+        if bucket == "constraints":
+            query_str = query_str + "Constraints imposed include "
+
+        if bucket == "requirements":
+            query_str = query_str + "Additional requirements mentioned are "
+
+        # Check for final element in list to append fullstop instead of comma
+        final_item_no = len(bucket_strs)
+        
+        for i in range(0, len(bucket_strs)):
+            query_str = query_str + " " + bucket_strs
+
+            if i == (final_item_no - 1):
+                query_str = query_str + ". "
+            else:
+                query_str = query_str + ", "
+
+    return query_str
+
+
+def contains_letters(text: str) -> bool:
+    """Check if a string contains any alphabetic character"""
+    return any(char.isalpha() for char in text)
 
 
 def year_from_arxiv_id(arxiv_id: str) -> int | None:
@@ -117,17 +179,21 @@ def year_from_arxiv_id(arxiv_id: str) -> int | None:
     are not a two-digit year (old-style ids like ``"acc-phys/9411001"``, or
     malformed input). Mirrors the M1 manifest's id-prefix year rule (Tech Stack §4f).
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement year_from_arxiv_id — 2000 + int(arxiv_id[:2]) when "
-        "arxiv_id[:2] is two digits, else None."
-    )
+    yr_identifier = arxiv_id[:2]
+
+    # Check if first two characters contain alpahbetic characters
+    if contains_letters(yr_identifier):
+        return None
+
+    yr = 2000 + int(yr_identifier)
+
+    return yr
 
 
 def row_to_dict(columns: Sequence[str], row: Sequence[Any]) -> dict[str, Any]:
     """Zip a result row to ``{column: value}`` using the SELECT column order."""
-    raise NotImplementedError(
-        "M5 scaffold: implement row_to_dict — dict(zip(columns, row))."
-    )
+
+    return dict(zip(columns, row))
 
 
 def vector_literal(vec: np.ndarray) -> str:
