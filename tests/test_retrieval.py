@@ -161,6 +161,17 @@ class ShallowMatchTest(unittest.TestCase):
         self.assertEqual(emb.calls[0][1], config.EMBEDDING_QUERY_PREFIX)
         self.assertEqual(emb.calls[0][0], ["hello world"])
 
+    def test_ef_search_is_raised_to_k(self) -> None:
+        # pgvector caps an unfiltered HNSW scan at ef_search rows, so k must not
+        # exceed it (default 40). k=100 -> ef_search = max(config, 100).
+        conn = FakeConn([("x",)])
+        emb = FakeEmbedder()
+
+        shallow_match(conn, "q", emb, k=100)
+
+        sql_blob = " ".join(s for s, _ in conn._cursor.statements).lower()
+        self.assertIn(f"ef_search = {max(config.HNSW_EF_SEARCH, 100)}", sql_blob)
+
 
 class DeepMatchTest(unittest.TestCase):
     def test_filtered_search_uses_iterative_scan(self) -> None:
@@ -172,6 +183,15 @@ class DeepMatchTest(unittest.TestCase):
         self.assertEqual(ids, ["uuid-1", "uuid-2"])
         sql_blob = " ".join(s for s, _ in conn._cursor.statements).lower()
         self.assertIn("iterative_scan", sql_blob)
+
+    def test_ef_search_is_raised_to_candidate_chunks(self) -> None:
+        conn = FakeConn([("uuid-1",)])
+        emb = FakeEmbedder()
+
+        deep_match(conn, ["2101.00001"], "q", emb, candidate_chunks=100)
+
+        sql_blob = " ".join(s for s, _ in conn._cursor.statements).lower()
+        self.assertIn(f"ef_search = {max(config.HNSW_EF_SEARCH, 100)}", sql_blob)
 
     def test_empty_papers_returns_empty_without_embedding(self) -> None:
         conn = FakeConn([])

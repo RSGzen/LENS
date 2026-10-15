@@ -21,6 +21,15 @@ from lens.models import Role
 
 load_dotenv()
 
+# Quiet third-party chatter so run logs stay readable: Hugging Face Hub /
+# transformers / tqdm progress bars and one-off warnings would otherwise be
+# mirrored at ERROR level by `observability/run_logging.py`. setdefault -> the
+# caller can still override any of these in the environment.
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TQDM_DISABLE", "1")
+
 # --------------------------------------------------------------------- paths
 # One source of truth. The env override keeps the same code portable across
 # machines; the default is the local runtime root (outside Google Drive).

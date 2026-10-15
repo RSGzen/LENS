@@ -28,25 +28,42 @@ class StreamLogger:
 
     Assigned to ``sys.stdout`` / ``sys.stderr`` so that ``print()`` calls in the
     load path are captured in the log file with a timestamp.
+
+    Re-entrancy guard: ``logging``'s ``handleError`` writes a failed record to
+    ``sys.stderr`` — which *is* this object — so without the guard a single
+    handler failure (e.g. a non-encodable character on the console) recurses
+    forever.
     """
 
     def __init__(self, logger: logging.Logger, level: int = logging.INFO) -> None:
         self._logger = logger
         self._level = level
         self._buffer = ""
+        self._busy = False
 
     def write(self, message: str) -> int:
-        self._buffer += message
-        while "\n" in self._buffer:
-            line, self._buffer = self._buffer.split("\n", 1)
-            if line:
-                self._logger.log(self._level, line)
+        if self._busy:
+            return len(message)
+        self._busy = True
+        try:
+            self._buffer += message
+            while "\n" in self._buffer:
+                line, self._buffer = self._buffer.split("\n", 1)
+                if line:
+                    self._logger.log(self._level, line)
+        finally:
+            self._busy = False
         return len(message)
 
     def flush(self) -> None:
-        if self._buffer:
+        if self._busy or not self._buffer:
+            return
+        self._busy = True
+        try:
             self._logger.log(self._level, self._buffer)
             self._buffer = ""
+        finally:
+            self._busy = False
 
 
 def setup_file_logging(name: str, prefix: str) -> logging.Logger:
@@ -79,8 +96,18 @@ def setup_file_logging(name: str, prefix: str) -> logging.Logger:
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     file_handler.setFormatter(formatter)
 
-    # Grab the real stdout before we replace sys.stdout below.
-    console_handler = logging.StreamHandler(sys.__stdout__)
+    # Grab the real stdout before we replace sys.stdout below. Force UTF-8 with
+    # errors="replace" so a non-encodable char (e.g. mathematical symbols like
+    # λ in paper titles) can never raise UnicodeEncodeError on the console —
+    # Windows defaults to cp1252 — and cascade into the handleError recursion.
+    console_stream = sys.__stdout__
+    reconfigure = getattr(console_stream, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+    console_handler = logging.StreamHandler(console_stream)
     console_handler.setFormatter(formatter)
 
     logger.addHandler(file_handler)

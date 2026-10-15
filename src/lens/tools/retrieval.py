@@ -236,8 +236,9 @@ def shallow_match(
 
     with conn.cursor() as cur:
 
-        # Set configurations for HNSW
-        for stmt in hnsw_config_sql(config.HNSW_EF_SEARCH):
+        # Set configurations for HNSW. `ef_search` bounds the rows an unfiltered
+        # HNSW scan returns (pgvector default 40), so it must be >= the LIMIT.
+        for stmt in hnsw_config_sql(max(config.HNSW_EF_SEARCH, k)):
             cur.execute(stmt)
 
         cur.execute(
@@ -352,7 +353,8 @@ def deep_match(
 
     with conn.cursor() as cur:
         # Filtered HNSW applies the WHERE after the graph scan -> iterative scan.
-        for stmt in hnsw_config_sql(ef_search=config.HNSW_EF_SEARCH,
+        # `ef_search` must also be >= the LIMIT (see shallow_match).
+        for stmt in hnsw_config_sql(ef_search=max(config.HNSW_EF_SEARCH, candidate_chunks),
                                     iterative_scan=True):
             cur.execute(stmt)
 
