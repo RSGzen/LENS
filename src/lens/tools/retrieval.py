@@ -27,7 +27,9 @@ Design rules (do not deviate)
 Query input
 -----------
 The four funnel tools take ``buckets`` — the M6 segmentation output (a mapping of
-bucket name -> clause text), or a plain query string. :func:`format_query`
+bucket name -> **list** of clause texts, e.g.
+``{"objectives": ["improve Y", "test Y"], "problems": ["Y is costly"]}``), or a
+plain query string. :func:`format_query`
 normalises both into the single string that is embedded (with the nomic
 ``search_query:`` prefix) at the shallow/deep stages and passed to the
 cross-encoder at the rerank stages. Document and query paths **must** use the same
@@ -65,6 +67,12 @@ from lens.reranking import Reranker
 # Generic item type for :func:`top_by_score`.
 T = TypeVar("T")
 
+# Query input for the funnel: the M6 segmentation output (bucket name -> clause
+# texts, e.g. ``{"objectives": ["...", "..."], "problems": [...]}``) or a
+# pre-formatted query string. M6 owns the dict build order; :func:`format_query`
+# joins in insertion order.
+QueryBuckets = Mapping[str, Sequence[str]] | str
+
 # SELECT column lists mirror the §3 table schemas. The order here is the order the
 # query must select them in, so :func:`row_to_dict` can zip row -> dict.
 PAPER_COLUMNS = (
@@ -93,83 +101,30 @@ _QUERY_ENCODE_BATCH = 1
 
 
 # ------------------------------------------------------------------ helpers
-def format_query(buckets: Mapping[str, str] | str) -> str:
+def format_query(buckets: QueryBuckets) -> str:
     """Normalise the query input into the single string to embed.
 
     - ``str`` -> returned as-is (already formatted; e.g. a raw query).
-    - ``Mapping`` -> the clause texts joined with a single space, in
-      :data:`config.QUERY_BUCKET_ORDER` for known keys, then any remaining keys in
-      their insertion order. Empty / whitespace-only values are skipped.
+    - ``Mapping`` -> every clause in every bucket, flattened and joined with a
+      single space, in the mapping's **insertion order** (M6 owns building the
+      dict in a fixed order). Empty / whitespace-only values are skipped.
 
-    Example: ``{"objective": "improve Y", "problem": "why X"}`` -> ``"why X improve Y"``.
+    Example: ``{"objective": ["improve Y"], "problem": ["why X"]}`` ->
+    ``"improve Y why X"``.
     """
-
-    """
-    I assume the bucket is a dictionary with kv of string: string but wouldn't sometimes each bucket may contain more than 1 string?
-    For example, user prompt sets 4 constraints, so do we create a list of constraints or do we merge them into a single string to maintain this datatype?
-    What is your opinion? I would prefer to have a query bucket dict that contains lists.
-    For example --> {"objective:" ["Improve Y", "Test Y"], "problem": ["Y is resource-demanding"]}
-
-    Also, we need to set the actual key strings for the bucket dictionary. For now I will be using:
-    "objectives", "problems", "constraints", "requirements"
-    - Objectives should be kept concise and are final goals
-    - Problems are the issue that is limiting the objectives to be achived 
-    - Constraints are the activities that the agent cannot do in the session
-    - Requirements are special requirements that supplement the final goals such as formatting, tool calls, specs and etc.  
-
-    I did not use the config.QUERY_BUCKET_ORDER because I assume the Mapping is already in order and I just loop it.
-    Is that ok?
-
-    Additionally, I think the hardest part is to parse the user's prompt into buckets. Is it M5's work or M6's?
-    Given that the user's prompt is just a text string and not structured,
     
-    So, I imagine that query segmentation with JEV requires parsing the prompt into sentences.
-    Then with these sentences, we do JEV classification but how do we deal with sentences that have multiple requests?
-    Since JEV itself cannot output long-form context like normal LLM's, we need to really figure out a good prompt segmentation strategy.
+    # Return if the param is already a formatted string
+    if isinstance(buckets, str):
+        return buckets
 
-    I checked and the industry standard is to first use JEV into checking which bucket exists in this prompt.
-    Then, using a weaker LLM injected with JEV's decision + original user prompt, it will output a strict query in JSON format.
+    # Flatten every bucket's clauses, skipping empty values, in insertion order.
+    parts: list[str] = []
+    for clauses in buckets.values():
+        for clause in clauses:
+            if clause and clause.strip():
+                parts.append(clause.strip())
 
-    But wouldn't that defeat the whole purpose of using JEV for quick and low cost decisions? 
-    If so, why don't we delegate the query segmentation task to a sub-agent? 
-
-    What do you think?
-    """
-    query_str = ""
-
-    # Loop through each bucket and its list
-    for bucket, bucket_strs in buckets.items():
-
-        # Append start of sentence based on bucket type
-        if bucket == "objectives":
-            query_str = query_str + "The objectives include "
-
-        if bucket == "problems":
-            query_str = query_str + "However, the problems are "
-
-        if bucket == "constraints":
-            query_str = query_str + "Constraints imposed include "
-
-        if bucket == "requirements":
-            query_str = query_str + "Additional requirements mentioned are "
-
-        # Check for final element in list to append fullstop instead of comma
-        final_item_no = len(bucket_strs)
-        
-        for i in range(0, len(bucket_strs)):
-            query_str = query_str + " " + bucket_strs
-
-            if i == (final_item_no - 1):
-                query_str = query_str + ". "
-            else:
-                query_str = query_str + ", "
-
-    return query_str
-
-
-def contains_letters(text: str) -> bool:
-    """Check if a string contains any alphabetic character"""
-    return any(char.isalpha() for char in text)
+    return " ".join(parts)
 
 
 def year_from_arxiv_id(arxiv_id: str) -> int | None:
@@ -179,15 +134,14 @@ def year_from_arxiv_id(arxiv_id: str) -> int | None:
     are not a two-digit year (old-style ids like ``"acc-phys/9411001"``, or
     malformed input). Mirrors the M1 manifest's id-prefix year rule (Tech Stack §4f).
     """
-    yr_identifier = arxiv_id[:2]
 
-    # Check if first two characters contain alpahbetic characters
-    if contains_letters(yr_identifier):
+    # Check if first two characters are all digits
+    if arxiv_id[:2].isdigit():
+        yr = 2000 + int(arxiv_id[:2])
+        return yr
+    
+    else:
         return None
-
-    yr = 2000 + int(yr_identifier)
-
-    return yr
 
 
 def row_to_dict(columns: Sequence[str], row: Sequence[Any]) -> dict[str, Any]:
@@ -197,15 +151,21 @@ def row_to_dict(columns: Sequence[str], row: Sequence[Any]) -> dict[str, Any]:
 
 
 def vector_literal(vec: np.ndarray) -> str:
-    """pgvector text literal for a 1-D vector, e.g. ``"[0.1,-0.2,...]"``.
+    """Format a vector as a pgvector **text literal**, e.g. ``"[0.1,-0.2,...]"``.
 
-    Used with an explicit ``::<config.EMBEDDING_PGVECTOR_TYPE>`` cast in the ANN
-    queries, so no psycopg vector adapter is needed on the read connection.
+    This only formats the *value*; the ``::<config.EMBEDDING_PGVECTOR_TYPE>`` cast
+    (e.g. ``%s::halfvec``) is written into the ANN SQL, where the vector stays a
+    plain ``%s`` bind parameter — only the cast target is composed from config.
+    Text + cast is used instead of registering a psycopg vector adapter on the
+    read connection (``register_vector``), which keeps the tools testable with a
+    fake connection. Flatten to 1-D because the embedder returns shape
+    ``(1, dim)`` for a single query while the literal is a flat list.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement vector_literal — flatten to 1-D and join "
-        "'[' + ','.join(repr(float(x)) for x in vec) + ']'."
-    )
+    # Accept anything array-like and normalise to nomic dtype (float32) and then flatten it 
+    flat = np.asarray(vec, dtype=np.float32).reshape(-1)
+
+    # pgvector's text format, e.g. "[0.1,-0.02,...]"
+    return "[" + ",".join(repr(float(x)) for x in flat) + "]"
 
 
 def hnsw_config_sql(ef_search: int, iterative_scan: bool = False) -> list[str]:
@@ -217,10 +177,14 @@ def hnsw_config_sql(ef_search: int, iterative_scan: bool = False) -> list[str]:
     SQL ``WHERE`` *after* the graph scan and can otherwise under-return
     (pgvector >= 0.8). Return the statements in execution order.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement hnsw_config_sql — always 'SET hnsw.ef_search = <n>', "
-        "and 'SET hnsw.iterative_scan = relaxed_order' when iterative_scan is true."
-    )
+    # Set the initial candidate graph pool
+    set_statement_list = [f"SET hnsw.ef_search = {ef_search};"]
+
+    # Enable iterative scanning (Scans until reaches enough matching rows / hit safety limit)
+    if iterative_scan:
+        set_statement_list.append(f"SET hnsw.iterative_scan = 'relaxed_order';")
+
+    return set_statement_list
 
 
 def top_by_score(
@@ -232,16 +196,21 @@ def top_by_score(
     ``top >= len(items)`` -> all, still score-sorted. A length mismatch between
     ``items`` and ``scores`` is a programming error -> :class:`ValueError`.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement top_by_score — validate equal lengths, sort the "
-        "(item, score) pairs by score descending (stable), truncate to top."
-    )
+    if len(items) != len(scores):
+        raise ValueError("items and scores must have the same length")
 
+    if top <= 0:
+        return []
+
+    # Highest score first; Python's sort is stable, so ties keep input order.
+    ranked = sorted(zip(items, scores), key=lambda pair: pair[1], reverse=True)
+
+    return ranked[:top]
 
 # ------------------------------------------------------------ T1 funnel tools
 def shallow_match(
     conn: Any,
-    buckets: Mapping[str, str] | str,
+    buckets: QueryBuckets,
     embedder: Embedder,
     k: int = config.RETRIEVAL_K,
 ) -> list[str]:
@@ -259,11 +228,30 @@ def shallow_match(
 
     Returns the ``arxiv_id`` list in ANN order (nearest first).
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement shallow_match — embed the formatted query with the "
-        "query prefix, SET ef_search, SELECT arxiv_id ordered by "
-        "abstract_embedding <=> %s::<type> LIMIT k."
-    )
+    query = format_query(buckets=buckets)
+
+    vec = embedder.encode_documents(texts=[query],
+                                    task_prefix=config.EMBEDDING_QUERY_PREFIX,
+                                    batch_size=1)
+
+    with conn.cursor() as cur:
+
+        # Set configurations for HNSW
+        for stmt in hnsw_config_sql(config.HNSW_EF_SEARCH):
+            cur.execute(stmt)
+
+        cur.execute(
+            "SELECT arxiv_id FROM papers "
+            "WHERE abstract_embedding IS NOT NULL "
+            f"ORDER BY abstract_embedding <=> %s::{config.EMBEDDING_PGVECTOR_TYPE} "
+            "LIMIT %s",
+            (vector_literal(vec), k),
+        )
+
+        rows = cur.fetchall()
+
+        # Select first col (arxiv_ID) that are already in order 
+        return [r[0] for r in rows]
 
 
 def fetch_papers(conn: Any, arxiv_ids: Sequence[str]) -> list[dict[str, Any]]:
@@ -275,16 +263,23 @@ def fetch_papers(conn: Any, arxiv_ids: Sequence[str]) -> list[dict[str, Any]]:
     ``[]`` (do **not** run the query). Uses a host connection; ``categories`` comes
     back as a Python ``list[str]``.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement fetch_papers — SELECT PAPER_COLUMNS ... WHERE "
-        "arxiv_id = ANY(%s), map rows via row_to_dict; short-circuit empty input."
-    )
+    if not arxiv_ids:
+        return []
+
+    # Select PAPER_COLUMNS in order so row_to_dict can zip them; the vector
+    # columns (abstract_embedding / embedding_version) are intentionally excluded.
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {', '.join(PAPER_COLUMNS)} FROM papers WHERE arxiv_id = ANY(%s)",
+            (list(arxiv_ids),),
+        )
+        return [row_to_dict(PAPER_COLUMNS, row) for row in cur.fetchall()]
 
 
 def rerank_papers(
     conn: Any,
     arxiv_ids: Sequence[str],
-    buckets: Mapping[str, str] | str,
+    buckets: QueryBuckets,
     reranker: Reranker,
     n: int = config.RETRIEVAL_N,
     batch_size: int = config.RERANK_BATCH_SIZE,
@@ -301,16 +296,31 @@ def rerank_papers(
 
     Returns, best first, ``{"arxiv_id", "title", "abstract", "score"}`` dicts.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement rerank_papers — fetch, re-order to input ids, score "
-        "the abstracts, keep top-n via top_by_score, return dicts+score."
-    )
+    rows = fetch_papers(conn, arxiv_ids)
+
+    order_map = {name: index for index, name in enumerate(arxiv_ids)}
+    sorted_rows = sorted(rows, key=lambda x: order_map.get(x["arxiv_id"], float('inf')))
+
+    query = format_query(buckets)
+
+    texts = [row["abstract"] or "" for row in sorted_rows]
+    scores = reranker.score(query, texts, batch_size)
+
+    return [
+        {
+            "arxiv_id": row["arxiv_id"],
+            "title": row["title"],
+            "abstract": row["abstract"],
+            "score": score
+        }
+        for row, score in top_by_score(sorted_rows, scores, n)
+    ]
 
 
 def deep_match(
     conn: Any,
     arxiv_ids: Sequence[str],
-    buckets: Mapping[str, str] | str,
+    buckets: QueryBuckets,
     embedder: Embedder,
     candidate_chunks: int = config.RETRIEVAL_C,
 ) -> list[str]:
@@ -329,11 +339,33 @@ def deep_match(
 
     Returns ``chunk_uuid`` strings (cast to text) in ANN order.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement deep_match — embed query, SET ef_search + iterative "
-        "scan, SELECT chunk_uuid::text WHERE arxiv_id = ANY(%s) ordered by "
-        "chunk_embedding <=> %s::<type> LIMIT C."
-    )
+    if not arxiv_ids:
+        return []
+
+    query = format_query(buckets)
+    if not query.strip():
+        return []
+
+    vec = embedder.encode_documents(texts=[query],
+                                    task_prefix=config.EMBEDDING_QUERY_PREFIX,
+                                    batch_size=1)
+
+    with conn.cursor() as cur:
+        # Filtered HNSW applies the WHERE after the graph scan -> iterative scan.
+        for stmt in hnsw_config_sql(ef_search=config.HNSW_EF_SEARCH,
+                                    iterative_scan=True):
+            cur.execute(stmt)
+
+        cur.execute(
+            "SELECT chunk_uuid::text FROM chunks "
+            "WHERE arxiv_id = ANY(%s) AND chunk_embedding IS NOT NULL "
+            f"ORDER BY chunk_embedding <=> %s::{config.EMBEDDING_PGVECTOR_TYPE} "
+            "LIMIT %s",
+            (arxiv_ids, vector_literal(vec), candidate_chunks),
+        )
+
+        # chunk_uuids are already in ANN order (nearest first).
+        return [r[0] for r in cur.fetchall()]
 
 
 def fetch_chunks(conn: Any, chunk_ids: Sequence[str]) -> list[dict[str, Any]]:
@@ -343,16 +375,23 @@ def fetch_chunks(conn: Any, chunk_ids: Sequence[str]) -> list[dict[str, Any]]:
     token_count FROM chunks WHERE chunk_uuid = ANY(%s::uuid[])``; map with
     :func:`row_to_dict` (``chunk_uuid`` returned as ``str``). Empty input -> ``[]``.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement fetch_chunks — SELECT CHUNK_COLUMNS (chunk_uuid::text) "
-        "WHERE chunk_uuid = ANY(%s::uuid[]), map rows via row_to_dict."
-    )
+    if not chunk_ids:
+        return []
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT chunk_uuid::text, arxiv_id, section_type, section_order, "
+            "chunk_text, token_count "
+            "FROM chunks WHERE chunk_uuid = ANY(%s::uuid[])",
+            (list(chunk_ids),),
+        )
+        return [row_to_dict(CHUNK_COLUMNS, row) for row in cur.fetchall()]
 
 
 def rerank_chunks(
     conn: Any,
     chunk_ids: Sequence[str],
-    buckets: Mapping[str, str] | str,
+    buckets: QueryBuckets,
     reranker: Reranker,
     top_chunks: int = config.RETRIEVAL_C_TOP,
     batch_size: int = config.RERANK_BATCH_SIZE,
@@ -375,8 +414,45 @@ def rerank_chunks(
     the orchestrator ``emit()``s. ``assets`` stays ``{}`` until ``tools/assets.py``
     lands.
     """
-    raise NotImplementedError(
-        "M5 scaffold: implement rerank_chunks — fetch, re-order, score, keep top-c, "
-        "then hydrate chunks (+asset_refs=[]) and the papers map "
-        "(year via year_from_arxiv_id); return {chunks, papers, assets:{}}."
-    )
+    rows = fetch_chunks(conn, chunk_ids)
+
+    # Re-order to the input (ANN) order so a tie keeps the index's ranking.
+    order_map = {chunk_uuid: index for index, chunk_uuid in enumerate(chunk_ids)}
+    sorted_rows = sorted(rows, key=lambda x: order_map.get(x["chunk_uuid"], float("inf")))
+
+    query = format_query(buckets)
+    texts = [row["chunk_text"] or "" for row in sorted_rows]
+
+    scores = reranker.score(query, texts, batch_size)
+
+    top_rows = [row for row, _ in top_by_score(sorted_rows, scores, top_chunks)]
+
+    # §4i payload: chunk_text keeps the visible labels; asset_refs is filled by
+    # the assets follow-up (tools/assets.py), so it stays [] for now.
+    chunks = [
+        {
+            "chunk_uuid": row["chunk_uuid"],
+            "arxiv_id": row["arxiv_id"],
+            "section_type": row["section_type"],
+            "section_order": row["section_order"],
+            "chunk_text": row["chunk_text"],
+            "token_count": row["token_count"],
+            "asset_refs": [],
+        }
+        for row in top_rows
+    ]
+
+    # Papers map: metadata for every paper the kept chunks came from, so the RLM
+    # can attribute chunks without another fetch. year comes from the id prefix.
+    arxiv_ids = list(dict.fromkeys(row["arxiv_id"] for row in top_rows))
+    papers = {
+        paper["arxiv_id"]: {
+            "title": paper["title"],
+            "authors": paper["authors"],
+            "year": year_from_arxiv_id(paper["arxiv_id"]),
+            "abstract": paper["abstract"],
+        }
+        for paper in fetch_papers(conn, arxiv_ids)
+    }
+
+    return {"chunks": chunks, "papers": papers, "assets": {}}

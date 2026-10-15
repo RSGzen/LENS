@@ -40,6 +40,8 @@ DEFAULT_QUERY = (
 def main() -> None:
     setup_file_logging("lens.sample_query", "sample_query")
 
+    # A raw string is a valid query input; the funnel also accepts the M6
+    # segmentation dict, e.g. {"objectives": ["..."], "problems": ["..."]}.
     query = " ".join(sys.argv[1:]).strip() or DEFAULT_QUERY
     print(f"query: {query!r}")
     print(

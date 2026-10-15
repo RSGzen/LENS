@@ -75,8 +75,14 @@ class Reranker:
         a plain ``list[float]`` in the **same order** as ``texts``. A blank
         ``texts`` -> ``[]`` (do **not** call the model).
         """
-        raise NotImplementedError(
-            "M5 scaffold: implement Reranker.score — build (query, text) pairs, "
-            "call self.model.predict(pairs, batch_size=batch_size), return a "
-            "list[float] in the input order ([] for empty texts)."
-        )
+        if not texts:
+            return []
+
+        # predict() scores one (query, text) pair per element, in the given
+        # order. Wrap each result so the return is a plain list[float], not the
+        # numpy array predict() hands back.
+        pairs = [(query, text) for text in texts]
+
+        scores = self.model.predict(pairs, batch_size=batch_size)
+
+        return [float(score) for score in scores]

@@ -152,10 +152,6 @@ HNSW_EF_SEARCH = int(os.environ.get("LENS_HNSW_EF_SEARCH", "40"))
 RERANKER_MODEL_ID = os.environ.get("LENS_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 RERANK_BATCH_SIZE = int(os.environ.get("LENS_RERANK_BATCH", "32"))
 
-# The 4 JEV segmentation buckets, in the order their clause texts are
-# concatenated into the single query string to embed (M6 D-02; §2 stage 9).
-QUERY_BUCKET_ORDER = ("problem", "objective", "constraints", "requirements")
-
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"

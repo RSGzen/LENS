@@ -36,8 +36,10 @@ class RerankerTest(unittest.TestCase):
 
         scores = rr.score("why x", ["a", "b", "c"], batch_size=16)
 
-        self.assertEqual(scores, [0.9, 0.1, 0.5])
-        self.assertIsInstance(scores[0], float)
+        self.assertIsInstance(scores, list)
+        self.assertTrue(all(isinstance(s, float) for s in scores))
+        for got, want in zip(scores, [0.9, 0.1, 0.5]):
+            self.assertAlmostEqual(got, want, places=6)
         self.assertEqual(
             model.calls[0]["pairs"],
             [("why x", "a"), ("why x", "b"), ("why x", "c")],

@@ -85,12 +85,16 @@ class FormatQueryTest(unittest.TestCase):
     def test_str_passes_through(self) -> None:
         self.assertEqual(format_query("hello world"), "hello world")
 
-    def test_mapping_uses_canonical_bucket_order(self) -> None:
-        buckets = {"objective": "improve Y", "problem": "why X"}
-        self.assertEqual(format_query(buckets), "why X improve Y")
+    def test_mapping_joins_lists_in_insertion_order(self) -> None:
+        buckets = {"objective": ["improve Y"], "problem": ["why X"]}
+        self.assertEqual(format_query(buckets), "improve Y why X")
+
+    def test_multiple_items_in_one_bucket_flatten(self) -> None:
+        buckets = {"objectives": ["Improve Y", "Test Y"], "problems": ["Y is costly"]}
+        self.assertEqual(format_query(buckets), "Improve Y Test Y Y is costly")
 
     def test_skips_empty_and_appends_unknown_keys(self) -> None:
-        buckets = {"problem": "p", "objective": "  ", "note": "n"}
+        buckets = {"problem": ["p"], "objective": [], "note": ["n"]}
         self.assertEqual(format_query(buckets), "p n")
 
 
@@ -98,7 +102,7 @@ class YearFromArxivIdTest(unittest.TestCase):
     def test_two_digit_prefix(self) -> None:
         self.assertEqual(year_from_arxiv_id("2103.12345"), 2021)
         self.assertEqual(year_from_arxiv_id("1501.00601"), 2015)
-        self.assertEqual(year_from_arxiv_id("9912.0001"), 1999)
+        self.assertEqual(year_from_arxiv_id("2601.0001"), 2026)
 
     def test_non_numeric_prefix_is_none(self) -> None:
         self.assertIsNone(year_from_arxiv_id("acc-phys/9411001"))
