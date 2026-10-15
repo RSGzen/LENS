@@ -116,6 +116,24 @@ class NormalizeBucketsTest(unittest.TestCase):
     def test_ignores_unknown_keys(self) -> None:
         self.assertNotIn("note", normalize_buckets({"note": ["x"]}))
 
+    def test_drops_duplicate_clauses_across_buckets(self) -> None:
+        # Same clause (case-/space-insensitive) in two buckets -> kept once, in
+        # the first bucket by BUCKET_ORDER (objectives before problems).
+        out = normalize_buckets(
+            {
+                "objectives": ["Improve Y"],
+                "problems": ["improve   y", "why X"],
+                "constraints": ["Improve Y"],
+            }
+        )
+        self.assertEqual(out["objectives"], ["Improve Y"])
+        self.assertEqual(out["problems"], ["why X"])
+        self.assertEqual(out["constraints"], [])
+
+    def test_drops_duplicate_clauses_within_a_bucket(self) -> None:
+        out = normalize_buckets({"requirements": ["budget", "Budget", "budget "]})
+        self.assertEqual(out["requirements"], ["budget"])
+
 
 class SegmentQueryTest(unittest.TestCase):
     def setUp(self) -> None:

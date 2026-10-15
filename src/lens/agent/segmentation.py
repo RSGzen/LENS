@@ -46,8 +46,9 @@ from lens.observability.trajectory import TraceCtx
 # the clause order of the embedded query.
 BUCKET_ORDER = ("objectives", "problems", "constraints", "requirements")
 
-# System prompt: fixes the 4 buckets and forbids rewriting, so the embedded query
-# stays the user's own wording (LOG-48: plain clause join, no LLM rewriting).
+# System prompt: fixes the 4 buckets, forbids rewriting (so the embedded query
+# stays the user's own wording -- LOG-48: plain clause join, no LLM rewriting),
+# and forbids repeats / nesting (one bucket per clause -- B-lite, LOG-53).
 SEGMENTATION_SYSTEM_PROMPT = (
     "You segment a research query into four buckets for literature retrieval.\n"
     "Return ONLY a JSON object with exactly these keys, each an array of short "
@@ -56,8 +57,10 @@ SEGMENTATION_SYSTEM_PROMPT = (
     "  problems     - the problem, phenomenon, or pain point the query is about.\n"
     "  constraints  - constraints and limitations (scope, budget, method, time).\n"
     "  requirements - special requirements (must-haves, formats, evidence types).\n"
-    "Preserve the user's own wording; do not rewrite, expand, or invent clauses. "
-    "A bucket with no matching clause is an empty array."
+    "Assign each clause to exactly one bucket - never repeat a clause or put the "
+    "same wording in two buckets, and do not restate a shorter phrase already "
+    "covered by a longer clause. Preserve the user's own wording; do not rewrite, "
+    "expand, or invent clauses. A bucket with no matching clause is an empty array."
 )
 
 # Strict JSON-schema response_format (the ``sub`` role supports response_format).
@@ -105,7 +108,8 @@ def parse_segmentation_json(text: str) -> dict[str, Any]:
     present, then ``json.loads``. Raise :class:`ValueError` on unparseable text
     (F-02: the caller decides whether to retry).
     """
-    # Find the first { ... } block
+    # Extract the JSON object: from the first "{" to the last "}" (greedy, so a
+    # surrounding ```json fence or stray text is ignored).
     match = re.search(r'(\{.*\})', text, re.DOTALL)
 
     try:
@@ -127,21 +131,42 @@ def normalize_buckets(raw: Mapping[str, Any]) -> dict[str, list[str]]:
     - A missing or ``None`` bucket -> ``[]``.
     - A scalar value -> a single-element list.
     - Strip each clause; drop empty / whitespace-only clauses.
+    - **Drop duplicate clauses across all buckets**, compared case-insensitively
+      on whitespace-normalized text, keeping the first occurrence in
+      :data:`BUCKET_ORDER`. The join is global (LOG-48), so a repeated clause
+      would otherwise double-weight that phrase in the embedded query.
     - Ignore keys outside the four buckets.
     """
-    query_buckets: dict[str, list[str]] = {name: [] for name in BUCKET_ORDER}
-
+    # Match raw keys case-/whitespace-insensitively to the 4 buckets.
+    by_bucket: dict[str, Any] = {}
     for key, value in raw.items():
         cleaned_key = "".join(key.split()).lower()
+        if cleaned_key in BUCKET_ORDER:
+            by_bucket[cleaned_key] = value
 
-        # Skip unknown keys and empty / None buckets (they stay []).
-        if cleaned_key not in query_buckets or not value:
+    query_buckets: dict[str, list[str]] = {name: [] for name in BUCKET_ORDER}
+    seen: set[str] = set()
+
+    # Iterate in BUCKET_ORDER (not raw order) so the "first occurrence kept" is
+    # deterministic: objectives -> problems -> constraints -> requirements.
+    for name in BUCKET_ORDER:
+        value = by_bucket.get(name)
+        if not value:
             continue
 
         values = [value] if isinstance(value, str) else value
-        query_buckets[cleaned_key] = [str(v).strip() for v in values if str(v).strip()]
+        for item in values:
+            clause = str(item).strip()
+            if not clause:
+                continue
 
-    # dict preserves construction order, so query_buckets is already in BUCKET_ORDER.
+            dedupe_key = " ".join(clause.split()).lower()
+            if dedupe_key in seen:
+                continue
+
+            seen.add(dedupe_key)
+            query_buckets[name].append(clause)
+
     return query_buckets
 
 
