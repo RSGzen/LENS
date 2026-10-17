@@ -183,6 +183,11 @@ class GraphTest(unittest.TestCase):
         self.assertEqual(summary["n_nodes"], 3)
         self.assertEqual(summary["n_edges"], 3)
         self.assertEqual(summary["entity_types"]["Method"], 2)
+        # Relations are counted off the edge attribute ``relation`` (not a typo'd
+        # ``relations``); this guards the zero-count regression seen in the probe.
+        self.assertEqual(summary["relations"]["evaluated_on"], 1)
+        self.assertEqual(summary["relations"]["outperforms"], 1)
+        self.assertEqual(summary["relations"]["uses"], 1)
         self.assertIn("top_entities", summary)
 
     def test_neighbors_out_and_both(self) -> None:

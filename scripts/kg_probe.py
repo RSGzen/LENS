@@ -69,7 +69,7 @@ def main() -> None:
         print(f"sample: {len(chunk_ids)} chunks over {args.papers} papers")
 
         t0 = time.perf_counter()
-        result = build_kg(conn, chunk_ids, extractor)
+        result = build_kg(conn, chunk_ids, extractor, use_cache=False)
         elapsed = time.perf_counter() - t0
 
     stats = result["stats"]

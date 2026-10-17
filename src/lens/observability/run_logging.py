@@ -40,6 +40,14 @@ class StreamLogger:
         self._level = level
         self._buffer = ""
         self._busy = False
+        self.encoding = "utf-8"
+
+    def isatty(self) -> bool:
+        """Not a terminal; third-party libs (e.g. transformers) probe this."""
+        return False
+
+    def writable(self) -> bool:
+        return True
 
     def write(self, message: str) -> int:
         if self._busy:

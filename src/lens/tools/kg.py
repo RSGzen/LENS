@@ -290,7 +290,7 @@ def kg_index_summary(graph: nx.MultiDiGraph) -> dict[str, Any]:
     the graph itself. Graph topology lives **here**, not in ``build_kg``'s stats.
     """
     relations_dict = {}
-    target_attr = "relations"
+    target_attr = "relation"
 
     for relation in list(RELATION_SCHEMA.keys()):
         count = sum(

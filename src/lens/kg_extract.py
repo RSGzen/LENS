@@ -177,19 +177,49 @@ class GlinerExtractor:
         Returns ``GLiNER.from_pretrained(self.ner_model_id)``. The import stays
         inside this method so importing :mod:`lens.kg_extract` never loads torch.
         """
+        import torch
         from gliner import GLiNER
 
-        return GLiNER.from_pretrained(self.ner_model_id)
+        map_location = "cuda" if torch.cuda.is_available() else "cpu"
+        return GLiNER.from_pretrained(self.ner_model_id, map_location=map_location)
 
     def _load_rel(self) -> Any:
         """Build the real ``GLiREL`` (heavy import kept inside).
 
-        Returns ``GLiREL.from_pretrained(self.rel_model_id)``. The import stays
-        inside this method so importing :mod:`lens.kg_extract` never loads torch.
+        Returns a loaded ``GLiREL``. The import stays inside this method so
+        importing :mod:`lens.kg_extract` never loads torch.
+
+        Compatibility shim: ``glirel==1.2.1`` predates ``huggingface_hub>=1.0``,
+        which (a) no longer passes ``proxies`` / ``resume_download`` to
+        ``_from_pretrained`` and (b) removed both kwargs from ``hf_hub_download``.
+        Call ``_from_pretrained`` with the required kwargs ourselves and wrap
+        glirel's module-level ``hf_hub_download`` so the removed kwargs are dropped.
         """
+        import torch
+        import glirel.model as glirel_model
         from glirel import GLiREL
 
-        return GLiREL.from_pretrained(self.rel_model_id)
+        if not getattr(glirel_model.hf_hub_download, "_lens_compat", False):
+            original_download = glirel_model.hf_hub_download
+
+            def _compat_hf_hub_download(*args, proxies=None, resume_download=None, **kwargs):
+                return original_download(*args, **kwargs)
+
+            _compat_hf_hub_download._lens_compat = True
+            glirel_model.hf_hub_download = _compat_hf_hub_download
+
+        map_location = "cuda" if torch.cuda.is_available() else "cpu"
+        return GLiREL._from_pretrained(
+            model_id=self.rel_model_id,
+            revision=None,
+            cache_dir=None,
+            force_download=False,
+            proxies=None,
+            resume_download=False,
+            local_files_only=False,
+            token=None,
+            map_location=map_location,
+        )
 
     def map_entity_token_indices(
         self,
