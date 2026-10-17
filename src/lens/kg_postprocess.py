@@ -38,6 +38,7 @@ Directionality
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
@@ -61,6 +62,11 @@ def _fold(text: str) -> str:
     """Case-/whitespace-insensitive entity key (display form is preserved elsewhere)."""
     normalized = unicodedata.normalize("NFC", text)
     return " ".join(normalized.split()).casefold()
+
+
+def _compact(text: str) -> str:
+    """Alphanumeric-only key: ``SQuAD 2.0`` / ``SQuAD2.0`` -> ``squad20``."""
+    return re.sub(r"[^a-z0-9]", "", _fold(text))
 
 
 def _score(triple: Triple) -> float:
@@ -92,13 +98,19 @@ def with_soft_defaults(triples: list[Triple]) -> list[Triple]:
 
 # ------------------------------------------------------------------ gazetteer
 def load_gazetteer(path: str | Path) -> dict[str, dict[str, Any]]:
-    """Load a gazetteer JSON (``{"entries": {name: {...}}}``) keyed by folded name."""
+    """Load a gazetteer JSON, keyed by both **folded** and **compact** names."""
     gazetteer_path = Path(path)
     if not gazetteer_path.is_file():
         return {}
     payload = json.loads(gazetteer_path.read_text(encoding="utf-8"))
     entries = payload.get("entries", payload)
-    return {_fold(name): entry for name, entry in entries.items() if isinstance(entry, dict)}
+    result: dict[str, dict[str, Any]] = {}
+    for name, entry in entries.items():
+        if not isinstance(entry, dict):
+            continue
+        result[_fold(name)] = entry
+        result.setdefault(_compact(name), entry)
+    return result
 
 
 def apply_gazetteer(
@@ -109,7 +121,7 @@ def apply_gazetteer(
         return triples
     for triple in triples:
         for side in ("head", "tail"):
-            entry = gazetteer.get(_fold(triple[side]))
+            entry = gazetteer.get(_fold(triple[side])) or gazetteer.get(_compact(triple[side]))
             if entry and entry.get("type"):
                 _set_type(triple, side, entry["type"], "gazetteer")
     return triples

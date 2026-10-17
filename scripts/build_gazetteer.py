@@ -1,14 +1,16 @@
 r"""Build a corpus-only dataset/metric gazetteer from cue patterns.
 
-Reads a deterministic sample of chunks (Experiment / Result / Methodology), extracts
-candidate Dataset and Metric names from **corpus cue patterns**, and writes a JSON
-prior consumed by ``lens.kg_postprocess.apply_gazetteer``.
+Streams a deterministic sample of chunks (Experiment / Result / Methodology), extracts
+candidate Dataset/Metric names from **corpus cue patterns**, and writes a JSON prior
+consumed by ``lens.kg_postprocess.apply_gazetteer``. No external list, no LLM, no model.
 
-No external list, no LLM, no model. Deterministic; stdout is mirrored to a timestamped
-log under ``config.LENS_LOGS_ROOT_PATH``.
+Coverage levers (all corpus-only):
+- evaluation contexts now capture **lists** ("evaluated on X, Y and Z");
+- suffix cues ("X dataset/corpus/benchmark/test set");
+- a wider metric vocabulary.
 
 Run:
-  .\.venv\Scripts\python.exe scripts\build_gazetteer.py --limit 20000 --min-count 3
+  .\.venv\Scripts\python.exe scripts\build_gazetteer.py --limit 500000 --min-count 3
 """
 
 from __future__ import annotations
@@ -25,21 +27,27 @@ from lens import config
 from lens.db.connect import connect
 from lens.observability.run_logging import setup_file_logging
 
-SECTION_TYPES = ("Experiment", "Result/Discussion", "Methodology")
+DEFAULT_SECTION_TYPES = ("Experiment", "Result/Discussion", "Methodology")
 
 # A capitalised phrase of 1-5 words (keeps hyphenated / dotted names).
 _NAME = r"[A-Z][A-Za-z0-9\-\+\.]*(?:\s+[A-Z][A-Za-z0-9\-\+\.]*){0,4}"
+_NAME_RE = re.compile(_NAME)
 
-DATASET_CUES = [
-    re.compile(
-        rf"(?:evaluat(?:e|ed|ion)|test(?:ed|ing)?|benchmark(?:ed|ing)?|"
-        rf"experiment(?:s|ed|ing)?)\s+(?:on|using|with)\s+(?:the\s+)?({_NAME})"
-    ),
-    re.compile(rf"({_NAME})\s+(?:dataset|corpus|benchmark)\b"),
-]
+# "evaluated (the model) on X, Y and Z" -> capture the tail after the cue.
+EVAL_CONTEXT = re.compile(
+    r"(?:evaluat\w*|test\w*|benchmark\w*|experiment\w*)[^.;\n]{0,60}?"
+    r"\s+(?:on|using|with)\s+(?:the\s+)?([^.;\n]{2,180})",
+    re.IGNORECASE,
+)
+SUFFIX_CUE = re.compile(rf"({_NAME})\s+(?:dataset|corpus|benchmark|test set|testbed)\b")
+USE_SUFFIX = re.compile(
+    rf"(?:use|using|adopt|adopting)\s+(?:the\s+)?({_NAME})\s+(?:dataset|corpus|benchmark)\b",
+    re.IGNORECASE,
+)
 METRIC_RE = re.compile(
-    r"\b(F1(?:-score)?|EM|Exact Match|BLEU(?:-\d)?|ROUGE(?:-[Ll])?|"
-    r"nDCG(?:@\d+)?|MRR|MAP|accuracy|precision|recall)\b"
+    r"\b(F1(?:-score)?|EM|Exact Match|BLEU(?:-\d)?|ROUGE(?:-[Ll])?|METEOR|"
+    r"BERTScore|nDCG(?:@\d+)?|MRR|MAP|AUC|AUROC|RMSE|MAE|accuracy|precision|"
+    r"recall|pass@\d+|perplexity)\b"
 )
 
 STOPWORDS = {
@@ -61,9 +69,7 @@ def _keep(name: str) -> bool:
         return False
     if name.casefold() in STOPWORDS:
         return False
-    if not any(ch.isalpha() for ch in name):
-        return False
-    return True
+    return any(ch.isalpha() for ch in name)
 
 
 def _confidence(count: int) -> float:
@@ -74,55 +80,72 @@ def _confidence(count: int) -> float:
     return 0.7
 
 
-def _sample_chunks(conn, limit: int) -> list[tuple[str, str]]:
+def _names(text: str) -> tuple[list[str], list[str]]:
+    """Return (dataset candidates, metric candidates) for one chunk."""
+    datasets: list[str] = []
+    metrics: list[str] = []
+
+    for match in EVAL_CONTEXT.finditer(text):
+        # The tail may be a list: "SQuAD, HotpotQA and MuSiQue".
+        datasets.extend(_NAME_RE.findall(match.group(1)))
+    for pattern in (SUFFIX_CUE, USE_SUFFIX):
+        datasets.extend(match.group(1) for match in pattern.finditer(text))
+    metrics.extend(match.group(1) for match in METRIC_RE.finditer(text))
+
+    return ([n for n in datasets if _keep(_clean(n))], [n for n in metrics if _keep(_clean(n))])
+
+
+def _iter_chunks(conn, limit: int, section_types: tuple[str, ...], batch_size: int):
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT chunk_text, section_type FROM chunks "
-            "WHERE section_type = ANY(%s) "
+            "SELECT chunk_text FROM chunks WHERE section_type = ANY(%s) "
             "ORDER BY chunk_uuid LIMIT %s",
-            (list(SECTION_TYPES), limit),
+            (list(section_types), limit),
         )
-        return cur.fetchall()
+        while True:
+            rows = cur.fetchmany(batch_size)
+            if not rows:
+                break
+            for (text,) in rows:
+                yield text or ""
 
 
 def main() -> None:
     setup_file_logging("lens.build_gazetteer", "build_gazetteer")
 
     parser = argparse.ArgumentParser(description="Corpus-only KG gazetteer builder")
-    parser.add_argument("--limit", type=int, default=20000)
+    parser.add_argument("--limit", type=int, default=100000)
     parser.add_argument("--min-count", type=int, default=3)
+    parser.add_argument("--batch-size", type=int, default=5000)
+    parser.add_argument("--sections", default=",".join(DEFAULT_SECTION_TYPES),
+                        help="comma-separated section_type filter")
     parser.add_argument("--out", default=config.KG_GAZETTEER_PATH)
     args = parser.parse_args()
+    section_types = tuple(s.strip() for s in args.sections.split(",") if s.strip())
 
-    print(f"gazetteer: sample={args.limit} chunks from {SECTION_TYPES}")
+    print(f"gazetteer: sample={args.limit} chunks from {section_types}")
 
     t0 = time.perf_counter()
     counts: Counter[tuple[str, str]] = Counter()
     displays: dict[str, str] = {}
+    seen_chunks = 0
 
     with connect(readonly=True) as conn:
-        rows = _sample_chunks(conn, args.limit)
-
-    for chunk_text, _section in rows:
-        for pattern in DATASET_CUES:
-            for match in pattern.finditer(chunk_text or ""):
-                name = _clean(match.group(1))
-                if _keep(name):
-                    key = name.casefold()
-                    counts[(key, "Dataset")] += 1
-                    displays.setdefault(key, name)
-        for match in METRIC_RE.finditer(chunk_text or ""):
-            name = _clean(match.group(1))
-            if _keep(name):
-                key = name.casefold()
-                counts[(key, "Metric")] += 1
-                displays.setdefault(key, name)
+        for text in _iter_chunks(conn, args.limit, section_types, args.batch_size):
+            seen_chunks += 1
+            datasets, metrics = _names(text)
+            for name, kind in [(n, "Dataset") for n in datasets] + [(m, "Metric") for m in metrics]:
+                cleaned = _clean(name)
+                if not _keep(cleaned):
+                    continue
+                key = cleaned.casefold()
+                counts[(key, kind)] += 1
+                displays.setdefault(key, cleaned)
 
     entries: dict[str, dict] = {}
     for (key, kind), count in counts.items():
         if count < args.min_count:
             continue
-        # Keep the most frequent kind for a name seen under both cues.
         current = entries.get(key)
         if current and current["count"] >= count:
             continue
@@ -138,7 +161,7 @@ def main() -> None:
         "version": 1,
         "source": "corpus_patterns",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "sample": {"chunks": len(rows), "section_types": list(SECTION_TYPES)},
+        "sample": {"chunks": seen_chunks, "section_types": list(section_types)},
         "min_count": args.min_count,
         "entries": entries,
     }
@@ -151,8 +174,8 @@ def main() -> None:
     by_type = Counter(entry["type"] for entry in entries.values())
     print(
         f"gazetteer: {len(entries)} entries ({dict(by_type)}) "
-        f"from {len(rows)} chunks in {elapsed:.1f}s "
-        f"({len(rows) / elapsed:.1f} chunks/s)"
+        f"from {seen_chunks} chunks in {elapsed:.1f}s "
+        f"({seen_chunks / elapsed:.1f} chunks/s)"
     )
     print(f"wrote {out_path}")
 
