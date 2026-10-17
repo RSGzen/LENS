@@ -58,6 +58,7 @@ from lens.kg_extract import (
     KGExtractor,
 )
 from lens.kg_postprocess import load_gazetteer, postprocess as kg_postprocess
+from lens.kg_verify import filter_spans, resolve_coref
 from lens.tools.retrieval import fetch_chunks
 
 # A triple is a plain dict (same shape end to end so it round-trips through JSON):
@@ -249,6 +250,17 @@ def build_graph(triples: Sequence[Triple]) -> nx.MultiDiGraph:
             chunk_uuid=triple["chunk_uuid"],
             arxiv_id=triple["arxiv_id"],
             section_type=triple["section_type"],
+            head_type=triple["head_type"],
+            tail_type=triple["tail_type"],
+            head_type_source=triple.get("head_type_source", "model"),
+            tail_type_source=triple.get("tail_type_source", "model"),
+            head_type_confidence=triple.get("head_type_confidence", 0.5),
+            tail_type_confidence=triple.get("tail_type_confidence", 0.5),
+            direction_verified=triple.get("direction_verified"),
+            direction_confidence=triple.get("direction_confidence"),
+            direction_source=triple.get("direction_source"),
+            direction_margin=triple.get("direction_margin"),
+            direction_reasons=triple.get("direction_reasons"),
         )
 
     return graph
@@ -331,18 +343,33 @@ def create_triple_instance(graph: nx.MultiDiGraph, u: str, v: str, data: dict[st
     """Rebuild one triple dict from an edge, using **display** names (not keys)."""
     triple: Triple = {
         "head": graph.nodes[u].get("display", u),
-        "head_type": graph.nodes[u].get("type", "Concept"),
-        "head_type_source": graph.nodes[u].get("type_source", "model"),
-        "head_type_confidence": graph.nodes[u].get("type_confidence", 0.5),
+        "head_type": data.get("head_type") or graph.nodes[u].get("type", "Concept"),
+        "head_type_source": data.get("head_type_source")
+        or graph.nodes[u].get("type_source", "model"),
+        "head_type_confidence": (
+            data["head_type_confidence"]
+            if data.get("head_type_confidence") is not None
+            else graph.nodes[u].get("type_confidence", 0.5)
+        ),
         "relation": data.get("relation"),
         "tail": graph.nodes[v].get("display", v),
-        "tail_type": graph.nodes[v].get("type", "Concept"),
-        "tail_type_source": graph.nodes[v].get("type_source", "model"),
-        "tail_type_confidence": graph.nodes[v].get("type_confidence", 0.5),
+        "tail_type": data.get("tail_type") or graph.nodes[v].get("type", "Concept"),
+        "tail_type_source": data.get("tail_type_source")
+        or graph.nodes[v].get("type_source", "model"),
+        "tail_type_confidence": (
+            data["tail_type_confidence"]
+            if data.get("tail_type_confidence") is not None
+            else graph.nodes[v].get("type_confidence", 0.5)
+        ),
         "score": data.get("score"),
         "chunk_uuid": data.get("chunk_uuid"),
         "arxiv_id": data.get("arxiv_id"),
         "section_type": data.get("section_type"),
+        "direction_verified": data.get("direction_verified"),
+        "direction_confidence": data.get("direction_confidence"),
+        "direction_source": data.get("direction_source"),
+        "direction_margin": data.get("direction_margin"),
+        "direction_reasons": data.get("direction_reasons"),
     }
 
     return triple
@@ -392,6 +419,7 @@ def build_kg(
     cache_dir: Any | None = None,
     use_cache: bool = True,
     postprocess: bool = config.KG_POSTPROCESS_ENABLED,
+    verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Build the query-time KG over ``chunk_ids`` (M7 entry point).
 
@@ -411,8 +439,10 @@ def build_kg(
          provenance (``chunk_uuid``, ``arxiv_id``, ``section_type``) to every triple;
          normalize head/tail via :func:`normalize_entity` and the relation via
          :func:`normalize_relation`.
-      5. Optional **post-process** (M7.1: gazetteer + relation-slot typing +
-         directionality) -> ``filter_ontology`` -> ``dedup_triples`` -> ``build_graph``.
+      5. Optional **quality layer** (M7.3): heuristic coref + span filter, then
+         the M7.1 post-process (gazetteer + relation typing + directionality),
+         then the budgeted JEV **direction verifier**; then ``filter_ontology`` ->
+         ``dedup_triples`` -> ``build_graph``.
       6. Serialise (``graph_to_nodelink``) + :func:`kg_index_summary`; cache the
          **whole payload** under ``<cache_dir>/<key>.json`` when ``use_cache``.
 
@@ -422,7 +452,8 @@ def build_kg(
          "summary": {"ontology_version", "n_nodes", "n_edges", "entity_types",
                      "type_sources", "relations", "top_entities"},
          "stats": {"chunks": int, "triples_raw": int, "triples_kept": int,
-                   "cached": bool, "postprocess": bool}}
+                   "cached": bool, "postprocess": bool, "span_filter": bool,
+                   "coref": bool, "verify": <dict|null>}}
 
     ``summary`` owns the graph topology; ``stats`` owns build bookkeeping only, so
     ``n_nodes`` / ``n_edges`` are **not** duplicated here. ``triples_kept`` is the
@@ -446,6 +477,15 @@ def build_kg(
             f"type={config.KG_TYPE_INFERENCE};gaz={len(gazetteer)};"
             f"dir={config.KG_DIRECTIONALITY_ENABLED};cycle={config.KG_CYCLE_BREAK}"
         )
+    verify_fingerprint = (
+        getattr(verifier, "fingerprint", "custom")
+        if verifier is not None and config.KG_VERIFY_ENABLED
+        else "off"
+    )
+    postprocess_fingerprint += (
+        f";span={config.KG_SPAN_FILTER};coref={config.KG_COREF};"
+        f"verify={verify_fingerprint}"
+    )
 
     if not chunk_ids:
         empty = nx.MultiDiGraph()
@@ -464,6 +504,9 @@ def build_kg(
                 "triples_kept": 0,
                 "cached": False,
                 "postprocess": postprocess,
+                "span_filter": config.KG_SPAN_FILTER,
+                "coref": config.KG_COREF,
+                "verify": None,
             },
         }
 
@@ -472,6 +515,9 @@ def build_kg(
     # Re-order to the input (ANN) order.
     by_id = {row["chunk_uuid"]: row for row in chunk_rows}
     reordered_chunk_rows = [by_id[cid] for cid in chunk_ids if cid in by_id]
+    chunk_texts = {
+        row["chunk_uuid"]: row["chunk_text"] for row in reordered_chunk_rows
+    }
 
     key = cache_key(
         chunk_ids,
@@ -515,6 +561,11 @@ def build_kg(
                 }
             )
 
+    if config.KG_COREF:
+        triples_kept = resolve_coref(triples_kept, chunk_texts)
+    if config.KG_SPAN_FILTER:
+        triples_kept = filter_spans(triples_kept)
+
     if postprocess:
         triples_kept = kg_postprocess(
             triples_kept,
@@ -523,6 +574,10 @@ def build_kg(
             directionality=config.KG_DIRECTIONALITY_ENABLED,
             cycle_break=config.KG_CYCLE_BREAK,
         )
+
+    verify_stats = None
+    if verifier is not None and config.KG_VERIFY_ENABLED:
+        triples_kept, verify_stats = verifier.verify(triples_kept, chunk_texts)
 
     triples_kept = dedup_triples(filter_ontology(triples_kept))
     graph = build_graph(triples_kept)
@@ -537,6 +592,9 @@ def build_kg(
             "triples_kept": len(triples_kept),
             "cached": False,
             "postprocess": postprocess,
+            "span_filter": config.KG_SPAN_FILTER,
+            "coref": config.KG_COREF,
+            "verify": verify_stats.as_dict() if verify_stats else None,
         },
     }
 

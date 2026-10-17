@@ -67,8 +67,11 @@ def main() -> None:
     print(f"triples: {len(triples)} (showing {len(shown)})")
     for triple in shown:
         score = triple.get("score") or 0.0
+        direction = triple.get("direction_source") or "-"
+        confidence = triple.get("direction_confidence")
+        dir_tag = f"{direction}:{confidence:.2f}" if confidence is not None else direction
         print(
-            f"  {score:.3f}  ({triple['head_type']}) {triple['head']} "
+            f"  {score:.3f}  dir={dir_tag}  ({triple['head_type']}) {triple['head']} "
             f"--{triple['relation']}--> ({triple['tail_type']}) {triple['tail']} "
             f"[{triple.get('arxiv_id')} {triple.get('section_type')}]"
         )

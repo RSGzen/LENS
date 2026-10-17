@@ -200,8 +200,26 @@ KG_GAZETTEER_ENABLED = os.environ.get("LENS_KG_GAZETTEER", "1").strip() != "0"
 KG_GAZETTEER_PATH = os.environ.get(
     "LENS_KG_GAZETTEER_PATH", r"D:\lens-data\cache\kg\gazetteer_corpus.json"
 )
+# Only trust gazetteer entries above this confidence (count-based: 0.7=<5,
+# 0.8=5-9, 0.9>=10). Prevents low-count false positives (e.g. "spaCy").
+KG_GAZETTEER_MIN_CONFIDENCE = float(
+    os.environ.get("LENS_KG_GAZETTEER_MIN_CONF", "0.8")
+)
 KG_DIRECTIONALITY_ENABLED = os.environ.get("LENS_KG_DIRECTIONALITY", "1").strip() != "0"
 KG_CYCLE_BREAK = os.environ.get("LENS_KG_CYCLE_BREAK", "1").strip() != "0"
+
+# ------------------------------------------------- KG quality (M7.3 / Phase 1.5)
+# The KG is an ablation arm: KG_ENABLED=False removes it from the RLM path.
+KG_ENABLED = os.environ.get("LENS_KG_ENABLED", "1").strip() != "0"
+KG_SPAN_FILTER = os.environ.get("LENS_KG_SPAN_FILTER", "1").strip() != "0"
+KG_COREF = os.environ.get("LENS_KG_COREF", "1").strip() != "0"
+KG_VERIFY_ENABLED = os.environ.get("LENS_KG_VERIFY", "1").strip() != "0"
+# Budgeted JEV direction verification (ambiguous asymmetric triples only).
+KG_VERIFY_BUDGET = int(os.environ.get("LENS_KG_VERIFY_BUDGET", "40"))
+KG_VERIFY_MARGIN = float(os.environ.get("LENS_KG_VERIFY_MARGIN", "0.05"))
+KG_VERIFY_HIGH = float(os.environ.get("LENS_KG_VERIFY_HIGH", "0.7"))
+KG_VERIFY_LOW = float(os.environ.get("LENS_KG_VERIFY_LOW", "0.4"))
+KG_VERIFY_MAX_STATE_CHARS = int(os.environ.get("LENS_KG_VERIFY_MAX_STATE", "1200"))
 
 # Maximum number of entities ranked by degree (in + out) in the KG index summary.
 # A context-budget knob, not a scientific value (the summary is what the RLM sees).

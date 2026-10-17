@@ -46,6 +46,7 @@ from typing import Any
 
 import networkx as nx
 
+from lens import config
 from lens.kg_extract import RELATION_SCHEMA
 
 Triple = dict[str, Any]
@@ -122,8 +123,11 @@ def apply_gazetteer(
     for triple in triples:
         for side in ("head", "tail"):
             entry = gazetteer.get(_fold(triple[side])) or gazetteer.get(_compact(triple[side]))
-            if entry and entry.get("type"):
-                _set_type(triple, side, entry["type"], "gazetteer")
+            if not entry or not entry.get("type"):
+                continue
+            if float(entry.get("confidence", 1.0)) < config.KG_GAZETTEER_MIN_CONFIDENCE:
+                continue
+            _set_type(triple, side, entry["type"], "gazetteer")
     return triples
 
 

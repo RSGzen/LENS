@@ -61,6 +61,9 @@ def main() -> None:
     parser.add_argument("--min-scores", nargs="+", type=float, default=[0.3, 0.5])
     parser.add_argument("--no-postprocess", action="store_true",
                         help="disable the M7.1 post-process (pre/post comparison)")
+    parser.add_argument("--verify", action="store_true",
+                        help="enable budgeted JEV direction verification (live API)")
+    parser.add_argument("--verify-budget", type=int, default=config.KG_VERIFY_BUDGET)
     parser.add_argument("--out-dir", default=config.LENS_LOGS_ROOT_PATH)
     args = parser.parse_args()
     postprocess = not args.no_postprocess
@@ -68,8 +71,25 @@ def main() -> None:
     print(
         f"grid: chunks={args.chunks} ner={args.ner_models} rel={args.rel_model}\n"
         f"      labels={args.labels} min_scores={args.min_scores} "
-        f"postprocess={postprocess}"
+        f"postprocess={postprocess} verify={args.verify} "
+        f"verify_budget={args.verify_budget}"
     )
+
+    verifier = None
+    if args.verify:
+        from lens.clients import LensClient
+        from lens.kg_verify import DirectionVerifier
+        from lens.observability.trajectory import TraceCtx, Trajectory
+
+        run_id = time.strftime("kggrid_%Y%m%d_%H%M%S")
+        trajectory = Trajectory(run_id)
+        client = LensClient(trajectory)
+        trace = TraceCtx(trace_id=run_id, step_idx=0, actor="tool")
+        verifier = DirectionVerifier(
+            lambda state, questions: client.jev(state, questions, trace_ctx=trace),
+            budget=args.verify_budget,
+        )
+        print(f"verify: JEV run={run_id}")
 
     # Load each checkpoint pair once; share the models across label/threshold arms.
     model_cache: dict[tuple[str, str], tuple[object, object]] = {}
@@ -111,6 +131,7 @@ def main() -> None:
                             extractor,
                             use_cache=False,
                             postprocess=postprocess,
+                            verifier=verifier,
                         )
                         elapsed = time.perf_counter() - t0
 
@@ -148,6 +169,7 @@ def main() -> None:
                                 "seconds": elapsed,
                                 "chunks_per_s": stats["timing"]["chunks_per_s"],
                                 "gpu": stats["gpu"],
+                                "verify": stats.get("verify"),
                                 "file": out_path.name,
                             }
                         )
@@ -156,6 +178,7 @@ def main() -> None:
                             f"raw={stats['triples_raw']} kept={stats['triples_kept']} "
                             f"types={summary['entity_types']} rels={fired} "
                             f"sources={summary.get('type_sources')} "
+                            f"verify={stats.get('verify')} "
                             f"t={elapsed:.1f}s ({stats['timing']['chunks_per_s']:.1f} chunks/s) "
                             f"gpu={stats['gpu'].get('device')} "
                             f"peak={stats['gpu'].get('vram_peak_mb')}MB"

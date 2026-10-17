@@ -67,6 +67,14 @@ class GazetteerTest(unittest.TestCase):
         self.assertEqual(out["tail_type"], "Dataset")
         self.assertEqual(out["tail_type_source"], "gazetteer")
 
+    def test_low_confidence_is_ignored(self) -> None:
+        gazetteer = {"squad": {"name": "SQuAD", "type": "Dataset", "confidence": 0.7}}
+        out = apply_gazetteer(
+            [triple("BERT", "Method", "uses", "SQuAD", "Method")], gazetteer
+        )[0]
+        self.assertEqual(out["tail_type"], "Method")
+        self.assertEqual(out.get("tail_type_source", "model"), "model")
+
 
 class DirectionalityTest(unittest.TestCase):
     def test_drop_self_loop(self) -> None:

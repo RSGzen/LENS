@@ -173,6 +173,9 @@ def main() -> None:
     parser.add_argument("--min-score", type=float, default=config.KG_MIN_SCORE)
     parser.add_argument("--no-postprocess", action="store_true",
                         help="disable the M7.1 post-process (pre/post comparison)")
+    parser.add_argument("--verify", action="store_true",
+                        help="enable budgeted JEV direction verification (live API)")
+    parser.add_argument("--verify-budget", type=int, default=config.KG_VERIFY_BUDGET)
     args = parser.parse_args()
     postprocess = not args.no_postprocess
 
@@ -193,6 +196,22 @@ def main() -> None:
         threshold=args.min_score,
     )
 
+    verifier = None
+    if args.verify:
+        from lens.clients import LensClient
+        from lens.kg_verify import DirectionVerifier
+        from lens.observability.trajectory import TraceCtx, Trajectory
+
+        run_id = time.strftime("kgprobe_%Y%m%d_%H%M%S")
+        trajectory = Trajectory(run_id)
+        client = LensClient(trajectory)
+        trace = TraceCtx(trace_id=run_id, step_idx=0, actor="tool")
+        verifier = DirectionVerifier(
+            lambda state, questions: client.jev(state, questions, trace_ctx=trace),
+            budget=args.verify_budget,
+        )
+        print(f"verify: JEV budget={args.verify_budget} run={run_id}")
+
     with connect(readonly=True) as conn:
         chunks_path = Path(args.chunks_file) if args.chunks_file else None
         if chunks_path is not None and chunks_path.is_file():
@@ -210,7 +229,12 @@ def main() -> None:
         _reset_peak_vram()
         t0 = time.perf_counter()
         result = build_kg(
-            conn, chunk_ids, extractor, use_cache=False, postprocess=postprocess
+            conn,
+            chunk_ids,
+            extractor,
+            use_cache=False,
+            postprocess=postprocess,
+            verifier=verifier,
         )
         elapsed = time.perf_counter() - t0
 
@@ -224,6 +248,7 @@ def main() -> None:
     summary = result["summary"]
     print(f"build_kg: {elapsed:.1f}s  kg_id={result['kg_id']}  stats={stats}")
     print(f"timing: {stats.get('timing')} gpu={stats.get('gpu')}")
+    print(f"verify: {stats.get('verify')}")
     print(f"entities by type: {summary['entity_types']}")
     print(f"type sources: {summary.get('type_sources')}")
     print(f"relations: {summary['relations']}")
