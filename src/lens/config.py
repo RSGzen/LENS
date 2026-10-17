@@ -149,7 +149,11 @@ RESUME = os.environ.get("LENS_RESUME", "1").strip().lower() not in {"0", "false"
 RETRIEVAL_K = int(os.environ.get("LENS_RETRIEVAL_K", "100"))         # Stage A candidates
 RETRIEVAL_N = int(os.environ.get("LENS_RETRIEVAL_N", "20"))          # papers after Stage A
 RETRIEVAL_C = int(os.environ.get("LENS_RETRIEVAL_C", "100"))         # Stage B candidates
-RETRIEVAL_C_TOP = int(os.environ.get("LENS_RETRIEVAL_C_TOP", "5"))   # chunks after Stage B
+RETRIEVAL_C_TOP = int(os.environ.get("LENS_RETRIEVAL_C_TOP", "100")) # chunks after Stage B
+# The KG scope is the deep-match candidate set (C); the answer context is top-c.
+# Keep C >= C_TOP so the reranked context is a subset of the KG's chunk set.
+if RETRIEVAL_C < RETRIEVAL_C_TOP:
+    raise ValueError("RETRIEVAL_C must be >= RETRIEVAL_C_TOP")
 
 # HNSW query-time recall/latency knob. `m` / `ef_construction` are build-time
 # (see scripts/build_indexes.py); `ef_search` is set per query. Record all three

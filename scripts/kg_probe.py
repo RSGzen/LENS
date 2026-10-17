@@ -78,7 +78,9 @@ def _random_chunk_ids(conn, papers: int, seed: int) -> list[str]:
     return _chunks_for_papers(conn, arxiv_ids)
 
 
-def _query_chunk_ids(conn, query: str, scope: str) -> list[str]:
+def _query_chunk_ids(
+    conn, query: str, scope: str, retrieval_c: int, retrieval_c_top: int
+) -> list[str]:
     """Run the M5 funnel and return the chunk set for the requested KG scope."""
     from lens.embeddings import Embedder
     from lens.reranking import Reranker
@@ -99,12 +101,16 @@ def _query_chunk_ids(conn, query: str, scope: str) -> list[str]:
     if scope == "papers":
         return _chunks_for_papers(conn, n_ids)
 
-    candidate_chunks = deep_match(conn, n_ids, query, embedder)  # C
+    candidate_chunks = deep_match(
+        conn, n_ids, query, embedder, candidate_chunks=retrieval_c
+    )  # C
     if scope == "C":
         return candidate_chunks
 
-    # scope == "c": the reranked answer-context chunks (production default).
-    hydrated = rerank_chunks(conn, candidate_chunks, query, reranker)
+    # scope == "c": the reranked answer-context chunks.
+    hydrated = rerank_chunks(
+        conn, candidate_chunks, query, reranker, top_chunks=retrieval_c_top
+    )
     return [chunk["chunk_uuid"] for chunk in hydrated["chunks"]]
 
 
@@ -113,7 +119,9 @@ def _sample_chunk_ids(conn, args: argparse.Namespace) -> list[str]:
         return _head_chunk_ids(conn, args.papers)
     if args.sample == "random":
         return _random_chunk_ids(conn, args.papers, args.seed)
-    return _query_chunk_ids(conn, args.query, args.scope)
+    return _query_chunk_ids(
+        conn, args.query, args.scope, args.retrieval_c, args.retrieval_c_top
+    )
 
 
 # ------------------------------------------------------------------ main
@@ -129,6 +137,12 @@ def main() -> None:
                         help="query-arm KG scope (production default: c=5 chunks)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--query", default=DEFAULT_QUERY)
+    parser.add_argument("--retrieval-c", type=int, default=config.RETRIEVAL_C)
+    parser.add_argument("--retrieval-c-top", type=int, default=config.RETRIEVAL_C_TOP)
+    parser.add_argument("--chunks-file", default=None,
+                        help="reuse a saved chunk-id list (skips sampling)")
+    parser.add_argument("--save-chunks", default=None,
+                        help="write the sampled chunk-id list to this JSON path")
     parser.add_argument("--labels", choices=tuple(ENTITY_LABEL_SETS), default="abstract")
     parser.add_argument("--ner-model", default=config.KG_NER_MODEL_ID)
     parser.add_argument("--rel-model", default=config.KG_REL_MODEL_ID)
@@ -138,7 +152,8 @@ def main() -> None:
     print(
         f"probe: sample={args.sample} scope={args.scope} papers={args.papers} "
         f"seed={args.seed} labels={args.labels}\n"
-        f"       ner={args.ner_model} rel={args.rel_model} "
+        f"       C={args.retrieval_c} c={args.retrieval_c_top} "
+        f"ner={args.ner_model} rel={args.rel_model} "
         f"min_score={args.min_score} ontology={config.KG_ONTOLOGY_VERSION}"
     )
     if args.sample == "query":
@@ -152,8 +167,18 @@ def main() -> None:
     )
 
     with connect(readonly=True) as conn:
-        chunk_ids = _sample_chunk_ids(conn, args)
-        print(f"sample: {len(chunk_ids)} chunks")
+        chunks_path = Path(args.chunks_file) if args.chunks_file else None
+        if chunks_path is not None and chunks_path.is_file():
+            chunk_ids = json.loads(chunks_path.read_text(encoding="utf-8"))
+            print(f"reused {len(chunk_ids)} chunks from {chunks_path}")
+        else:
+            chunk_ids = _sample_chunk_ids(conn, args)
+            print(f"sample: {len(chunk_ids)} chunks")
+            if args.save_chunks:
+                saved = Path(args.save_chunks)
+                saved.parent.mkdir(parents=True, exist_ok=True)
+                saved.write_text(json.dumps(chunk_ids), encoding="utf-8")
+                print(f"saved chunks -> {saved}")
 
         t0 = time.perf_counter()
         result = build_kg(conn, chunk_ids, extractor, use_cache=False)
