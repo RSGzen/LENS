@@ -57,6 +57,7 @@ from lens.kg_extract import (
     RELATION_SCHEMA,
     KGExtractor,
 )
+from lens.kg_postprocess import load_gazetteer, postprocess as kg_postprocess
 from lens.tools.retrieval import fetch_chunks
 
 # A triple is a plain dict (same shape end to end so it round-trips through JSON):
@@ -164,21 +165,9 @@ def dedup_triples(triples: Sequence[Triple]) -> list[Triple]:
         if key not in key_check:
             key_check.append(key)
 
-            temp_insert = Triple(
-                {
-                    "head": triple["head"],
-                    "head_type": triple["head_type"],
-                    "relation": triple["relation"],
-                    "tail": triple["tail"],
-                    "tail_type": triple["tail_type"],
-                    "score": triple["score"],
-                    "chunk_uuid": triple["chunk_uuid"],
-                    "arxiv_id": triple["arxiv_id"],
-                    "section_type": triple["section_type"]
-                }
-            )
-
-            normalized_triples.append(temp_insert)
+            # Keep the whole triple so post-process fields (type_source /
+            # type_confidence) survive dedup.
+            normalized_triples.append(dict(triple))
 
     return normalized_triples
 
@@ -219,8 +208,9 @@ def build_graph(triples: Sequence[Triple]) -> nx.MultiDiGraph:
     """Assemble a :class:`networkx.MultiDiGraph` from triples.
 
     Nodes are entities keyed by a **case-folded** canonical key (so ``"BERT"`` and
-    ``"bert"`` merge); each node carries ``type`` (first seen) and ``display`` (the
-    first-seen display string). Edges are directed head -> tail, ``key`` = relation
+    ``"bert"`` merge); each node carries ``type`` / ``display`` (first seen) plus the
+    **soft-type** fields ``type_source`` (``model`` | ``relation`` | ``gazetteer``)
+    and ``type_confidence``. Edges are directed head -> tail, ``key`` = relation
     name, with edge attrs ``relation``, ``score``, ``chunk_uuid``, ``arxiv_id``,
     ``section_type``. ``MultiDiGraph`` because the same pair can hold several
     relations / sources.
@@ -231,26 +221,34 @@ def build_graph(triples: Sequence[Triple]) -> nx.MultiDiGraph:
         key_head = normalize_entity(triple["head"]).casefold()
 
         if key_head not in graph:
-            graph.add_node(key_head, 
-                           type=triple["head_type"],
-                           display=triple["head"])
+            graph.add_node(
+                key_head,
+                type=triple["head_type"],
+                display=triple["head"],
+                type_source=triple.get("head_type_source", "model"),
+                type_confidence=triple.get("head_type_confidence", 0.5),
+            )
 
         key_tail = normalize_entity(triple["tail"]).casefold()
-        
+
         if key_tail not in graph:
-            graph.add_node(key_tail, 
-                           type=triple["tail_type"],
-                           display=triple["tail"])
+            graph.add_node(
+                key_tail,
+                type=triple["tail_type"],
+                display=triple["tail"],
+                type_source=triple.get("tail_type_source", "model"),
+                type_confidence=triple.get("tail_type_confidence", 0.5),
+            )
 
         graph.add_edge(
-            u_for_edge=key_head, 
-            v_for_edge=key_tail, 
+            u_for_edge=key_head,
+            v_for_edge=key_tail,
             key=triple["relation"],
             relation=triple["relation"],
             score=triple["score"],
             chunk_uuid=triple["chunk_uuid"],
             arxiv_id=triple["arxiv_id"],
-            section_type=triple["section_type"]
+            section_type=triple["section_type"],
         )
 
     return graph
@@ -282,6 +280,7 @@ def kg_index_summary(graph: nx.MultiDiGraph) -> dict[str, Any]:
         {"ontology_version": <str>,
          "n_nodes": <int>, "n_edges": <int>,
          "entity_types": {<type>: <count>, ...},
+         "type_sources": {<source>: <count>, ...},
          "relations": {<relation>: <count>, ...},
          "top_entities": [{"entity": <str>, "type": <str>, "degree": <int>}, ...]}
 
@@ -312,12 +311,14 @@ def kg_index_summary(graph: nx.MultiDiGraph) -> dict[str, Any]:
         for n, d in top
     ]
     entity_types = Counter(graph.nodes[n].get("type", "Concept") for n in graph)
+    type_sources = Counter(graph.nodes[n].get("type_source", "model") for n in graph)
 
     summary_dict = {
         "ontology_version": ONTOLOGY_VERSION,
         "n_nodes": graph.number_of_nodes(),
         "n_edges": graph.number_of_edges(),
         "entity_types": dict(entity_types),
+        "type_sources": dict(type_sources),
         "relations": relations_dict,
         "top_entities": top_entities
     }
@@ -331,9 +332,13 @@ def create_triple_instance(graph: nx.MultiDiGraph, u: str, v: str, data: dict[st
     triple: Triple = {
         "head": graph.nodes[u].get("display", u),
         "head_type": graph.nodes[u].get("type", "Concept"),
+        "head_type_source": graph.nodes[u].get("type_source", "model"),
+        "head_type_confidence": graph.nodes[u].get("type_confidence", 0.5),
         "relation": data.get("relation"),
         "tail": graph.nodes[v].get("display", v),
         "tail_type": graph.nodes[v].get("type", "Concept"),
+        "tail_type_source": graph.nodes[v].get("type_source", "model"),
+        "tail_type_confidence": graph.nodes[v].get("type_confidence", 0.5),
         "score": data.get("score"),
         "chunk_uuid": data.get("chunk_uuid"),
         "arxiv_id": data.get("arxiv_id"),
@@ -348,27 +353,27 @@ def cache_key(
     ontology_version: str,
     *,
     extractor_fingerprint: str = "",
+    postprocess_fingerprint: str = "",
 ) -> str:
     """Deterministic cache key for a subgraph (K-06).
 
     The key covers **everything that changes the extracted graph**: the **chunk
     set** (the KG scope — ``c`` vs ``C`` vs all chunks of the top-``n`` papers, which
-    also determines the paper set), the ontology version, and an **extractor
-    fingerprint** (NER/RE checkpoint ids + label set + threshold + window). It is a
-    canonical JSON payload (sorted keys; sorted + de-duplicated ``chunk_ids``)
-    hashed with SHA-256, so the key is order-independent and delimiter-safe.
-    Return a hex digest.
+    also determines the paper set), the ontology version, the **extractor
+    fingerprint** (NER/RE checkpoint ids + label set + threshold + window), and the
+    **post-process fingerprint** (gazetteer + stage toggles). It is a canonical
+    JSON payload (sorted keys; sorted + de-duplicated ``chunk_ids``) hashed with
+    SHA-256, so the key is order-independent and delimiter-safe. Return a hex digest.
 
-    **Caveat.** The fingerprint is supplied by the extractor (``GlinerExtractor.
-    fingerprint``); a custom extractor without one should pass a stable id. Raw
-    extraction *code* changes are not hashed, so bump ``KG_ONTOLOGY_VERSION`` or
-    clear ``<cache_root>/kg`` when you change those.
+    **Caveat.** Raw extraction/post-process *code* changes are not hashed, so bump
+    ``KG_ONTOLOGY_VERSION`` or clear ``<cache_root>/kg`` when you change those.
     """
     payload = json.dumps(
         {
             "chunk_ids": sorted(set(chunk_ids)),
             "ontology_version": ontology_version,
             "extractor_fingerprint": extractor_fingerprint,
+            "postprocess_fingerprint": postprocess_fingerprint,
         },
         sort_keys=True,
         ensure_ascii=False,
@@ -386,6 +391,7 @@ def build_kg(
     ontology_version: str = ONTOLOGY_VERSION,
     cache_dir: Any | None = None,
     use_cache: bool = True,
+    postprocess: bool = config.KG_POSTPROCESS_ENABLED,
 ) -> dict[str, Any]:
     """Build the query-time KG over ``chunk_ids`` (M7 entry point).
 
@@ -405,7 +411,8 @@ def build_kg(
          provenance (``chunk_uuid``, ``arxiv_id``, ``section_type``) to every triple;
          normalize head/tail via :func:`normalize_entity` and the relation via
          :func:`normalize_relation`.
-      5. ``filter_ontology`` -> ``dedup_triples`` -> ``build_graph``.
+      5. Optional **post-process** (M7.1: gazetteer + relation-slot typing +
+         directionality) -> ``filter_ontology`` -> ``dedup_triples`` -> ``build_graph``.
       6. Serialise (``graph_to_nodelink``) + :func:`kg_index_summary`; cache the
          **whole payload** under ``<cache_dir>/<key>.json`` when ``use_cache``.
 
@@ -413,9 +420,9 @@ def build_kg(
 
         {"kg_id": <cache_key>, "graph": <node-link dict>,
          "summary": {"ontology_version", "n_nodes", "n_edges", "entity_types",
-                     "relations", "top_entities"},
+                     "type_sources", "relations", "top_entities"},
          "stats": {"chunks": int, "triples_raw": int, "triples_kept": int,
-                   "cached": bool}}
+                   "cached": bool, "postprocess": bool}}
 
     ``summary`` owns the graph topology; ``stats`` owns build bookkeeping only, so
     ``n_nodes`` / ``n_edges`` are **not** duplicated here. ``triples_kept`` is the
@@ -430,15 +437,34 @@ def build_kg(
     """
     extractor_fingerprint = getattr(extractor, "fingerprint", "")
 
+    gazetteer: dict[str, dict[str, Any]] = {}
+    postprocess_fingerprint = "off"
+    if postprocess:
+        if config.KG_GAZETTEER_ENABLED:
+            gazetteer = load_gazetteer(config.KG_GAZETTEER_PATH)
+        postprocess_fingerprint = (
+            f"type={config.KG_TYPE_INFERENCE};gaz={len(gazetteer)};"
+            f"dir={config.KG_DIRECTIONALITY_ENABLED};cycle={config.KG_CYCLE_BREAK}"
+        )
+
     if not chunk_ids:
         empty = nx.MultiDiGraph()
         return {
             "kg_id": cache_key(
-                [], ontology_version, extractor_fingerprint=extractor_fingerprint
+                [],
+                ontology_version,
+                extractor_fingerprint=extractor_fingerprint,
+                postprocess_fingerprint=postprocess_fingerprint,
             ),
             "graph": graph_to_nodelink(empty),
             "summary": kg_index_summary(empty),
-            "stats": {"chunks": 0, "triples_raw": 0, "triples_kept": 0, "cached": False},
+            "stats": {
+                "chunks": 0,
+                "triples_raw": 0,
+                "triples_kept": 0,
+                "cached": False,
+                "postprocess": postprocess,
+            },
         }
 
     chunk_rows = fetch_chunks(conn, chunk_ids)
@@ -451,6 +477,7 @@ def build_kg(
         chunk_ids,
         ontology_version=ontology_version,
         extractor_fingerprint=extractor_fingerprint,
+        postprocess_fingerprint=postprocess_fingerprint,
     )
 
     cache_path: Path | None = None
@@ -488,6 +515,15 @@ def build_kg(
                 }
             )
 
+    if postprocess:
+        triples_kept = kg_postprocess(
+            triples_kept,
+            gazetteer=gazetteer,
+            type_inference=config.KG_TYPE_INFERENCE,
+            directionality=config.KG_DIRECTIONALITY_ENABLED,
+            cycle_break=config.KG_CYCLE_BREAK,
+        )
+
     triples_kept = dedup_triples(filter_ontology(triples_kept))
     graph = build_graph(triples_kept)
 
@@ -500,6 +536,7 @@ def build_kg(
             "triples_raw": triples_raw,
             "triples_kept": len(triples_kept),
             "cached": False,
+            "postprocess": postprocess,
         },
     }
 

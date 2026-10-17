@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from lens import config
@@ -30,6 +31,12 @@ def _newest_probe() -> Path | None:
 
 
 def main() -> None:
+    # Entity names can contain math symbols (e.g. ∞); Windows consoles are cp1252.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(description="Inspect a saved KG")
     parser.add_argument("path", nargs="?", help="kg_probe_*.json or cache payload")
     parser.add_argument("--limit", type=int, default=50)
@@ -50,6 +57,7 @@ def main() -> None:
     print(f"kg_id: {payload.get('kg_id')}")
     print(f"stats: {payload.get('stats', {})}")
     print(f"entities by type: {summary.get('entity_types')}")
+    print(f"type sources: {summary.get('type_sources')}")
     print(f"relations: {summary.get('relations')}")
     print("top entities:")
     for node in summary.get("top_entities", []):

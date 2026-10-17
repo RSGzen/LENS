@@ -26,6 +26,28 @@ from lens.observability.run_logging import setup_file_logging
 from lens.tools.kg import build_kg
 
 
+def _gpu_stats() -> dict:
+    try:
+        import torch
+    except Exception:
+        return {"device": "unavailable"}
+    if torch.cuda.is_available():
+        return {
+            "device": torch.cuda.get_device_name(0),
+            "vram_peak_mb": round(torch.cuda.max_memory_allocated() / 1e6, 1),
+        }
+    return {"device": "cpu"}
+
+
+def _reset_peak_vram() -> None:
+    try:
+        import torch
+    except Exception:
+        return
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
+
 def main() -> None:
     setup_file_logging("lens.kg_grid", "kg_grid")
 
@@ -37,12 +59,16 @@ def main() -> None:
     parser.add_argument("--labels", nargs="+", choices=tuple(ENTITY_LABEL_SETS),
                         default=list(ENTITY_LABEL_SETS))
     parser.add_argument("--min-scores", nargs="+", type=float, default=[0.3, 0.5])
+    parser.add_argument("--no-postprocess", action="store_true",
+                        help="disable the M7.1 post-process (pre/post comparison)")
     parser.add_argument("--out-dir", default=config.LENS_LOGS_ROOT_PATH)
     args = parser.parse_args()
+    postprocess = not args.no_postprocess
 
     print(
         f"grid: chunks={args.chunks} ner={args.ner_models} rel={args.rel_model}\n"
-        f"      labels={args.labels} min_scores={args.min_scores}"
+        f"      labels={args.labels} min_scores={args.min_scores} "
+        f"postprocess={postprocess}"
     )
 
     # Load each checkpoint pair once; share the models across label/threshold arms.
@@ -77,9 +103,24 @@ def main() -> None:
                             ner_model=ner,
                             rel_model=rel,
                         )
+                        _reset_peak_vram()
                         t0 = time.perf_counter()
-                        result = build_kg(conn, chunk_ids, extractor, use_cache=False)
+                        result = build_kg(
+                            conn,
+                            chunk_ids,
+                            extractor,
+                            use_cache=False,
+                            postprocess=postprocess,
+                        )
                         elapsed = time.perf_counter() - t0
+
+                        result["stats"]["timing"] = {
+                            "overall_s": round(elapsed, 3),
+                            "chunks_per_s": round(len(chunk_ids) / elapsed, 2)
+                            if elapsed
+                            else 0.0,
+                        }
+                        result["stats"]["gpu"] = _gpu_stats()
 
                         tag = (
                             f"{Path(chunk_file).stem}__{Path(ner_id).name}"
@@ -102,8 +143,11 @@ def main() -> None:
                                 "raw": stats["triples_raw"],
                                 "kept": stats["triples_kept"],
                                 "types": summary["entity_types"],
+                                "type_sources": summary.get("type_sources"),
                                 "relations": fired,
                                 "seconds": elapsed,
+                                "chunks_per_s": stats["timing"]["chunks_per_s"],
+                                "gpu": stats["gpu"],
                                 "file": out_path.name,
                             }
                         )
@@ -111,7 +155,10 @@ def main() -> None:
                             f"[{len(rows):02d}] {tag}: chunks={stats['chunks']} "
                             f"raw={stats['triples_raw']} kept={stats['triples_kept']} "
                             f"types={summary['entity_types']} rels={fired} "
-                            f"t={elapsed:.1f}s"
+                            f"sources={summary.get('type_sources')} "
+                            f"t={elapsed:.1f}s ({stats['timing']['chunks_per_s']:.1f} chunks/s) "
+                            f"gpu={stats['gpu'].get('device')} "
+                            f"peak={stats['gpu'].get('vram_peak_mb')}MB"
                         )
 
     print("\n=== summary (kept triples) ===")

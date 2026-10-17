@@ -189,6 +189,20 @@ KG_MIN_SCORE = float(os.environ.get("LENS_KG_MIN_SCORE", "0.5"))
 KG_EXTRACT_MAX_TOKENS = int(os.environ.get("LENS_KG_EXTRACT_MAX_TOKENS", "384"))
 KG_EXTRACT_WINDOW_OVERLAP = int(os.environ.get("LENS_KG_EXTRACT_OVERLAP", "32"))
 
+# ------------------------------------------------- KG post-process (M7.1)
+# Modular post-process applied **before** filter_ontology: relation-slot type
+# inference, a corpus-built gazetteer, and directionality resolution. Types are
+# soft (``type`` + ``type_source`` + ``type_confidence``). Every stage is
+# toggleable/removable; see LOG-68 / LOG-69.
+KG_POSTPROCESS_ENABLED = os.environ.get("LENS_KG_POSTPROCESS", "1").strip() != "0"
+KG_TYPE_INFERENCE = os.environ.get("LENS_KG_TYPE_INFERENCE", "1").strip() != "0"
+KG_GAZETTEER_ENABLED = os.environ.get("LENS_KG_GAZETTEER", "1").strip() != "0"
+KG_GAZETTEER_PATH = os.environ.get(
+    "LENS_KG_GAZETTEER_PATH", r"D:\lens-data\cache\kg\gazetteer_corpus.json"
+)
+KG_DIRECTIONALITY_ENABLED = os.environ.get("LENS_KG_DIRECTIONALITY", "1").strip() != "0"
+KG_CYCLE_BREAK = os.environ.get("LENS_KG_CYCLE_BREAK", "1").strip() != "0"
+
 # Maximum number of entities ranked by degree (in + out) in the KG index summary.
 # A context-budget knob, not a scientific value (the summary is what the RLM sees).
 KG_SUMMARY_TOP_ENTITIES = int(os.environ.get("LENS_KG_SUMMARY_TOP", "20"))

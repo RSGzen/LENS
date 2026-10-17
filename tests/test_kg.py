@@ -235,7 +235,10 @@ class BuildKgTest(unittest.TestCase):
             "text-two": [triple("BERT", "Method", "outperforms", "GPT", "Method")],
         }
         with mock.patch("lens.tools.kg.fetch_chunks", return_value=self._rows()):
-            out = build_kg(None, ["u1", "u2"], FakeExtractor(by_text), use_cache=False)
+            out = build_kg(
+                None, ["u1", "u2"], FakeExtractor(by_text),
+                use_cache=False, postprocess=False,
+            )
 
         self.assertEqual(out["stats"]["triples_raw"], 2)
         self.assertEqual(out["stats"]["triples_kept"], 2)

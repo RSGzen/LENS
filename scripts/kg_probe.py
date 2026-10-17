@@ -46,6 +46,30 @@ DEFAULT_QUERY = (
 )
 
 
+def _gpu_stats() -> dict:
+    """GPU device + VRAM figures for the run log (empty on CPU)."""
+    try:
+        import torch
+    except Exception:
+        return {"device": "unavailable"}
+    if torch.cuda.is_available():
+        return {
+            "device": torch.cuda.get_device_name(0),
+            "vram_allocated_mb": round(torch.cuda.memory_allocated() / 1e6, 1),
+            "vram_peak_mb": round(torch.cuda.max_memory_allocated() / 1e6, 1),
+        }
+    return {"device": "cpu"}
+
+
+def _reset_peak_vram() -> None:
+    try:
+        import torch
+    except Exception:
+        return
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
+
 # ------------------------------------------------------------------ sampling
 def _chunks_for_papers(conn, arxiv_ids: list[str]) -> list[str]:
     """All chunks of ``arxiv_ids`` (deterministic order)."""
@@ -147,11 +171,14 @@ def main() -> None:
     parser.add_argument("--ner-model", default=config.KG_NER_MODEL_ID)
     parser.add_argument("--rel-model", default=config.KG_REL_MODEL_ID)
     parser.add_argument("--min-score", type=float, default=config.KG_MIN_SCORE)
+    parser.add_argument("--no-postprocess", action="store_true",
+                        help="disable the M7.1 post-process (pre/post comparison)")
     args = parser.parse_args()
+    postprocess = not args.no_postprocess
 
     print(
         f"probe: sample={args.sample} scope={args.scope} papers={args.papers} "
-        f"seed={args.seed} labels={args.labels}\n"
+        f"seed={args.seed} labels={args.labels} postprocess={postprocess}\n"
         f"       C={args.retrieval_c} c={args.retrieval_c_top} "
         f"ner={args.ner_model} rel={args.rel_model} "
         f"min_score={args.min_score} ontology={config.KG_ONTOLOGY_VERSION}"
@@ -180,14 +207,25 @@ def main() -> None:
                 saved.write_text(json.dumps(chunk_ids), encoding="utf-8")
                 print(f"saved chunks -> {saved}")
 
+        _reset_peak_vram()
         t0 = time.perf_counter()
-        result = build_kg(conn, chunk_ids, extractor, use_cache=False)
+        result = build_kg(
+            conn, chunk_ids, extractor, use_cache=False, postprocess=postprocess
+        )
         elapsed = time.perf_counter() - t0
+
+        result["stats"]["timing"] = {
+            "overall_s": round(elapsed, 3),
+            "chunks_per_s": round(len(chunk_ids) / elapsed, 2) if elapsed else 0.0,
+        }
+        result["stats"]["gpu"] = _gpu_stats()
 
     stats = result["stats"]
     summary = result["summary"]
     print(f"build_kg: {elapsed:.1f}s  kg_id={result['kg_id']}  stats={stats}")
+    print(f"timing: {stats.get('timing')} gpu={stats.get('gpu')}")
     print(f"entities by type: {summary['entity_types']}")
+    print(f"type sources: {summary.get('type_sources')}")
     print(f"relations: {summary['relations']}")
     print("top entities:")
     for node in summary["top_entities"]:
