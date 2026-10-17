@@ -65,3 +65,18 @@ resolves back to the exact retrieved chunk — LENS citations trace
   extraction (strict JSON schema) if recall is low.
 - **K-02 remainder:** fuzzy entity resolution / confidence merging is a deferred
   sensitivity item; M7 does normalization + exact dedup only.
+
+## Benchmark ambiguity (17 Oct 2026)
+
+A benchmark is a **Dataset that defines a Task** (it holds items/questions scored by metrics), so a benchmark span can legitimately be `Dataset` or `Method` depending on its role:
+
+- as the **tail of `evaluated_on` / `uses`** → `Dataset`;
+- as the **head of `measures` / `outperforms`** (the benchmark/system acting as the method) → `Method`.
+
+**Evaluation policy:** for benchmark-like spans, accept `Dataset | Method`
+(`score_gold.py --benchmark-lenient`).
+
+**Pipeline policy:** type by **relation role**, not one label. A benchmark/task span
+must not be the head of `evaluated_on` / `outperforms` (the *method* is the subject);
+that is a **role/selection filter**, not an NER label change. (Follow-up, not yet
+implemented.)

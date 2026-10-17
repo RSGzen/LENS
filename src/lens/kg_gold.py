@@ -114,6 +114,23 @@ def read_entities_worksheet(path: str | Path) -> list[dict]:
 _DOT_DIGITS = re.compile(r"(?<=\d)\s*\.\s*(?=\d)")
 _PUNCT_TIGHT = re.compile(r"\s+([.,;:!?\)\]\}])")
 _OPEN_TIGHT = re.compile(r"([\(\[\{])\s+")
+_BENCH_SUFFIX = re.compile(r"(?:qa|bench|benchmark|eval|sum|mc|multihop)$", re.IGNORECASE)
+_BENCHMARK_NAMES = {
+    "qasper", "quality", "narrativeqa", "squad", "hotpotqa", "musique",
+    "2wikimultihopqa", "wcep", "booksum", "academiceval", "qmsum", "longbench",
+    "multifieldqa",
+}
+
+
+def is_benchmark_span(text: str) -> bool:
+    """Heuristic: is this span benchmark-like (Dataset or Method are both defensible)?"""
+    folded = " ".join((text or "").split()).casefold()
+    compact = re.sub(r"[^a-z0-9]", "", folded)
+    if compact in _BENCHMARK_NAMES:
+        return True
+    if _BENCH_SUFFIX.search(compact):
+        return True
+    return any(name.replace("-", "") in compact for name in _BENCHMARK_NAMES if len(name) > 4)
 
 
 def clean_surface(text: str) -> str:
@@ -171,18 +188,38 @@ def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def score_triples(rows: Sequence[dict]) -> dict:
-    """Precision of sampled triples; rows are annotated worksheet records."""
+def _type_flags(row: dict, benchmark_lenient: bool) -> tuple[bool, bool]:
+    head_ok = _ok(row["gold_head_type_ok"])
+    tail_ok = _ok(row["gold_tail_type_ok"])
+    if benchmark_lenient:
+        # A benchmark can be a Dataset or a Method; accept either for benchmark-like spans.
+        if not head_ok and is_benchmark_span(row.get("head", "")) and row.get("head_type") in {"Dataset", "Method"}:
+            head_ok = True
+        if not tail_ok and is_benchmark_span(row.get("tail", "")) and row.get("tail_type") in {"Dataset", "Method"}:
+            tail_ok = True
+    return head_ok, tail_ok
+
+
+def score_triples(rows: Sequence[dict], *, benchmark_lenient: bool = False) -> dict:
+    """Precision of sampled triples; strict labels + a benchmark-lenient view."""
     labeled = [r for r in rows if str(r.get("gold_relation_ok", "")).strip() != ""]
     n = len(labeled)
+
+    strict = [(r, *_type_flags(r, False)) for r in labeled]
+    lenient = [(r, *_type_flags(r, True)) for r in labeled]
+
     relation = sum(_ok(r["gold_relation_ok"]) for r in labeled)
-    head = sum(_ok(r["gold_head_type_ok"]) for r in labeled)
-    tail = sum(_ok(r["gold_tail_type_ok"]) for r in labeled)
+    head = sum(head_ok for _r, head_ok, _t in strict)
+    tail = sum(tail_ok for _r, _h, tail_ok in strict)
     triple = sum(
-        _ok(r["gold_relation_ok"])
-        and _ok(r["gold_head_type_ok"])
-        and _ok(r["gold_tail_type_ok"])
-        for r in labeled
+        _ok(r["gold_relation_ok"]) and head_ok and tail_ok
+        for r, head_ok, tail_ok in strict
+    )
+    head_lenient = sum(head_ok for _r, head_ok, _t in lenient)
+    tail_lenient = sum(tail_ok for _r, _h, tail_ok in lenient)
+    triple_lenient = sum(
+        _ok(r["gold_relation_ok"]) and head_ok and tail_ok
+        for r, head_ok, tail_ok in lenient
     )
 
     by_relation: dict[str, list[int]] = defaultdict(lambda: [0, 0])
@@ -194,11 +231,16 @@ def score_triples(rows: Sequence[dict]) -> dict:
 
     return {
         "n": n,
+        "benchmark_lenient": benchmark_lenient,
         "relation_precision": relation / n if n else 0.0,
         "head_type_precision": head / n if n else 0.0,
         "tail_type_precision": tail / n if n else 0.0,
         "triple_precision": triple / n if n else 0.0,
         "triple_precision_ci": wilson_ci(triple, n),
+        "head_type_precision_lenient": head_lenient / n if n else 0.0,
+        "tail_type_precision_lenient": tail_lenient / n if n else 0.0,
+        "triple_precision_lenient": triple_lenient / n if n else 0.0,
+        "triple_precision_lenient_ci": wilson_ci(triple_lenient, n),
         "by_relation": {
             name: {
                 "correct": values[0],

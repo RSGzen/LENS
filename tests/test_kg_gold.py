@@ -7,6 +7,7 @@ import unittest
 from lens.kg_gold import (
     clean_surface,
     format_triple_query,
+    is_benchmark_span,
     parse_gold_entities,
     score_entities,
     score_triples,
@@ -83,6 +84,26 @@ class EntityScoreTest(unittest.TestCase):
         self.assertEqual(report["recall_untyped"], 0.5)
         self.assertEqual(report["recall_typed"], 0.0)
         self.assertAlmostEqual(report["precision_untyped"], 0.5)
+
+
+class BenchmarkLenientTest(unittest.TestCase):
+    def test_is_benchmark_span(self) -> None:
+        for name in ("QASPER", "2WikiMultihopQA", "WCEP", "MultiFieldQA"):
+            self.assertTrue(is_benchmark_span(name), name)
+        self.assertFalse(is_benchmark_span("BERT"))
+
+    def test_lenient_counts_dataset_or_method(self) -> None:
+        rows = [{
+            "relation": "evaluated_on",
+            "head": "QASPER", "head_type": "Method",
+            "tail": "SQuAD", "tail_type": "Dataset",
+            "gold_relation_ok": "y", "gold_head_type_ok": "n",
+            "gold_tail_type_ok": "y",
+        }]
+        strict = score_triples(rows)
+        lenient = score_triples(rows, benchmark_lenient=True)
+        self.assertEqual(strict["triple_precision"], 0.0)
+        self.assertEqual(lenient["triple_precision_lenient"], 1.0)
 
 
 class SurfaceTextTest(unittest.TestCase):

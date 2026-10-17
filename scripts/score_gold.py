@@ -29,11 +29,18 @@ from lens.kg_gold import (
 
 def _print_triples(report: dict) -> None:
     lo, hi = report["triple_precision_ci"]
+    lo2, hi2 = report["triple_precision_lenient_ci"]
     print(f"n={report['n']}")
     print(f"triple precision: {report['triple_precision']:.3f} (95% CI {lo:.3f}-{hi:.3f})")
     print(f"relation precision: {report['relation_precision']:.3f}")
     print(f"head-type precision: {report['head_type_precision']:.3f}")
     print(f"tail-type precision: {report['tail_type_precision']:.3f}")
+    print(
+        f"benchmark-lenient: triple {report['triple_precision_lenient']:.3f} "
+        f"(95% CI {lo2:.3f}-{hi2:.3f}) · head "
+        f"{report['head_type_precision_lenient']:.3f} · tail "
+        f"{report['tail_type_precision_lenient']:.3f}"
+    )
     print("by relation:")
     for relation, values in report["by_relation"].items():
         print(f"  {values['correct']:>3}/{values['n']:<3} {values['precision']:.3f}  {relation}")
@@ -55,10 +62,15 @@ def main() -> None:
     parser.add_argument("--csv", required=True)
     parser.add_argument("--predictions", help="entity mode: predictions JSON")
     parser.add_argument("--out", help="optional report JSON path")
+    parser.add_argument("--benchmark-lenient", action="store_true",
+                        help="count Dataset|Method as correct for benchmark-like spans")
     args = parser.parse_args()
 
     if args.mode == "triples":
-        report = score_triples(read_triples_worksheet(args.csv))
+        report = score_triples(
+            read_triples_worksheet(args.csv),
+            benchmark_lenient=args.benchmark_lenient,
+        )
         _print_triples(report)
     else:
         if not args.predictions:
