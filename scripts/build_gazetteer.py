@@ -80,19 +80,21 @@ def _confidence(count: int) -> float:
     return 0.7
 
 
-def _names(text: str) -> tuple[list[str], list[str]]:
-    """Return (dataset candidates, metric candidates) for one chunk."""
-    datasets: list[str] = []
+def _names(text: str) -> tuple[list[str], list[str], list[str]]:
+    """Return (eval-context candidates, suffix-backed candidates, metric candidates)."""
+    eval_datasets: list[str] = []
+    suffix_datasets: list[str] = []
     metrics: list[str] = []
 
     for match in EVAL_CONTEXT.finditer(text):
         # The tail may be a list: "SQuAD, HotpotQA and MuSiQue".
-        datasets.extend(_NAME_RE.findall(match.group(1)))
+        eval_datasets.extend(_NAME_RE.findall(match.group(1)))
     for pattern in (SUFFIX_CUE, USE_SUFFIX):
-        datasets.extend(match.group(1) for match in pattern.finditer(text))
+        suffix_datasets.extend(match.group(1) for match in pattern.finditer(text))
     metrics.extend(match.group(1) for match in METRIC_RE.finditer(text))
 
-    return ([n for n in datasets if _keep(_clean(n))], [n for n in metrics if _keep(_clean(n))])
+    clean = lambda names: [n for n in (_clean(x) for x in names) if _keep(n)]
+    return (clean(eval_datasets), clean(suffix_datasets), clean(metrics))
 
 
 def _iter_chunks(conn, limit: int, section_types: tuple[str, ...], batch_size: int):
@@ -126,24 +128,58 @@ def main() -> None:
     print(f"gazetteer: sample={args.limit} chunks from {section_types}")
 
     t0 = time.perf_counter()
-    counts: Counter[tuple[str, str]] = Counter()
+    eval_counts: Counter[tuple[str, str]] = Counter()
+    suffix_counts: Counter[tuple[str, str]] = Counter()
+    metric_counts: Counter[tuple[str, str]] = Counter()
     displays: dict[str, str] = {}
     seen_chunks = 0
 
     with connect(readonly=True) as conn:
         for text in _iter_chunks(conn, args.limit, section_types, args.batch_size):
             seen_chunks += 1
-            datasets, metrics = _names(text)
-            for name, kind in [(n, "Dataset") for n in datasets] + [(m, "Metric") for m in metrics]:
-                cleaned = _clean(name)
-                if not _keep(cleaned):
-                    continue
-                key = cleaned.casefold()
-                counts[(key, kind)] += 1
-                displays.setdefault(key, cleaned)
+            eval_datasets, suffix_datasets, metrics = _names(text)
+            for name in eval_datasets:
+                key = name.casefold()
+                eval_counts[(key, "Dataset")] += 1
+                displays.setdefault(key, name)
+            for name in suffix_datasets:
+                key = name.casefold()
+                suffix_counts[(key, "Dataset")] += 1
+                displays.setdefault(key, name)
+            for name in metrics:
+                key = name.casefold()
+                metric_counts[(key, "Metric")] += 1
+                displays.setdefault(key, name)
 
     entries: dict[str, dict] = {}
-    for (key, kind), count in counts.items():
+    dataset_keys = {key for key, _kind in eval_counts} | {
+        key for key, _kind in suffix_counts
+    }
+    for key in dataset_keys:
+        suffix = suffix_counts[(key, "Dataset")]
+        eval_ = eval_counts[(key, "Dataset")]
+        total = suffix + eval_
+        if total < args.min_count:
+            continue
+        if suffix >= 5:
+            confidence = 0.9
+        elif suffix >= 1:
+            confidence = 0.8
+        elif eval_ >= 10:
+            confidence = 0.7
+        else:
+            confidence = 0.6
+        entries[key] = {
+            "name": displays.get(key, key),
+            "type": "Dataset",
+            "count": total,
+            "suffix_count": suffix,
+            "eval_count": eval_,
+            "confidence": confidence,
+            "source": "corpus_pattern",
+        }
+
+    for (key, _kind), count in metric_counts.items():
         if count < args.min_count:
             continue
         current = entries.get(key)
@@ -151,7 +187,7 @@ def main() -> None:
             continue
         entries[key] = {
             "name": displays.get(key, key),
-            "type": kind,
+            "type": "Metric",
             "count": count,
             "confidence": _confidence(count),
             "source": "corpus_pattern",

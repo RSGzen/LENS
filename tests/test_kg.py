@@ -229,6 +229,11 @@ class BuildKgTest(unittest.TestCase):
         self.assertEqual(out["summary"]["n_nodes"], 0)
         self.assertEqual(out["stats"]["triples_raw"], 0)
 
+    def test_kg_disabled_is_empty(self) -> None:
+        out = build_kg(None, ["u1"], FakeExtractor(), kg_enabled=False)
+        self.assertEqual(out["summary"]["n_nodes"], 0)
+        self.assertFalse(out["stats"]["kg_enabled"])
+
     def test_builds_with_provenance(self) -> None:
         by_text = {
             "text-one": [triple("BERT", "Method", "evaluated_on", "SQuAD", "Dataset")],

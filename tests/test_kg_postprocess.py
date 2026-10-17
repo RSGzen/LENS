@@ -13,6 +13,7 @@ from lens.kg_postprocess import (
     infer_types_from_relations,
     postprocess,
     resolve_directionality,
+    suffix_type_hint,
 )
 
 
@@ -74,6 +75,20 @@ class GazetteerTest(unittest.TestCase):
         )[0]
         self.assertEqual(out["tail_type"], "Method")
         self.assertEqual(out.get("tail_type_source", "model"), "model")
+
+
+class SuffixHintTest(unittest.TestCase):
+    def test_suffix_types(self) -> None:
+        out = suffix_type_hint(
+            [triple("five open-domain QA datasets", "Method", "uses", "ROUGE score", "Method")]
+        )[0]
+        self.assertEqual(out["head_type"], "Dataset")
+        self.assertEqual(out["tail_type"], "Metric")
+        self.assertEqual(out["head_type_source"], "suffix")
+
+    def test_no_suffix_unchanged(self) -> None:
+        out = suffix_type_hint([triple("BERT", "Method", "uses", "spaCy", "Method")])[0]
+        self.assertEqual(out["tail_type"], "Method")
 
 
 class DirectionalityTest(unittest.TestCase):

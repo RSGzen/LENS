@@ -419,6 +419,9 @@ def build_kg(
     cache_dir: Any | None = None,
     use_cache: bool = True,
     postprocess: bool = config.KG_POSTPROCESS_ENABLED,
+    span_filter: bool = config.KG_SPAN_FILTER,
+    coref: bool = config.KG_COREF,
+    kg_enabled: bool = config.KG_ENABLED,
     verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Build the query-time KG over ``chunk_ids`` (M7 entry point).
@@ -475,6 +478,8 @@ def build_kg(
             gazetteer = load_gazetteer(config.KG_GAZETTEER_PATH)
         postprocess_fingerprint = (
             f"type={config.KG_TYPE_INFERENCE};gaz={len(gazetteer)};"
+            f"gazconf={config.KG_GAZETTEER_MIN_CONFIDENCE};"
+            f"suffix={config.KG_SUFFIX_HINTS};"
             f"dir={config.KG_DIRECTIONALITY_ENABLED};cycle={config.KG_CYCLE_BREAK}"
         )
     verify_fingerprint = (
@@ -483,9 +488,28 @@ def build_kg(
         else "off"
     )
     postprocess_fingerprint += (
-        f";span={config.KG_SPAN_FILTER};coref={config.KG_COREF};"
+        f";span={span_filter};coref={coref};"
         f"verify={verify_fingerprint}"
     )
+
+    if not kg_enabled:
+        empty = nx.MultiDiGraph()
+        return {
+            "kg_id": None,
+            "graph": graph_to_nodelink(empty),
+            "summary": kg_index_summary(empty),
+            "stats": {
+                "chunks": 0,
+                "triples_raw": 0,
+                "triples_kept": 0,
+                "cached": False,
+                "kg_enabled": False,
+                "postprocess": postprocess,
+                "span_filter": span_filter,
+                "coref": coref,
+                "verify": None,
+            },
+        }
 
     if not chunk_ids:
         empty = nx.MultiDiGraph()
@@ -503,9 +527,10 @@ def build_kg(
                 "triples_raw": 0,
                 "triples_kept": 0,
                 "cached": False,
+                "kg_enabled": True,
                 "postprocess": postprocess,
-                "span_filter": config.KG_SPAN_FILTER,
-                "coref": config.KG_COREF,
+                "span_filter": span_filter,
+                "coref": coref,
                 "verify": None,
             },
         }
@@ -561,15 +586,16 @@ def build_kg(
                 }
             )
 
-    if config.KG_COREF:
+    if coref:
         triples_kept = resolve_coref(triples_kept, chunk_texts)
-    if config.KG_SPAN_FILTER:
+    if span_filter:
         triples_kept = filter_spans(triples_kept)
 
     if postprocess:
         triples_kept = kg_postprocess(
             triples_kept,
             gazetteer=gazetteer,
+            suffix_hints=config.KG_SUFFIX_HINTS,
             type_inference=config.KG_TYPE_INFERENCE,
             directionality=config.KG_DIRECTIONALITY_ENABLED,
             cycle_break=config.KG_CYCLE_BREAK,
@@ -591,9 +617,10 @@ def build_kg(
             "triples_raw": triples_raw,
             "triples_kept": len(triples_kept),
             "cached": False,
+            "kg_enabled": True,
             "postprocess": postprocess,
-            "span_filter": config.KG_SPAN_FILTER,
-            "coref": config.KG_COREF,
+            "span_filter": span_filter,
+            "coref": coref,
             "verify": verify_stats.as_dict() if verify_stats else None,
         },
     }

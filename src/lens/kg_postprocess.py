@@ -131,11 +131,40 @@ def apply_gazetteer(
     return triples
 
 
+# ------------------------------------------------------------------ suffix hints
+SUFFIX_TYPES = {
+    "dataset": "Dataset", "datasets": "Dataset", "corpus": "Dataset",
+    "corpora": "Dataset", "benchmark": "Dataset", "benchmarks": "Dataset",
+    "test set": "Dataset", "testbed": "Dataset",
+    "metric": "Metric", "metrics": "Metric", "score": "Metric", "scores": "Metric",
+    "task": "Task", "tasks": "Task",
+    "method": "Method", "methods": "Method", "model": "Method", "models": "Method",
+    "algorithm": "Method", "algorithms": "Method", "framework": "Method",
+    "frameworks": "Method",
+}
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9\-\.]*")
+
+
+def suffix_type_hint(triples: list[Triple]) -> list[Triple]:
+    """Type from a trailing head noun ("X dataset" -> Dataset; "ROUGE score" -> Metric)."""
+    for triple in triples:
+        for side in ("head", "tail"):
+            words = _WORD_RE.findall(triple[side])
+            if not words:
+                continue
+            two = " ".join(word.casefold() for word in words[-2:])
+            one = words[-1].casefold()
+            kind = SUFFIX_TYPES.get(two) or SUFFIX_TYPES.get(one)
+            if kind:
+                _set_type(triple, side, kind, "suffix")
+    return triples
+
+
 # ------------------------------------------------------- relation-first typing
 def infer_types_from_relations(
     triples: list[Triple],
     *,
-    protect_sources: tuple[str, ...] = ("gazetteer",),
+    protect_sources: tuple[str, ...] = ("gazetteer", "suffix"),
 ) -> list[Triple]:
     """Infer a type from a relation slot when that slot has exactly one allowed type.
 
@@ -259,15 +288,18 @@ def postprocess(
     triples: list[Triple],
     *,
     gazetteer: dict[str, dict[str, Any]] | None = None,
+    suffix_hints: bool = True,
     type_inference: bool = True,
     directionality: bool = True,
     cycle_break: bool = True,
     context_key: str = "chunk_uuid",
 ) -> list[Triple]:
-    """Run the modular post-process: gazetteer -> relation typing -> directionality."""
+    """Run the modular post-process: gazetteer -> suffix hints -> relation typing -> directionality."""
     out = with_soft_defaults(list(triples))
     if gazetteer:
         out = apply_gazetteer(out, gazetteer)
+    if suffix_hints:
+        out = suffix_type_hint(out)
     if type_inference:
         out = infer_types_from_relations(out)
     if directionality:
