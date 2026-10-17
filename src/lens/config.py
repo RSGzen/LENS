@@ -179,6 +179,12 @@ KG_REL_MODEL_ID = os.environ.get("LENS_KG_REL_MODEL", "jackboyla/glirel-large-v0
 # Minimum span / relation confidence kept. Kept in one place so the probe can sweep it.
 KG_MIN_SCORE = float(os.environ.get("LENS_KG_MIN_SCORE", "0.5"))
 
+# Extraction window. GLiNER truncates its input (384 tokens on the medium
+# checkpoint) while chunks are <= 512 nomic tokens, so extraction is windowed to
+# avoid dropping long-chunk tails. The overlap is carried into the next window.
+KG_EXTRACT_MAX_TOKENS = int(os.environ.get("LENS_KG_EXTRACT_MAX_TOKENS", "384"))
+KG_EXTRACT_WINDOW_OVERLAP = int(os.environ.get("LENS_KG_EXTRACT_OVERLAP", "32"))
+
 # Maximum number of entities ranked by degree (in + out) in the KG index summary.
 # A context-budget knob, not a scientific value (the summary is what the RLM sees).
 KG_SUMMARY_TOP_ENTITIES = int(os.environ.get("LENS_KG_SUMMARY_TOP", "20"))

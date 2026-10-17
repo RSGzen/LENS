@@ -16,7 +16,12 @@ from unittest import mock
 
 from lens import config
 from lens import kg_extract
-from lens.kg_extract import ENTITY_TYPES, RELATION_SCHEMA, GlinerExtractor
+from lens.kg_extract import (
+    ENTITY_LABEL_SETS,
+    ENTITY_TYPES,
+    RELATION_SCHEMA,
+    GlinerExtractor,
+)
 from lens.tools.kg import (
     build_graph,
     build_kg,
@@ -278,6 +283,11 @@ class CacheKeyTest(unittest.TestCase):
         self.assertEqual(k1, k2)
         self.assertNotEqual(k2, k3)
 
+    def test_extractor_fingerprint_is_part_of_the_key(self) -> None:
+        k1 = cache_key(["a", "b"], "v1", extractor_fingerprint="abstract")
+        k2 = cache_key(["a", "b"], "v1", extractor_fingerprint="descriptive")
+        self.assertNotEqual(k1, k2)
+
 
 class FakeNerModel:
     """Stand-in for GLiNER: returns canned entities (labels lower-cased, like GLiNER)."""
@@ -351,6 +361,61 @@ class ExtractPipelineTest(unittest.TestCase):
         self.assertEqual(out[0]["tail"], "SQuAD")
         self.assertEqual(out[0]["tail_type"], "Dataset")
         self.assertAlmostEqual(out[0]["score"], 0.88)
+
+    def test_descriptive_labels_map_to_canonical(self) -> None:
+        text = "BERT is evaluated on SQuAD."
+        ents = [
+            {"start": 0, "end": 4, "text": "BERT",
+             "label": "machine learning method, model, or algorithm", "score": 0.9},
+            {"start": 21, "end": 26, "text": "SQuAD",
+             "label": "dataset, corpus, or benchmark", "score": 0.9},
+        ]
+        rels = [{
+            "head_pos": [0, 1], "tail_pos": [4, 5],
+            "head_text": ["BERT"], "tail_text": ["SQuAD"],
+            "label": "evaluated_on", "score": 0.88,
+        }]
+        ex = GlinerExtractor(
+            ner_model=FakeNerModel(ents),
+            rel_model=FakeRelModel(rels),
+            entity_labels=ENTITY_LABEL_SETS["descriptive"],
+        )
+        out = ex.extract(text)
+        self.assertEqual(out[0]["head_type"], "Method")
+        self.assertEqual(out[0]["tail_type"], "Dataset")
+
+    def test_text_windows_respect_max_tokens_with_overlap(self) -> None:
+        ex = GlinerExtractor(
+            ner_model=FakeNerModel([]),
+            rel_model=FakeRelModel([]),
+            max_tokens=5,
+            overlap=2,
+        )
+        windows = ex._text_windows(
+            "one two three four five six seven eight nine ten"
+        )
+        self.assertGreaterEqual(len(windows), 2)
+        for window in windows:
+            self.assertLessEqual(len(window.split()), 5)
+        self.assertTrue(windows[0].endswith("five"))
+        self.assertTrue(windows[1].startswith("four five"))  # overlap carried
+
+    def test_short_text_is_one_window(self) -> None:
+        ex = self._extractor([], [])
+        self.assertEqual(len(ex._text_windows("short text here.")), 1)
+
+    def test_fingerprint_differs_by_label_set(self) -> None:
+        a = GlinerExtractor(
+            ner_model=FakeNerModel([]),
+            rel_model=FakeRelModel([]),
+            entity_labels=ENTITY_LABEL_SETS["abstract"],
+        )
+        b = GlinerExtractor(
+            ner_model=FakeNerModel([]),
+            rel_model=FakeRelModel([]),
+            entity_labels=ENTITY_LABEL_SETS["descriptive"],
+        )
+        self.assertNotEqual(a.fingerprint, b.fingerprint)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ Pipeline::
               -> extractor.extract(text)            (lens.kg_extract, host-side)
               -> filter_ontology -> dedup_triples   (deterministic)
               -> build_graph -> graph_to_nodelink    (networkx)
-              -> cache by (paper set + ontology ver + extractor id)  (K-06)
+              -> cache by (chunk set + ontology ver + extractor id)  (K-06)
     -> {"kg_id", "graph": <node-link>, "summary", "stats"}
 
 The RLM contract (K-07)
@@ -344,34 +344,31 @@ def create_triple_instance(graph: nx.MultiDiGraph, u: str, v: str, data: dict[st
 
 # ------------------------------------------------------------------ cache (K-06)
 def cache_key(
-    arxiv_ids: Sequence[str],
+    chunk_ids: Sequence[str],
     ontology_version: str,
     *,
-    ner_model_id: str = config.KG_NER_MODEL_ID,
-    rel_model_id: str = config.KG_REL_MODEL_ID,
-    min_score: float = config.KG_MIN_SCORE,
+    extractor_fingerprint: str = "",
 ) -> str:
     """Deterministic cache key for a subgraph (K-06).
 
-    The key covers **everything that changes the extracted graph**: the paper set,
-    the ontology version, the NER/RE checkpoints, and the minimum score. It is a
-    canonical JSON payload (sorted keys; sorted + de-duplicated ``arxiv_ids``)
+    The key covers **everything that changes the extracted graph**: the **chunk
+    set** (the KG scope — ``c`` vs ``C`` vs all chunks of the top-``n`` papers, which
+    also determines the paper set), the ontology version, and an **extractor
+    fingerprint** (NER/RE checkpoint ids + label set + threshold + window). It is a
+    canonical JSON payload (sorted keys; sorted + de-duplicated ``chunk_ids``)
     hashed with SHA-256, so the key is order-independent and delimiter-safe.
     Return a hex digest.
 
-    **Caveat — extractor identity is part of the key.** Without the model ids and
-    the threshold, swapping ``KG_NER_MODEL_ID`` / ``KG_REL_MODEL_ID`` or tuning
-    ``KG_MIN_SCORE`` would silently serve a graph built by a *different* extractor.
-    Extraction *code* changes (prompts, post-processing) are not hashed, so bump
-    ``KG_ONTOLOGY_VERSION`` or clear ``<cache_root>/kg`` when you change those.
+    **Caveat.** The fingerprint is supplied by the extractor (``GlinerExtractor.
+    fingerprint``); a custom extractor without one should pass a stable id. Raw
+    extraction *code* changes are not hashed, so bump ``KG_ONTOLOGY_VERSION`` or
+    clear ``<cache_root>/kg`` when you change those.
     """
     payload = json.dumps(
         {
-            "arxiv_ids": sorted(set(arxiv_ids)),
+            "chunk_ids": sorted(set(chunk_ids)),
             "ontology_version": ontology_version,
-            "ner_model_id": ner_model_id,
-            "rel_model_id": rel_model_id,
-            "min_score": str(float(min_score)),
+            "extractor_fingerprint": extractor_fingerprint,
         },
         sort_keys=True,
         ensure_ascii=False,
@@ -392,12 +389,18 @@ def build_kg(
 ) -> dict[str, Any]:
     """Build the query-time KG over ``chunk_ids`` (M7 entry point).
 
+    **Scope (LOG-63).** The caller should pass the **deep-match candidate** chunk
+    set (``deep_match``'s ``C``, default 100), not the reranked answer-context set
+    (``rerank_chunks``' top-``c``, default 5). ``c`` is too sparse for a useful
+    graph; ``C`` is already retrieved and bounded. The cache key covers the chunk
+    set, so the two scopes never collide.
+
     Steps:
       1. Empty ``chunk_ids`` -> an empty graph + zeroed stats (no DB read).
       2. ``rows = fetch_chunks(conn, chunk_ids)`` (T2); re-order to the input order.
-      3. Cache lookup (K-06): ``key = cache_key(<distinct arxiv_ids>,
-         ontology_version)``; on a hit, load the **full cached payload** (graph +
-         summary + stats), set ``stats["cached"] = True`` and return it.
+      3. Cache lookup (K-06): ``key = cache_key(<chunk_ids>, ontology_version)``;
+         on a hit, load the **full cached payload** (graph + summary + stats), set
+         ``stats["cached"] = True`` and return it.
       4. For each chunk, ``extractor.extract(row["chunk_text"])`` and attach
          provenance (``chunk_uuid``, ``arxiv_id``, ``section_type``) to every triple;
          normalize head/tail via :func:`normalize_entity` and the relation via
@@ -422,13 +425,17 @@ def build_kg(
     The full payload is cached, not just the graph, so a cache hit can report the
     exact ``triples_raw`` / ``triples_kept`` instead of fabricating them.
 
-    ``kg_id`` is the cache key, so two calls over the same paper set + ontology
+    ``kg_id`` is the cache key, so two calls over the same chunk set + ontology
     version + extractor identity share one id and one cache entry.
     """
+    extractor_fingerprint = getattr(extractor, "fingerprint", "")
+
     if not chunk_ids:
         empty = nx.MultiDiGraph()
         return {
-            "kg_id": cache_key([], ontology_version),
+            "kg_id": cache_key(
+                [], ontology_version, extractor_fingerprint=extractor_fingerprint
+            ),
             "graph": graph_to_nodelink(empty),
             "summary": kg_index_summary(empty),
             "stats": {"chunks": 0, "triples_raw": 0, "triples_kept": 0, "cached": False},
@@ -436,12 +443,15 @@ def build_kg(
 
     chunk_rows = fetch_chunks(conn, chunk_ids)
 
-    # Re-order to the input (ANN) order and collect the paper set for the key.
+    # Re-order to the input (ANN) order.
     by_id = {row["chunk_uuid"]: row for row in chunk_rows}
     reordered_chunk_rows = [by_id[cid] for cid in chunk_ids if cid in by_id]
-    arxiv_ids = [row["arxiv_id"] for row in reordered_chunk_rows]
 
-    key = cache_key(arxiv_ids=arxiv_ids, ontology_version=ontology_version)
+    key = cache_key(
+        chunk_ids,
+        ontology_version=ontology_version,
+        extractor_fingerprint=extractor_fingerprint,
+    )
 
     cache_path: Path | None = None
     if use_cache:

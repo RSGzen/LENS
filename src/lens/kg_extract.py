@@ -100,6 +100,32 @@ def relation_label_config() -> dict[str, dict[str, dict[str, list[str]]]]:
     return GLIREL_LABELS
 
 
+# Canonical entity type -> the **label string** asked of GLiNER. Zero-shot NER is
+# sensitive to label phrasing, so descriptive labels are a cheap K-05 lever. The
+# extractor maps the (lower-cased) returned label back to the canonical type, so
+# ``filter_ontology`` still sees ``ENTITY_TYPES`` / ``RELATION_SCHEMA``.
+ENTITY_LABEL_SETS: dict[str, dict[str, str]] = {
+    "abstract": {t: t for t in ENTITY_TYPES},
+    "descriptive": {
+        "Method": "machine learning method, model, or algorithm",
+        "Dataset": "dataset, corpus, or benchmark",
+        "Metric": "evaluation metric or measure",
+        "Task": "research task or problem setting",
+        "Problem": "research problem, limitation, or gap",
+        "Concept": "technical concept, term, or technique",
+    },
+    # SciERC-aligned reference arm (Material ~= Dataset; OtherScientificTerm ~= Concept).
+    "scierc": {
+        "Method": "Method",
+        "Dataset": "Material",
+        "Metric": "Metric",
+        "Task": "Task",
+        "Problem": "Problem",
+        "Concept": "OtherScientificTerm",
+    },
+}
+
+
 class KGExtractor(Protocol):
     """Text -> raw triples. Both the pipeline and joint extractors satisfy this.
 
@@ -125,9 +151,16 @@ class GlinerExtractor:
     rel_model_id:
         Relation (GLiREL) checkpoint; used for the pipeline variant.
     entity_types / relation_schema:
-        Override the ontology labels (defaults are the module constants).
+        Override the ontology (defaults are the module constants).
+    entity_labels:
+        Canonical type -> GLiNER label string. Defaults to
+        ``{t: t for t in entity_types}`` (the ``abstract`` set); see
+        :data:`ENTITY_LABEL_SETS`.
     threshold:
         Minimum confidence kept for a span / relation.
+    max_tokens / overlap:
+        Extraction window size (GLiNER truncates its input — the medium checkpoint
+        at 384 tokens) and the trailing overlap carried into the next window.
     ner_model / rel_model:
         Pre-built models (or a joint model passed as ``ner_model`` with
         ``rel_model=None``) — injectable for tests; ``None`` builds the real one
@@ -141,7 +174,10 @@ class GlinerExtractor:
         *,
         entity_types: tuple[str, ...] = ENTITY_TYPES,
         relation_schema: dict[str, dict[str, tuple[str, ...]]] = RELATION_SCHEMA,
+        entity_labels: dict[str, str] | None = None,
         threshold: float = config.KG_MIN_SCORE,
+        max_tokens: int = config.KG_EXTRACT_MAX_TOKENS,
+        overlap: int = config.KG_EXTRACT_WINDOW_OVERLAP,
         ner_model: Any | None = None,
         rel_model: Any | None = None,
     ) -> None:
@@ -149,13 +185,20 @@ class GlinerExtractor:
         self.rel_model_id = rel_model_id
         self.entity_types = entity_types
         self.relation_schema = relation_schema
+        self.entity_labels = entity_labels or {t: t for t in entity_types}
         self.threshold = threshold
+        self.max_tokens = max_tokens
+        self.overlap = overlap
         self._ner_model = ner_model
         self._rel_model = rel_model
-        # GLiNER returns labels lower-cased (its decoder does ``label.lower()``),
-        # so map back to the canonical ENTITY_TYPES casing or the ontology filter
-        # (tools/kg.filter_ontology) would drop every triple.
+        # GLiNER returns labels lower-cased (its decoder does ``label.lower()``).
+        # Map the returned label -> canonical type; fall back to the canonical
+        # type's own casing so a mis-cased label still resolves.
         self._canonical_types = {t.casefold(): t for t in entity_types}
+        self._label_to_type = {
+            label.casefold(): canonical
+            for canonical, label in self.entity_labels.items()
+        }
 
     @property
     def ner_model(self) -> Any:
@@ -163,6 +206,20 @@ class GlinerExtractor:
         if self._ner_model is None:
             self._ner_model = self._load_ner()
         return self._ner_model
+
+    @property
+    def fingerprint(self) -> str:
+        """Stable id of the extractor configuration (cache-key component).
+
+        Covers the checkpoint ids, the label set, the threshold, and the window
+        parameters, so a label/model/threshold/window change cannot reuse a stale
+        cached graph.
+        """
+        labels = "|".join(f"{k}={v}" for k, v in sorted(self.entity_labels.items()))
+        return (
+            f"gliner:{self.ner_model_id}:{self.rel_model_id}:"
+            f"{labels}:{self.threshold}:{self.max_tokens}:{self.overlap}"
+        )
 
     @property
     def rel_model(self) -> Any:
@@ -253,67 +310,136 @@ class GlinerExtractor:
             if start_tok is None:
                 continue
 
-            canonical = self._canonical_types.get(ent["label"].casefold(), ent["label"])
+            folded = ent["label"].casefold()
+            canonical = self._label_to_type.get(
+                folded, self._canonical_types.get(folded, ent["label"])
+            )
             mapping.append([start_tok, end_tok, canonical, ent["text"]])
 
         return mapping
                     
 
+    # ------------------------------------------------------------ windowing
+    def _tokenizer(self) -> Any:
+        """Return the NER tokenizer (GLiNER keeps it on its data processor)."""
+        processor = getattr(self.ner_model, "data_processor", None)
+        tokenizer = getattr(processor, "transformer_tokenizer", None)
+        if tokenizer is not None:
+            return tokenizer
+        return getattr(self.ner_model, "tokenizer", None)
+
+    def _token_budget(self, tokenizer: Any) -> int:
+        """Window budget; leave room for the tokenizer's special tokens."""
+        return max(1, self.max_tokens - 2) if tokenizer is not None else self.max_tokens
+
+    def _count_tokens(self, tokenizer: Any, text: str) -> int:
+        """Approximate token count with the NER tokenizer (words if unavailable)."""
+        tokenize = getattr(tokenizer, "tokenize", None)
+        if tokenize is not None:
+            return len(tokenize(text))
+        return len(text.split())
+
+    def _split_units(self, tokenizer: Any, text: str) -> list[tuple[str, int]]:
+        """Split into sentence units (word units if a sentence exceeds the window)."""
+        budget = self._token_budget(tokenizer)
+        units: list[tuple[str, int]] = []
+        for sentence in re.split(r"(?<=[.!?])\s+", text.strip()):
+            if not sentence:
+                continue
+            n = self._count_tokens(tokenizer, sentence)
+            if n <= budget:
+                units.append((sentence, n))
+                continue
+            # One sentence longer than the window: emit word units so the window
+            # packer can apply the overlap at word granularity.
+            for word in sentence.split():
+                units.append((word, self._count_tokens(tokenizer, word)))
+        return units
+
+    def _text_windows(self, text: str) -> list[str]:
+        """Pack ``text`` into windows <= ``max_tokens`` with a trailing overlap.
+
+        GLiNER truncates its input (the medium checkpoint at 384 tokens) while our
+        chunks are <= 512 nomic tokens, so extraction must be windowed or the tail
+        of long chunks is never seen.
+        """
+        tokenizer = self._tokenizer()
+        budget = self._token_budget(tokenizer)
+        units = self._split_units(tokenizer, text)
+        if not units:
+            return []
+
+        windows: list[str] = []
+        cur: list[tuple[str, int]] = []
+        cur_n = 0
+
+        for unit, n in units:
+            if cur and cur_n + n > budget:
+                windows.append(" ".join(u for u, _ in cur))
+                # Carry a small trailing overlap into the next window.
+                overlap_units: list[tuple[str, int]] = []
+                overlap_n = 0
+                for u, k in reversed(cur):
+                    if overlap_n >= self.overlap:
+                        break
+                    overlap_units.insert(0, (u, k))
+                    overlap_n += k
+                if overlap_n + n > budget:
+                    overlap_units, overlap_n = [], 0
+                cur, cur_n = overlap_units, overlap_n
+            cur.append((unit, n))
+            cur_n += n
+
+        if cur:
+            windows.append(" ".join(u for u, _ in cur))
+        return windows
+
     def extract(self, text: str) -> list[dict[str, Any]]:
         """Return raw triples for one chunk of ``text``.
 
-        Return ``[]`` for blank text (do **not** call the models).
+        Return ``[]`` for blank text (do **not** call the models). The text is
+        split into <= ``max_tokens`` windows (see :meth:`_text_windows`) because
+        GLiNER truncates its input; each window is extracted independently and the
+        triples are concatenated (``build_kg`` dedups).
 
-        **Pipeline variant (GLiNER NER -> GLiREL RE).** The two models use
-        **different index spaces**, so a mapping is required — GLiNER returns
-        **character** offsets, GLiREL wants **word-token** indices (end-inclusive).
+        Per window, the **pipeline variant (GLiNER NER -> GLiREL RE)** works as
+        follows. The two models use **different index spaces**, so a mapping is
+        required — GLiNER returns **character** offsets, GLiREL wants
+        **word-token** indices (end-inclusive).
 
-          1. ``ents = self.ner_model.predict_entities(text, list(self.entity_types),
-             threshold=self.threshold)`` — each dict has ``start`` / ``end`` =
-             **character** offsets (``{start, end, text, label, score}``).
-          2. Tokenise ``text`` with **GLiREL's own scheme** —
-             ``re.finditer(r"\\w+(?:[-_]\\w+)*|\\S", text)`` — and map each entity's
-             char span ``[start, end)`` to **inclusive** word-token indices. This is
-             **not** the same index space as GLiNER's char offsets; feeding char
-             offsets straight into ``ner`` silently misattaches entities. (Equally
-             valid: pass your **own** token list to GLiREL and index into that —
-             but then both sides must use the one tokenisation.)
+          1. ``ents = self.ner_model.predict_entities(text,
+             list(self.entity_labels.values()), threshold=self.threshold)`` — each
+             dict has ``start`` / ``end`` = **character** offsets.
+          2. Tokenise with **GLiREL's own scheme** —
+             ``re.finditer(r"\w+(?:[-_]\w+)*|\S", text)`` — and map each entity's
+             char span ``[start, end)`` to **inclusive** word-token indices.
           3. ``rels = self.rel_model.predict_relations(tokens, <relation labels>,
-             threshold=self.threshold, ner=ner, top_k=...)`` where
-             ``ner = [[start_tok, end_tok, type, text], ...]``. The relation labels
-             are the **canonical** relation names (:meth:`relation_label_config`);
-             ``predict_relations`` reads only ``ner[i][0]`` / ``ner[i][1]`` — the
-             ``type`` slot is ignored by the RE model.
-          4. Ontology constraints: ``predict_relations`` does **not** honour
-             ``allowed_head`` / ``allowed_tail``. This extractor emits **typed**
-             triples and ``tools/kg.filter_ontology`` enforces the schema
-             downstream. (To filter here instead, call
-             ``glirel.modules.utils.constrain_relations_by_entity_type(ents, ...)``
-             with entity shims exposing ``.start`` / ``.end`` / ``.label_`` in
-             end-**exclusive** token space.)
-          5. Map each relation to the triple dict. Caveats on GLiREL's output:
-             ``head_pos`` / ``tail_pos`` are end-**exclusive** (it adds ``+1``),
-             and ``head_text`` / ``tail_text`` are **token lists**, not strings —
-             join them. Set ``head_type`` / ``tail_type`` from the **GLiNER**
-             labels, not from GLiREL. ``relation`` = label, ``score`` = GLiREL score.
+             threshold=self.threshold, ner=ner, top_k=...)``.
+          4. Ontology constraints are enforced downstream by
+             ``tools/kg.filter_ontology``; this extractor emits typed triples.
+          5. Map GLiREL's output (end-**exclusive** positions; token-list texts)
+             back to typed triple dicts.
 
         **Joint variant.** A single GLiNER multi-task / "relex" checkpoint returns
-        entities **and** relations in one call (``gliner.multitask``
-        relation-extraction head) — adapt its output to the same triple dict. This
-        arm needs **no** char->token mapping, which is one reason the K-05 probe
-        compares it against the pipeline.
+        entities **and** relations in one call — adapt its output to the same
+        triple dict. This arm needs no char->token mapping.
         """
-        # Blank guard (docstring contract): do not load/run the models.
         if not text or not text.strip():
             return []
 
+        triples: list[dict[str, Any]] = []
+        for window in self._text_windows(text):
+            triples.extend(self._extract_window(window))
+        return triples
+
+    def _extract_window(self, text: str) -> list[dict[str, Any]]:
+        """Run the GLiNER -> GLiREL pipeline on one window."""
         ents = self.ner_model.predict_entities(
-            text, list(self.entity_types), threshold=self.threshold
+            text, list(self.entity_labels.values()), threshold=self.threshold
         )
         if len(ents) < 2:
             return []  # GLiREL needs at least two entities to relate
 
-        # Tokenise with GLiREL's own scheme so our token indices line up with its.
         pattern = r"\w+(?:[-_]\w+)*|\S"
         tokens: list[str] = []
         token_spans: list[tuple[int, int]] = []
@@ -321,23 +447,19 @@ class GlinerExtractor:
             tokens.append(match.group())
             token_spans.append((match.start(), match.end()))
 
-        # GLiNER char spans -> GLiREL inclusive token spans: [start, end, type, text].
         ner = self.map_entity_token_indices(token_spans, ents)
         if len(ner) < 2:
             return []
 
         relation_labels = list(self.relation_schema.keys())
         rels = self.rel_model.predict_relations(
-            tokens,                     # positional 'text' arg accepts a token list
-            relation_labels,            # list[str] of canonical relation names
+            tokens,
+            relation_labels,
             threshold=self.threshold,
-            ner=ner,                    # [[start_tok, end_tok, type, text]], end INCLUSIVE
-            top_k=-1,                   # return all
+            ner=ner,
+            top_k=-1,
         )
 
-        # GLiREL returns end-EXCLUSIVE positions; map back to the entity type via
-        # the inclusive (start, end) key we built above. filter_ontology enforces
-        # the allowed_head/allowed_tail constraints downstream.
         span_to_type = {
             (start_tok, end_tok): ent_type
             for start_tok, end_tok, ent_type, _ in ner
