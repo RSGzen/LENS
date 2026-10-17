@@ -420,6 +420,23 @@ class ExtractPipelineTest(unittest.TestCase):
         )
         self.assertNotEqual(a.fingerprint, b.fingerprint)
 
+    def test_dotted_entity_uses_surface_text(self) -> None:
+        # GLiREL tokenises "GPT-3.5" as ["GPT-3", ".", "5"]; the triple must keep
+        # GLiNER's surface span ("GPT-3.5"), not the space-joined token list.
+        text = "GPT-3.5 is evaluated on SQuAD."
+        ents = [
+            {"start": 0, "end": 7, "text": "GPT-3.5", "label": "method", "score": 0.9},
+            {"start": 24, "end": 29, "text": "SQuAD", "label": "dataset", "score": 0.9},
+        ]
+        rels = [{
+            "head_pos": [0, 3], "tail_pos": [6, 7],
+            "head_text": ["GPT-3", ".", "5"], "tail_text": ["SQuAD"],
+            "label": "evaluated_on", "score": 0.9,
+        }]
+        out = self._extractor(ents, rels).extract(text)
+        self.assertEqual(out[0]["head"], "GPT-3.5")
+        self.assertEqual(out[0]["tail"], "SQuAD")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,9 +5,12 @@ from __future__ import annotations
 import unittest
 
 from lens.kg_gold import (
+    clean_surface,
+    format_triple_query,
     parse_gold_entities,
     score_entities,
     score_triples,
+    snippet,
     stratified_sample,
     wilson_ci,
 )
@@ -80,6 +83,32 @@ class EntityScoreTest(unittest.TestCase):
         self.assertEqual(report["recall_untyped"], 0.5)
         self.assertEqual(report["recall_typed"], 0.0)
         self.assertAlmostEqual(report["precision_untyped"], 0.5)
+
+
+class SurfaceTextTest(unittest.TestCase):
+    def test_clean_dotted(self) -> None:
+        self.assertEqual(clean_surface("GPT 3 . 5"), "GPT 3.5")
+        self.assertEqual(clean_surface("OntoNotes-5 . 0"), "OntoNotes-5.0")
+        self.assertEqual(clean_surface("( BERT )"), "(BERT)")
+
+    def test_format_triple_query(self) -> None:
+        row = {
+            "head": "QASPER", "head_type": "Dataset", "relation": "uses",
+            "tail": "GPT-4", "tail_type": "Method", "arxiv_id": "2401.1",
+        }
+        self.assertEqual(
+            format_triple_query(row),
+            "Is it true that QASPER (Dataset) uses GPT-4 (Method) at arxiv paper 2401.1",
+        )
+
+    def test_snippet_centers_on_term(self) -> None:
+        text = "Intro. We evaluate GPT-3.5 on SQuAD and HotpotQA. More text."
+        out = snippet(text, ["SQuAD"], width=40)
+        self.assertIn("SQuAD", out)
+        self.assertLessEqual(len(out), 48)  # width + ellipses
+
+    def test_snippet_without_term_returns_prefix(self) -> None:
+        self.assertEqual(snippet("abcdef", ["zzz"], width=3), "abc")
 
 
 if __name__ == "__main__":

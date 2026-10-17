@@ -460,26 +460,29 @@ class GlinerExtractor:
             top_k=-1,
         )
 
-        span_to_type = {
-            (start_tok, end_tok): ent_type
-            for start_tok, end_tok, ent_type, _ in ner
+        span_to_entity = {
+            (start_tok, end_tok): (ent_type, surface)
+            for start_tok, end_tok, ent_type, surface in ner
         }
 
         triples: list[dict[str, Any]] = []
         for rel in rels:
             head_start, head_end = rel["head_pos"]
             tail_start, tail_end = rel["tail_pos"]
-            head_type = span_to_type.get((head_start, head_end - 1))
-            tail_type = span_to_type.get((tail_start, tail_end - 1))
-            if head_type is None or tail_type is None:
+            head = span_to_entity.get((head_start, head_end - 1))
+            tail = span_to_entity.get((tail_start, tail_end - 1))
+            if head is None or tail is None:
                 continue
+            # Use GLiNER's **surface** span, not GLiREL's token list: the latter
+            # splits punctuation ("GPT-3.5" -> ["GPT-3", ".", "5"]) and joining it
+            # with spaces corrupts decimals/versions.
             triples.append(
                 {
-                    "head": " ".join(rel["head_text"]),
-                    "head_type": head_type,
+                    "head": head[1],
+                    "head_type": head[0],
                     "relation": rel["label"],
-                    "tail": " ".join(rel["tail_text"]),
-                    "tail_type": tail_type,
+                    "tail": tail[1],
+                    "tail_type": tail[0],
                     "score": float(rel["score"]),
                 }
             )

@@ -25,6 +25,7 @@ import csv
 import json
 import math
 import random
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Sequence
@@ -108,6 +109,50 @@ def write_entities_worksheet(rows: Sequence[dict], path: str | Path) -> None:
 def read_entities_worksheet(path: str | Path) -> list[dict]:
     with open(path, newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+_DOT_DIGITS = re.compile(r"(?<=\d)\s*\.\s*(?=\d)")
+_PUNCT_TIGHT = re.compile(r"\s+([.,;:!?\)\]\}])")
+_OPEN_TIGHT = re.compile(r"([\(\[\{])\s+")
+
+
+def clean_surface(text: str) -> str:
+    """Undo whitespace introduced by joining token lists ("GPT 3 . 5" -> "GPT 3.5")."""
+    text = _DOT_DIGITS.sub(".", text or "")  # decimals / versions
+    text = _PUNCT_TIGHT.sub(r"\1", text)
+    text = _OPEN_TIGHT.sub(r"\1", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def format_triple_query(row: dict) -> str:
+    """One-line natural-language form for manual verification / search."""
+    return (
+        f"Is it true that {row['head']} ({row['head_type']}) {row['relation']} "
+        f"{row['tail']} ({row['tail_type']}) at arxiv paper {row['arxiv_id']}"
+    )
+
+
+def snippet(text: str, terms: Sequence[str], width: int = 400) -> str:
+    """Return a short window around the first occurrence of any term (for annotation)."""
+    text = " ".join((text or "").split())
+    if not text:
+        return ""
+    low = text.casefold()
+    position = -1
+    for term in terms:
+        if not term:
+            continue
+        position = low.find(term.casefold())
+        if position >= 0:
+            break
+    if position < 0:
+        return text[:width]
+
+    start = max(0, position - width // 3)
+    end = min(len(text), start + width)
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(text) else ""
+    return f"{prefix}{text[start:end]}{suffix}"
 
 
 # ------------------------------------------------------------------ scoring
