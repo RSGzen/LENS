@@ -1,9 +1,8 @@
 r"""Contract tests for M4 section classification + structural chunking.
 
 No key, zero cost, no DB, no torch — ``count_tokens`` is injected as
-``lambda s: len(s.split())``. These define the behavior ``chunking.py`` must
-implement (they FAIL until the student fills the logic bodies — expected for a
-scaffold-and-fill module).
+``lambda s: len(s.split())``. These are contract tests for the implemented
+``chunking.py``.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

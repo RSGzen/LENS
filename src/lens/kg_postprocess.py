@@ -161,7 +161,7 @@ def suffix_type_hint(triples: list[Triple]) -> list[Triple]:
     return triples
 
 
-# ------------------------------------------------------- benchmark/task roles
+# ------------------------------------------------------------------ benchmark/task roles
 # A benchmark is a Dataset that defines a Task, so it can legitimately appear as
 # a Dataset (tail of evaluated_on/uses) or as a Method-like subject (head of
 # measures). It must not be the *subject* of evaluated_on/outperforms, though:
@@ -248,7 +248,7 @@ def apply_role_filter(triples: Sequence[Triple]) -> tuple[list[Triple], int]:
     return kept, dropped
 
 
-# ------------------------------------------------------- relation-first typing
+# ------------------------------------------------------------------ relation-first typing
 def infer_types_from_relations(
     triples: list[Triple],
     *,
@@ -279,7 +279,7 @@ def infer_types_from_relations(
     return triples
 
 
-# ------------------------------------------------------------ directionality
+# ------------------------------------------------------------------ directionality
 def resolve_directionality(
     triples: list[Triple],
     *,

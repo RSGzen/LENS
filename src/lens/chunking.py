@@ -98,7 +98,7 @@ header_pattern = r"^\d+(?:\.\d+)*\.?\s*"
 split_pattern = r"(?<=[.!?])\s+"
 
 
-# -------------------------------------------------------- section registry
+# ------------------------------------------------------------------ section registry
 # The 6 canonical section types (Tech Stack §2 stage 5) and the head keywords
 # that map into each. Matching is on the *normalized* head (see
 # :func:`normalize_head`). Heads are matched case-insensitively as substrings;
@@ -180,7 +180,7 @@ SECTION_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 
-# ------------------------------------------------------------- data model
+# ------------------------------------------------------------------ data model
 @dataclass(frozen=True)
 class Section:
     """One top-level classified section of a paper, paragraphs in reading order."""
@@ -206,7 +206,7 @@ class Chunk:
     token_count: int
 
 
-# --------------------------------------------------------------- extraction
+# ------------------------------------------------------------------ extraction
 def normalize_head(head: str) -> str:
     """Normalize a ``<head>`` for keyword matching.
 
@@ -351,7 +351,7 @@ def extract_sections(tei_path: str | Path) -> list[Section]:
     return section_list
 
 
-# --------------------------------------------------------------- segmenting
+# ------------------------------------------------------------------ segmenting
 # Counting is done on strings no longer than this many characters, so a single
 # tokenizer call can never see a string long enough to trigger HF's
 # "sequence length > max_seq_length" warning (#tokens <= #chars < 8192).

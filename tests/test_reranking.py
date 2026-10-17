@@ -1,8 +1,8 @@
 r"""Contract tests for the M5 cross-encoder wrapper (no network, no model, zero cost).
 
 A ``FakeCrossEncoder`` stands in for ``sentence-transformers.CrossEncoder``, so
-these tests never load torch or the model. These FAIL until the student fills the
-logic bodies (scaffold-and-fill — expected for an M5 scaffold module).
+these tests never load torch or the model. The cross-encoder wrapper is
+implemented; these are contract tests.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

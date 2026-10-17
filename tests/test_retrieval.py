@@ -3,7 +3,7 @@ r"""Contract tests for M5 retrieval tools (no DB, no key, zero cost).
 Pure helpers are tested directly; the funnel functions are exercised with a
 ``FakeConn`` + ``FakeEmbedder`` + ``FakeReranker`` (and ``fetch_papers`` /
 ``fetch_chunks`` patched where the DB row shape is not the point). No DB, no
-torch. These FAIL until the student fills the logic bodies (scaffold-and-fill).
+torch. The retrieval tools are implemented; these are contract tests.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

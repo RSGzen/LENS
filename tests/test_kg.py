@@ -2,8 +2,8 @@ r"""Contract tests for M7 KG (no DB, no key, zero cost).
 
 The pure graph helpers are tested directly; ``build_kg`` is exercised with a
 ``FakeExtractor`` and ``fetch_chunks`` patched (the DB row shape is not the point).
-No DB, no torch — the real GLiNER/GLiREL are never loaded. These FAIL until the
-student fills the logic bodies (scaffold-and-fill, LOG-33).
+No DB, no torch — the real GLiNER/GLiREL are never loaded. The KG pipeline is
+implemented; these are contract tests.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

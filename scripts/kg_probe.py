@@ -158,7 +158,7 @@ def main() -> None:
         "--sample", choices=("head", "random", "query"), default="head"
     )
     parser.add_argument("--scope", choices=("c", "C", "papers"), default="C",
-                        help="query-arm KG scope (production default: c=5 chunks)")
+                        help="query-arm KG scope (production KG scope: C=100; c=5 is the answer context)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--query", default=DEFAULT_QUERY)
     parser.add_argument("--retrieval-c", type=int, default=config.RETRIEVAL_C)

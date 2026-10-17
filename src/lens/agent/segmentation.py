@@ -99,7 +99,7 @@ def build_segmentation_messages(query: str) -> list[dict[str, str]]:
     return [system_query_payload, user_query_payload]
 
 
-# ------------------------------------------------------------------- parsing
+# ------------------------------------------------------------------ parsing
 def parse_segmentation_json(text: str) -> dict[str, Any]:
     """Parse the model's reply into a mapping.
 
@@ -170,7 +170,7 @@ def normalize_buckets(raw: Mapping[str, Any]) -> dict[str, list[str]]:
     return query_buckets
 
 
-# --------------------------------------------------------------- segmentation
+# ------------------------------------------------------------------ segmentation
 def segment_query(
     client: LensClient,
     query: str,
@@ -206,7 +206,7 @@ def segment_query(
     return query_buckets
 
 
-# --------------------------------------------------------------------- output
+# ------------------------------------------------------------------ output
 def write_query_json(buckets: Mapping[str, Any], path: str | Path) -> Path:
     """Write the segmentation output to ``query.json`` (UTF-8, ``indent=2``).
 

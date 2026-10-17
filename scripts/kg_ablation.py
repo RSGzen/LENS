@@ -1,8 +1,9 @@
 r"""M7.3 KG-level ablation: ``off`` / ``raw`` / ``postprocess`` / ``verified``.
 
 This measures the **KG arms** — triples, type/relation composition, cost, latency.
-The RLM answer-quality ablation runs in the M8 harness; this is the KG-side
-companion and the evidence for whether the KG earns its place.
+The RLM answer-quality ablation is part of the **M11 evaluation campaign** (it
+requires the M8 harness); this is the KG-side companion and the evidence for
+whether the KG earns its place.
 
 Arms:
   off          ``kg_enabled=False`` (empty graph, no extraction)

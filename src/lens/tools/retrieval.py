@@ -48,9 +48,8 @@ Figures/tables (``assets``) are a follow-up module (``tools/assets.py``); until 
 lands, ``rerank_chunks`` returns an empty ``assets`` map and ``asset_refs: []`` so
 the §4i payload shape is already stable.
 
-``tests/test_retrieval.py`` is the contract (no DB, no key, zero cost). The bodies
-raise :class:`NotImplementedError` until the student fills them (scaffold-and-fill,
-LOG-33).
+``tests/test_retrieval.py`` is the contract (no DB, no key, zero cost). The funnel
+tools are implemented; ``tools/assets.py`` remains the only deferred follow-up.
 """
 
 from __future__ import annotations
@@ -207,7 +206,7 @@ def top_by_score(
 
     return ranked[:top]
 
-# ------------------------------------------------------------ T1 funnel tools
+# ------------------------------------------------------------------ T1 funnel tools
 def shallow_match(
     conn: Any,
     buckets: QueryBuckets,

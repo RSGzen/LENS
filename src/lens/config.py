@@ -30,7 +30,7 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("TQDM_DISABLE", "1")
 
-# --------------------------------------------------------------------- paths
+# ------------------------------------------------------------------ paths
 # One source of truth. The env override keeps the same code portable across
 # machines; the default is the local runtime root (outside Google Drive).
 LENS_RUNS_ROOT_PATH = os.environ.get("LENS_RUNS_ROOT", r"D:\lens-data\runs")
@@ -39,7 +39,7 @@ TRAJECTORY_FILENAME = "trajectory.jsonl"
 # Long-running dev-run logs (e.g. the M3 bulk load) kept for thesis evidence.
 LENS_LOGS_ROOT_PATH = os.environ.get("LENS_LOGS_ROOT", r"D:\lens-data\logs")
 
-# --------------------------------------------------------------- dataset (M1)
+# ------------------------------------------------------------------ dataset (M1)
 # Source corpus locations and manifest-build knobs. Same env-override pattern as the runs root.
 
 TARGET_CATEGORY = "cs.AI"
@@ -64,7 +64,7 @@ GROBID_XML_DIR_PATH = os.environ.get("LENS_GROBID_XML_DIR", r"D:\Thesis Dataset\
 # Source lines between checkpoint writes during the scan.
 MANIFEST_CHECKPOINT_INTERVAL = 3000
 
-# -------------------------------------------------------------- database (M2)
+# ------------------------------------------------------------------ database (M2)
 # Local pgvector container (MVP Roadmap §2.1/§3). These are DEV defaults only;
 # override any of them via the environment. A real password is never committed
 # (AGENTS §3) — the defaults match the `docker run` flags documented in
@@ -97,7 +97,7 @@ EMBEDDING_ABSTRACT_BATCH_SIZE = 64
 EMBEDDING_PGVECTOR_TYPE = os.environ.get("LENS_EMBEDDING_TYPE", "halfvec")
 EMBEDDING_INDEX_OPS = os.environ.get("LENS_EMBEDDING_INDEX_OPS", "halfvec_cosine_ops")
 
-# ------------------------------------------------- papers + embeddings (M3)
+# ------------------------------------------------------------------ papers + embeddings (M3)
 # No paper subset: the full manifest is loaded (advisor decision, 6 Oct 2026).
 
 # nomic-embed-text-v1.5, Matryoshka-truncated 768 -> 512, stored halfvec
@@ -115,7 +115,7 @@ EMBEDDING_QUERY_PREFIX = "search_query: "
 # Number of chunks (entries) to extract, encode, re-format and insert into the DB table
 PROCESS_CHUNK_SIZE = 3500
 
-# --------------------------------------------------------------- chunks (M4)
+# ------------------------------------------------------------------ chunks (M4)
 # Full-corpus structural chunking (Roadmap §4 M4; Tech Stack §2 stages 5-6).
 # Threshold is the frozen C-02/N-04 value: 512 nomic (BERT WordPiece) tokens.
 # The splitter (a stdlib paragraph-preserving packer, C-01 amendment) keeps a
@@ -140,7 +140,7 @@ PAPERS_LIMIT = int(os.environ.get("LENS_PAPERS_LIMIT", "0"))
 # Set LENS_RESUME=0 to force a full pass.
 RESUME = os.environ.get("LENS_RESUME", "1").strip().lower() not in {"0", "false", "no", ""}
 
-# ------------------------------------------------------------- retrieval (M5)
+# ------------------------------------------------------------------ retrieval (M5)
 # The frozen R-01 funnel (Tech Stack §2 stages 10-11, §3, §4i):
 #   shallow_match k candidates -> Stage-A rerank -> n papers
 #   deep_match    C chunk candidates (filtered) -> Stage-B rerank -> c chunks
@@ -165,7 +165,7 @@ HNSW_EF_SEARCH = int(os.environ.get("LENS_HNSW_EF_SEARCH", "40"))
 RERANKER_MODEL_ID = os.environ.get("LENS_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 RERANK_BATCH_SIZE = int(os.environ.get("LENS_RERANK_BATCH", "32"))
 
-# --------------------------------------------------- knowledge graph (M7)
+# ------------------------------------------------------------------ knowledge graph (M7)
 # Deterministic query-time NER/RE over the **deep-matched chunks** (D-06/A-02;
 # Tech Stack §2 stage 12). NER (GLiNER) + RE (GLiREL) run **host-side** (torch/GPU);
 # the resulting graph is handed to the RLM as a networkx namespace variable (K-07),
@@ -189,7 +189,7 @@ KG_MIN_SCORE = float(os.environ.get("LENS_KG_MIN_SCORE", "0.5"))
 KG_EXTRACT_MAX_TOKENS = int(os.environ.get("LENS_KG_EXTRACT_MAX_TOKENS", "384"))
 KG_EXTRACT_WINDOW_OVERLAP = int(os.environ.get("LENS_KG_EXTRACT_OVERLAP", "32"))
 
-# ------------------------------------------------- KG post-process (M7.1)
+# ------------------------------------------------------------------ KG post-process (M7.1)
 # Modular post-process applied **before** filter_ontology: relation-slot type
 # inference, a corpus-built gazetteer, and directionality resolution. Types are
 # soft (``type`` + ``type_source`` + ``type_confidence``). Every stage is
@@ -208,7 +208,7 @@ KG_GAZETTEER_MIN_CONFIDENCE = float(
 KG_DIRECTIONALITY_ENABLED = os.environ.get("LENS_KG_DIRECTIONALITY", "1").strip() != "0"
 KG_CYCLE_BREAK = os.environ.get("LENS_KG_CYCLE_BREAK", "1").strip() != "0"
 
-# ------------------------------------------------- KG quality (M7.3 / Phase 1.5)
+# ------------------------------------------------------------------ KG quality (M7.3 / Phase 1.5)
 # The KG is an ablation arm: KG_ENABLED=False removes it from the RLM path.
 KG_ENABLED = os.environ.get("LENS_KG_ENABLED", "1").strip() != "0"
 KG_SPAN_FILTER = os.environ.get("LENS_KG_SPAN_FILTER", "1").strip() != "0"
@@ -232,18 +232,18 @@ KG_ROLE_FILTER = os.environ.get("LENS_KG_ROLE_FILTER", "1").strip() != "0"
 # A context-budget knob, not a scientific value (the summary is what the RLM sees).
 KG_SUMMARY_TOP_ENTITIES = int(os.environ.get("LENS_KG_SUMMARY_TOP", "20"))
 
-# ----------------------------------------------------------------- endpoints
+# ------------------------------------------------------------------ endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
 # Decision layer is single-provider and NOT part of MODEL_REGISTRY (LOG-29).
 JEV_MODEL_ID = "typesafe/jev-1.13"
 
-# ---------------------------------------------------------------- guardrails
+# ------------------------------------------------------------------ guardrails
 # R-05: 120 s per execution block, max 3 retries.
 DEFAULT_TIMEOUT_S = 120
 MAX_RETRIES = 3
 
-# ------------------------------------------------------------- model registry
+# ------------------------------------------------------------------ model registry
 @dataclass(frozen=True)
 class ModelSpec:
     """A frozen description of one model role.

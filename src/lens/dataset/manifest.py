@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 
 from lens import config
 
-# ----------------------------------------------------------------- filtering
+# ------------------------------------------------------------------ filtering
 def is_candidate(
     record: dict[str, Any],
     target_category: str,
@@ -69,7 +69,7 @@ def tei_xml_filename_gen(record: dict[str, Any]) -> str:
 
     return tei_xml_filename
 
-# ----------------------------------------------------------------- logging
+# ------------------------------------------------------------------ logging
 def checkpoint_logging(checkpoint_path: str | Path,
                        scanned_lines: int,
                        num_candidates: int,
@@ -91,7 +91,7 @@ def checkpoint_logging(checkpoint_path: str | Path,
         json.dump(log_dict, checkpoint_log, ensure_ascii=False)
         checkpoint_log.write("\n")
 
-# ----------------------------------------------------------------- extracting
+# ------------------------------------------------------------------ extracting
 def extract_manifest_entry(record: dict[str, Any], tei_xml_filename: str) -> dict[str, Any]:
     """Build one manifest entry dict from a metadata record.
 
@@ -122,7 +122,7 @@ def extract_manifest_entry(record: dict[str, Any], tei_xml_filename: str) -> dic
     }
     return entry_dict
 
-# ---------------------------------------------------------------- build (pass)
+# ------------------------------------------------------------------ build (pass)
 def build_manifest(
     metadata_path: str | Path,
     xml_dir: str | Path,

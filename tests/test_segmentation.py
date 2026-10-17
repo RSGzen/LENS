@@ -1,7 +1,7 @@
 r"""Contract tests for M6 segmentation (no API key, no network, zero cost).
 
 A ``FakeClient`` replaces ``LensClient``, so these tests never leave the machine.
-They FAIL until the student fills the logic bodies (scaffold-and-fill, LOG-33).
+The segmenter is implemented; these are contract tests.
 
 Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 """

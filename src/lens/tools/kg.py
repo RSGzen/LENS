@@ -29,11 +29,10 @@ Every triple carries its source chunk (``chunk_uuid``, ``arxiv_id``,
 ``section_type``), so any edge in the graph resolves back to the exact chunk it
 came from.
 
-Scaffold-and-fill (LOG-33)
---------------------------
-Signatures, type hints, docstrings, and tests land here; the **student fills the
-logic bodies** (``raise NotImplementedError``). ``tests/test_kg.py`` is the
-contract (no DB, no key, zero cost).
+Contract
+--------
+``tests/test_kg.py`` is the contract (no DB, no key, zero cost). ``build_kg``,
+graph assembly, and the sandbox helpers are implemented.
 """
 
 from __future__ import annotations
@@ -89,7 +88,7 @@ def load_ontology() -> dict[str, Any]:
     return ontology_dict
 
 
-# ------------------------------------------------------------ text normalisation
+# ------------------------------------------------------------------ text normalisation
 def normalize_entity(text: str) -> str:
     """Canonical **display** form of an entity surface string.
 
@@ -645,7 +644,7 @@ def build_kg(
 
     return payload
 
-# ------------------------------------------------------------ RLM helpers (sandbox)
+# ------------------------------------------------------------------ RLM helpers (sandbox)
 def kg_neighbors(
     graph: nx.MultiDiGraph,
     entity: str,

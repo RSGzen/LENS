@@ -35,11 +35,10 @@ Importing ``gliner``/``glirel`` pulls in torch (heavy; GPU init), so models are
 built on first :meth:`GlinerExtractor.extract`. Unit tests inject a fake and never
 load them. ``tests/test_kg.py`` is the contract (no key, zero cost).
 
-Scaffold-and-fill (LOG-33)
---------------------------
-Signatures, type hints, docstrings, the ontology registry, and config land here;
-the **student fills the logic bodies** (``raise NotImplementedError``). Bodies are
-described step by step so the contract is unambiguous.
+Implementation status
+---------------------
+The pipeline extractor (GLiNER NER -> GLiREL RE) is implemented; the joint
+variant remains a K-05 probe arm. The losing family is removed after the probe.
 """
 
 from __future__ import annotations
