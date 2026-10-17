@@ -423,6 +423,7 @@ def build_kg(
     coref: bool = config.KG_COREF,
     kg_enabled: bool = config.KG_ENABLED,
     verifier: Any | None = None,
+    role_filter: bool = config.KG_ROLE_FILTER,
 ) -> dict[str, Any]:
     """Build the query-time KG over ``chunk_ids`` (M7 entry point).
 
@@ -443,9 +444,10 @@ def build_kg(
          normalize head/tail via :func:`normalize_entity` and the relation via
          :func:`normalize_relation`.
       5. Optional **quality layer** (M7.3): heuristic coref + span filter, then
-         the M7.1 post-process (gazetteer + relation typing + directionality),
-         then the budgeted JEV **direction verifier**; then ``filter_ontology`` ->
-         ``dedup_triples`` -> ``build_graph``.
+         the M7.1 post-process (gazetteer + suffix/relation typing + **benchmark/
+         task role filter** + directionality), then the budgeted JEV **direction
+         verifier**; then ``filter_ontology`` -> ``dedup_triples`` ->
+         ``build_graph``.
       6. Serialise (``graph_to_nodelink``) + :func:`kg_index_summary`; cache the
          **whole payload** under ``<cache_dir>/<key>.json`` when ``use_cache``.
 
@@ -456,7 +458,8 @@ def build_kg(
                      "type_sources", "relations", "top_entities"},
          "stats": {"chunks": int, "triples_raw": int, "triples_kept": int,
                    "cached": bool, "postprocess": bool, "span_filter": bool,
-                   "coref": bool, "verify": <dict|null>}}
+                   "coref": bool, "role_filter": bool, "role_dropped": int,
+                   "verify": <dict|null>}}
 
     ``summary`` owns the graph topology; ``stats`` owns build bookkeeping only, so
     ``n_nodes`` / ``n_edges`` are **not** duplicated here. ``triples_kept`` is the
@@ -472,6 +475,7 @@ def build_kg(
     extractor_fingerprint = getattr(extractor, "fingerprint", "")
 
     gazetteer: dict[str, dict[str, Any]] = {}
+    postprocess_stats: dict[str, Any] = {}
     postprocess_fingerprint = "off"
     if postprocess:
         if config.KG_GAZETTEER_ENABLED:
@@ -479,7 +483,7 @@ def build_kg(
         postprocess_fingerprint = (
             f"type={config.KG_TYPE_INFERENCE};gaz={len(gazetteer)};"
             f"gazconf={config.KG_GAZETTEER_MIN_CONFIDENCE};"
-            f"suffix={config.KG_SUFFIX_HINTS};"
+            f"suffix={config.KG_SUFFIX_HINTS};role={role_filter};"
             f"dir={config.KG_DIRECTIONALITY_ENABLED};cycle={config.KG_CYCLE_BREAK}"
         )
     verify_fingerprint = (
@@ -507,6 +511,8 @@ def build_kg(
                 "postprocess": postprocess,
                 "span_filter": span_filter,
                 "coref": coref,
+                "role_filter": role_filter,
+                "role_dropped": 0,
                 "verify": None,
             },
         }
@@ -531,6 +537,8 @@ def build_kg(
                 "postprocess": postprocess,
                 "span_filter": span_filter,
                 "coref": coref,
+                "role_filter": role_filter,
+                "role_dropped": 0,
                 "verify": None,
             },
         }
@@ -597,8 +605,10 @@ def build_kg(
             gazetteer=gazetteer,
             suffix_hints=config.KG_SUFFIX_HINTS,
             type_inference=config.KG_TYPE_INFERENCE,
+            role_filter=role_filter,
             directionality=config.KG_DIRECTIONALITY_ENABLED,
             cycle_break=config.KG_CYCLE_BREAK,
+            stats=postprocess_stats,
         )
 
     verify_stats = None
@@ -621,6 +631,8 @@ def build_kg(
             "postprocess": postprocess,
             "span_filter": span_filter,
             "coref": coref,
+            "role_filter": role_filter,
+            "role_dropped": postprocess_stats.get("role_dropped", 0),
             "verify": verify_stats.as_dict() if verify_stats else None,
         },
     }

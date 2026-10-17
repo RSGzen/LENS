@@ -76,7 +76,15 @@ A benchmark is a **Dataset that defines a Task** (it holds items/questions score
 **Evaluation policy:** for benchmark-like spans, accept `Dataset | Method`
 (`score_gold.py --benchmark-lenient`).
 
-**Pipeline policy:** type by **relation role**, not one label. A benchmark/task span
-must not be the head of `evaluated_on` / `outperforms` (the *method* is the subject);
-that is a **role/selection filter**, not an NER label change. (Follow-up, not yet
-implemented.)
+**Pipeline policy (implemented 17 Oct 2026, `KG_ROLE_FILTER`):** type by **relation
+role**, not one label. After relation-slot typing and **before directionality**, the
+role filter drops benchmark/task **heads** of `evaluated_on`, `outperforms`,
+`extends`, `compares_to`, `uses`, `addresses`, `explores`, and benchmark/task
+**tails** of `measures`, `outperforms`, `extends`, `compares_to` (a Task tail stays
+valid for `addresses`); benchmark tails of `evaluated_on`/`uses`/`explores` and
+benchmark heads of `measures` are kept. Running before directionality matters: an
+invalid direction must not win the pair and suppress the valid one.
+
+Metric/model type hints are **not** part of this step (held). Benchmark heads typed
+`Dataset` are still dropped by `filter_ontology` (`measures` head = `Method` only);
+the pilot's valid benchmark heads are `Method`.

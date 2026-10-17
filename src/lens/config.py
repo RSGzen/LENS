@@ -223,6 +223,10 @@ KG_VERIFY_MAX_STATE_CHARS = int(os.environ.get("LENS_KG_VERIFY_MAX_STATE", "1200
 # Suffix type hints ("X dataset" -> Dataset, "ROUGE score" -> Metric) applied
 # before relation-slot typing and protected like gazetteer hints.
 KG_SUFFIX_HINTS = os.environ.get("LENS_KG_SUFFIX_HINTS", "1").strip() != "0"
+# Benchmark/task role filter (after relation typing, before directionality):
+# drop benchmark/task heads of method-subject relations, keep benchmark heads of
+# ``measures`` and benchmark tails of ``evaluated_on``/``uses``/``explores``.
+KG_ROLE_FILTER = os.environ.get("LENS_KG_ROLE_FILTER", "1").strip() != "0"
 
 # Maximum number of entities ranked by degree (in + out) in the KG index summary.
 # A context-budget knob, not a scientific value (the summary is what the RLM sees).

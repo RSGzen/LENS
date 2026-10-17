@@ -30,6 +30,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Sequence
 
+from lens.kg_postprocess import is_benchmark_span as _is_benchmark_span
+
 Triple = dict[str, Any]
 
 TRIPLE_COLUMNS = [
@@ -114,23 +116,11 @@ def read_entities_worksheet(path: str | Path) -> list[dict]:
 _DOT_DIGITS = re.compile(r"(?<=\d)\s*\.\s*(?=\d)")
 _PUNCT_TIGHT = re.compile(r"\s+([.,;:!?\)\]\}])")
 _OPEN_TIGHT = re.compile(r"([\(\[\{])\s+")
-_BENCH_SUFFIX = re.compile(r"(?:qa|bench|benchmark|eval|sum|mc|multihop)$", re.IGNORECASE)
-_BENCHMARK_NAMES = {
-    "qasper", "quality", "narrativeqa", "squad", "hotpotqa", "musique",
-    "2wikimultihopqa", "wcep", "booksum", "academiceval", "qmsum", "longbench",
-    "multifieldqa",
-}
 
 
 def is_benchmark_span(text: str) -> bool:
-    """Heuristic: is this span benchmark-like (Dataset or Method are both defensible)?"""
-    folded = " ".join((text or "").split()).casefold()
-    compact = re.sub(r"[^a-z0-9]", "", folded)
-    if compact in _BENCHMARK_NAMES:
-        return True
-    if _BENCH_SUFFIX.search(compact):
-        return True
-    return any(name.replace("-", "") in compact for name in _BENCHMARK_NAMES if len(name) > 4)
+    """Benchmark-like span using the **broad** matcher (scoring leniency only)."""
+    return _is_benchmark_span(text, broad=True)
 
 
 def clean_surface(text: str) -> str:

@@ -6,7 +6,8 @@ Spec: ``MVP Build Roadmap.md`` §4 (M7), ``Thesis Drafts/Tech Stack (Draft).md``
 This module is **pure** (no DB, no model) and runs in ``build_kg`` **before**
 ``filter_ontology``. Each stage is independently toggleable and removable:
 
-    soft defaults -> gazetteer type hints -> relation-slot type inference -> directionality
+    soft defaults -> gazetteer/suffix type hints -> relation-slot type inference
+                  -> benchmark/task role filter -> directionality
 
 Why relation-first
 ------------------
@@ -42,7 +43,7 @@ import re
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import networkx as nx
 
@@ -158,6 +159,93 @@ def suffix_type_hint(triples: list[Triple]) -> list[Triple]:
             if kind:
                 _set_type(triple, side, kind, "suffix")
     return triples
+
+
+# ------------------------------------------------------- benchmark/task roles
+# A benchmark is a Dataset that defines a Task, so it can legitimately appear as
+# a Dataset (tail of evaluated_on/uses) or as a Method-like subject (head of
+# measures). It must not be the *subject* of evaluated_on/outperforms, though:
+# "WCEP evaluated_on BookSum" and "biomedical QA outperforms GPT-4o" are role
+# errors, not direction errors. This filter removes those impossible roles.
+#
+# Strict matching (exact/compact or suffix) is deliberate: the broad substring
+# matcher used for benchmark-lenient *scoring* would read "quality-aware" as the
+# QuALITY benchmark and could drop valid method heads.
+_BENCH_SUFFIX = re.compile(
+    r"(?:qa|bench|benchmark|mc|multihop)$", re.IGNORECASE
+)
+_BENCHMARK_NAMES = frozenset({
+    "qasper", "quality", "narrativeqa", "squad", "hotpotqa", "musique",
+    "2wikimultihopqa", "wcep", "booksum", "academiceval", "qmsum", "longbench",
+    "multifieldqa",
+})
+_ROLE_METHOD_HEAD_RELATIONS = frozenset({
+    "evaluated_on", "outperforms", "extends", "compares_to", "uses",
+    "addresses", "explores",
+})
+_ROLE_METHOD_TAIL_RELATIONS = frozenset({
+    "measures", "outperforms", "extends", "compares_to", "addresses",
+})
+
+
+def is_benchmark_span(text: str, *, broad: bool = False) -> bool:
+    """Heuristic: is this span benchmark-like (Dataset or Method are both defensible)?
+
+    ``broad=True`` keeps the old substring behaviour used by
+    ``score_gold.py --benchmark-lenient`` (e.g. "quality-aware" matches QuALITY).
+    The **pipeline** uses the strict default so it only fires on exact names or
+    benchmark suffixes.
+    """
+    folded = " ".join((text or "").split()).casefold()
+    compact = re.sub(r"[^a-z0-9]", "", folded)
+    if compact in _BENCHMARK_NAMES:
+        return True
+    if _BENCH_SUFFIX.search(compact):
+        return True
+    if broad:
+        return any(name in compact for name in _BENCHMARK_NAMES if len(name) > 4)
+    return False
+
+
+def is_task_like(triple: Triple, side: str) -> bool:
+    """True when the span is typed ``Task`` (suffix hints already set "X task")."""
+    return triple.get(f"{side}_type") == "Task"
+
+
+def apply_role_filter(triples: Sequence[Triple]) -> tuple[list[Triple], int]:
+    """Drop triples whose benchmark/task endpoint contradicts the relation role.
+
+    - Method-subject relations (``evaluated_on``, ``outperforms``, ``extends``,
+      ``compares_to``, ``uses``, ``addresses``, ``explores``): a benchmark/task
+      **head** is impossible — the method is the subject.
+    - Tail roles: a benchmark/task **tail** is impossible for ``measures``,
+      ``outperforms``, ``extends``, ``compares_to``; a benchmark tail is also
+      impossible for ``addresses`` (a Task tail is valid there).
+    - Benchmarks are **kept** as heads of ``measures`` and as tails of
+      ``evaluated_on``/``uses``/``explores`` — those are their legitimate roles.
+
+    Metric/model *type hints* are intentionally not part of this step, so a
+    metric typed ``Method`` (e.g. ``ARGUE F1 evaluated_on ...``) is not dropped.
+
+    Returns ``(kept, dropped_count)``; runs **before** directionality so an
+    invalid direction cannot win the pair and suppress the valid one.
+    """
+    kept: list[Triple] = []
+    dropped = 0
+    for triple in triples:
+        relation = triple.get("relation")
+        head_bad = is_benchmark_span(triple["head"]) or is_task_like(triple, "head")
+        tail_bad = is_benchmark_span(triple["tail"]) or (
+            relation != "addresses" and is_task_like(triple, "tail")
+        )
+        if relation in _ROLE_METHOD_HEAD_RELATIONS and head_bad:
+            dropped += 1
+            continue
+        if relation in _ROLE_METHOD_TAIL_RELATIONS and tail_bad:
+            dropped += 1
+            continue
+        kept.append(triple)
+    return kept, dropped
 
 
 # ------------------------------------------------------- relation-first typing
@@ -290,11 +378,19 @@ def postprocess(
     gazetteer: dict[str, dict[str, Any]] | None = None,
     suffix_hints: bool = True,
     type_inference: bool = True,
+    role_filter: bool = True,
     directionality: bool = True,
     cycle_break: bool = True,
     context_key: str = "chunk_uuid",
+    stats: dict[str, Any] | None = None,
 ) -> list[Triple]:
-    """Run the modular post-process: gazetteer -> suffix hints -> relation typing -> directionality."""
+    """Run the modular post-process.
+
+    Order: gazetteer -> suffix hints -> relation typing -> **role filter** ->
+    directionality. The role filter runs before directionality on purpose: an
+    invalid direction (benchmark head) must not win the pair and suppress the
+    valid one. ``stats`` (optional) receives ``role_dropped``.
+    """
     out = with_soft_defaults(list(triples))
     if gazetteer:
         out = apply_gazetteer(out, gazetteer)
@@ -302,6 +398,12 @@ def postprocess(
         out = suffix_type_hint(out)
     if type_inference:
         out = infer_types_from_relations(out)
+    if role_filter:
+        out, dropped = apply_role_filter(out)
+    else:
+        dropped = 0
+    if stats is not None:
+        stats["role_dropped"] = dropped
     if directionality:
         out = resolve_directionality(out, context_key=context_key, cycle_break=cycle_break)
     return out

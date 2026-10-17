@@ -253,6 +253,38 @@ class BuildKgTest(unittest.TestCase):
         for _, _, _, data in g.edges(keys=True, data=True):
             self.assertIn(data["chunk_uuid"], {"u1", "u2"})
 
+    def test_role_filter_drops_benchmark_head(self) -> None:
+        by_text = {
+            "text-one": [
+                triple("WCEP", "Method", "evaluated_on", "BookSum", "Dataset"),
+                triple("GoR", "Method", "evaluated_on", "WCEP", "Dataset"),
+            ],
+        }
+        with mock.patch("lens.tools.kg.fetch_chunks", return_value=self._rows()[:1]):
+            out = build_kg(
+                None, ["u1"], FakeExtractor(by_text),
+                use_cache=False, role_filter=True,
+            )
+
+        self.assertTrue(out["stats"]["role_filter"])
+        self.assertEqual(out["stats"]["role_dropped"], 1)
+        self.assertEqual(out["stats"]["triples_kept"], 1)
+
+    def test_role_filter_can_be_disabled(self) -> None:
+        by_text = {
+            "text-one": [
+                triple("WCEP", "Method", "evaluated_on", "BookSum", "Dataset"),
+            ],
+        }
+        with mock.patch("lens.tools.kg.fetch_chunks", return_value=self._rows()[:1]):
+            out = build_kg(
+                None, ["u1"], FakeExtractor(by_text),
+                use_cache=False, role_filter=False,
+            )
+
+        self.assertEqual(out["stats"]["role_dropped"], 0)
+        self.assertEqual(out["stats"]["triples_kept"], 1)
+
 
 class BuildKgCacheTest(unittest.TestCase):
     def _rows(self):

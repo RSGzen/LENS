@@ -10,7 +10,9 @@ import unittest
 
 from lens.kg_postprocess import (
     apply_gazetteer,
+    apply_role_filter,
     infer_types_from_relations,
+    is_benchmark_span,
     postprocess,
     resolve_directionality,
     suffix_type_hint,
@@ -142,6 +144,107 @@ class DirectionalityTest(unittest.TestCase):
         )
 
 
+class BenchmarkSpanTest(unittest.TestCase):
+    def test_strict_positives(self) -> None:
+        for name in (
+            "WCEP", "BookSum", "QM-Sum", "AcademicEval", "2WikiMultihopQA",
+            "MultiFieldQA", "Long-Bench", "EN.MC", "En.QA", "biomedical QA",
+        ):
+            self.assertTrue(is_benchmark_span(name), name)
+
+    def test_strict_negatives(self) -> None:
+        for name in (
+            "quality-aware retrieval", "retrieval", "checksum", "BERT", "GPT-4o",
+            "ARGUE F1", "Mixtral", "GoR",
+        ):
+            self.assertFalse(is_benchmark_span(name), name)
+
+    def test_broad_keeps_substring_behaviour(self) -> None:
+        # Scoring leniency may still read "quality-aware" as QuALITY.
+        self.assertTrue(is_benchmark_span("quality-aware retrieval", broad=True))
+
+
+class RoleFilterTest(unittest.TestCase):
+    def test_drop_benchmark_head_of_evaluated_on(self) -> None:
+        out, dropped = apply_role_filter(
+            [triple("WCEP", "Method", "evaluated_on", "BookSum", "Dataset")]
+        )
+        self.assertEqual(out, [])
+        self.assertEqual(dropped, 1)
+
+    def test_drop_benchmark_head_of_outperforms(self) -> None:
+        out, dropped = apply_role_filter(
+            [triple("biomedical QA", "Method", "outperforms", "GPT-4o", "Method")]
+        )
+        self.assertEqual(out, [])
+        self.assertEqual(dropped, 1)
+
+    def test_keep_benchmark_head_of_measures(self) -> None:
+        out, dropped = apply_role_filter(
+            [triple("2WikiMultihopQA", "Method", "measures", "F1", "Metric")]
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(dropped, 0)
+
+    def test_drop_benchmark_tail_of_measures(self) -> None:
+        out, dropped = apply_role_filter(
+            [triple("GoR", "Method", "measures", "QASPER", "Dataset")]
+        )
+        self.assertEqual(out, [])
+        self.assertEqual(dropped, 1)
+
+    def test_keep_benchmark_tail_of_evaluated_on(self) -> None:
+        out, dropped = apply_role_filter(
+            [triple("GoR", "Method", "evaluated_on", "WCEP", "Dataset")]
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(dropped, 0)
+
+    def test_keep_method_outperforms(self) -> None:
+        out, dropped = apply_role_filter(
+            [triple("Mixtral", "Method", "outperforms", "GPT-4o", "Method")]
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(dropped, 0)
+
+    def test_keep_task_tail_of_addresses(self) -> None:
+        out, dropped = apply_role_filter(
+            [triple("BERT", "Method", "addresses", "question answering", "Task")]
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(dropped, 0)
+
+    def test_drop_benchmark_tail_of_addresses(self) -> None:
+        out, dropped = apply_role_filter(
+            [triple("BERT", "Method", "addresses", "QASPER", "Dataset")]
+        )
+        self.assertEqual(out, [])
+        self.assertEqual(dropped, 1)
+
+    def test_metric_head_is_kept_without_metric_hints(self) -> None:
+        # ARGUE F1 is a Metric typed Method; metric hints are held for now.
+        out, dropped = apply_role_filter(
+            [triple("ARGUE F1", "Method", "evaluated_on", "NeuCLIR", "Dataset")]
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(dropped, 0)
+
+    def test_role_filter_runs_before_directionality(self) -> None:
+        # The invalid direction has the higher score. If directionality ran first
+        # it would keep QASPER -> BM25, then the role filter would drop it and the
+        # valid BM25 -> QASPER edge would be lost.
+        out = postprocess(
+            [
+                triple("QASPER", "Dataset", "uses", "BM25", "Method", score=0.9),
+                triple("BM25", "Method", "uses", "QASPER", "Dataset", score=0.5),
+            ],
+            role_filter=True,
+            directionality=True,
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["head"], "BM25")
+
+
 class PipelineTest(unittest.TestCase):
     def test_soft_fields_default_to_model(self) -> None:
         out = postprocess(
@@ -164,6 +267,22 @@ class PipelineTest(unittest.TestCase):
         )
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["tail_type"], "Dataset")
+
+    def test_role_filter_stats(self) -> None:
+        stats: dict = {}
+        out = postprocess(
+            [triple("WCEP", "Method", "evaluated_on", "BookSum", "Dataset")],
+            stats=stats,
+        )
+        self.assertEqual(out, [])
+        self.assertEqual(stats["role_dropped"], 1)
+
+    def test_role_filter_can_be_disabled(self) -> None:
+        out = postprocess(
+            [triple("WCEP", "Method", "evaluated_on", "BookSum", "Dataset")],
+            role_filter=False,
+        )
+        self.assertEqual(len(out), 1)
 
 
 if __name__ == "__main__":
