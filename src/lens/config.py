@@ -161,6 +161,28 @@ HNSW_EF_SEARCH = int(os.environ.get("LENS_HNSW_EF_SEARCH", "40"))
 RERANKER_MODEL_ID = os.environ.get("LENS_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 RERANK_BATCH_SIZE = int(os.environ.get("LENS_RERANK_BATCH", "32"))
 
+# --------------------------------------------------- knowledge graph (M7)
+# Deterministic query-time NER/RE over the **deep-matched chunks** (D-06/A-02;
+# Tech Stack §2 stage 12). NER (GLiNER) + RE (GLiREL) run **host-side** (torch/GPU);
+# the resulting graph is handed to the RLM as a networkx namespace variable (K-07),
+# never dumped into root context. The subgraph is cached by (paper set + ontology
+# version + extractor identity) — K-06.
+LENS_CACHE_ROOT_PATH = os.environ.get("LENS_CACHE_ROOT", r"D:\lens-data\cache")
+KG_CACHE_DIR_NAME = "kg"
+# Bump on ANY change to the entity/relation schema: it is the KG re-extraction key
+# (mirrors EMBEDDING_VERSION / T-08). Also the cache-key component (K-06).
+KG_ONTOLOGY_VERSION = os.environ.get("LENS_KG_ONTOLOGY_VERSION", "lens-ontology-1")
+# Both extractor families are installed for the M7 K-05 recall probe; the losing
+# family is removed once the probe decides (Roadmap §4 M7).
+KG_NER_MODEL_ID = os.environ.get("LENS_KG_NER_MODEL", "urchade/gliner_medium-v2.1")
+KG_REL_MODEL_ID = os.environ.get("LENS_KG_REL_MODEL", "jackboyla/glirel-large-v0")
+# Minimum span / relation confidence kept. Kept in one place so the probe can sweep it.
+KG_MIN_SCORE = float(os.environ.get("LENS_KG_MIN_SCORE", "0.5"))
+
+# Maximum number of entities ranked by degree (in + out) in the KG index summary.
+# A context-budget knob, not a scientific value (the summary is what the RLM sees).
+KG_SUMMARY_TOP_ENTITIES = int(os.environ.get("LENS_KG_SUMMARY_TOP", "20"))
+
 # ----------------------------------------------------------------- endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
