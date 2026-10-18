@@ -9,9 +9,18 @@
 # One-time migration: stop/remove the old manual lens-pg container, then
 # `docker compose up -d lens-pg`; the named volume lens-pgdata preserves data.
 #
-# `sandbox-net` is marked internal to block general egress. Verify on this Docker
-# Desktop version that host.docker.internal still resolves; if it does not, remove
-# `internal: true` and keep the no-egress policy at the application layer.
+# `sandbox-net` is internal to block general egress (Tech Stack 4b: "no network"
+# is a thesis claim, not a convenience). That flag interacts with the two other
+# host-boundary choices, so verify all three together, in this order:
+#   1. host RPC reachable FROM the container: GET $LENS_HOST_RPC_URL/health
+#   2. general egress blocked:                a connect to 1.1.1.1:443 must FAIL
+#   3. sandbox /exec reachable from the host: GET 127.0.0.1:$LENS_SANDBOX_PORT/health
+# If (1) fails while `internal: true` is set, do NOT drop the flag. Give the
+# network a fixed subnet and point the RPC at the bridge gateway instead:
+#   networks: {sandbox-net: {driver: bridge, internal: true,
+#                            ipam: {config: [{subnet: 172.28.0.0/24}]}}}
+#   LENS_HOST_RPC_URL=http://172.28.0.1:8765
+# (This is the documented F16 fallback; scripts/verify_sandbox.py asserts 1 and 2.)
 
 name: lens
 

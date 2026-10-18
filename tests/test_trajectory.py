@@ -108,6 +108,41 @@ class TrajectoryTestCase(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             ctx.step_idx = 1  # type: ignore[misc]
 
+    # ---------------------------------------------------------------- totals
+    def test_totals_sums_cost_and_tokens(self) -> None:
+        ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="chat", action="chat.completion",
+            tokens_in=100, tokens_out=10, cost_usd=0.001,
+        )
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="jev", action="jev.decisions",
+            tokens_in=50, cost_usd=0.0002,
+        )
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="tool", action="tool.dispatch", tool="build_kg",
+        )
+        totals = self.traj.totals()
+        self.assertEqual(totals["calls"], 3)
+        self.assertEqual(totals["tokens_in"], 150)
+        self.assertEqual(totals["tokens_out"], 10)
+        self.assertAlmostEqual(totals["cost_usd"], 0.0012)
+        # Tool/admin events carry no model spend and must not be counted as LLM calls.
+        self.assertEqual(totals["by_action"]["tool.dispatch"]["calls"], 1)
+        self.assertAlmostEqual(totals["by_action"]["tool.dispatch"]["cost_usd"], 0.0)
+
+    def test_totals_on_empty_log_is_zeroed(self) -> None:
+        totals = self.traj.totals()
+        self.assertEqual(totals["cost_usd"], 0.0)
+        self.assertEqual(totals["calls"], 0)
+
+    def test_totals_does_not_rewrite_the_log(self) -> None:
+        ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
+        self.traj.log_event(trace_ctx=ctx, call_type="chat", action="chat.completion")
+        before = self.traj.trajectory_path.read_bytes()
+        self.traj.totals()
+        self.assertEqual(self.traj.trajectory_path.read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

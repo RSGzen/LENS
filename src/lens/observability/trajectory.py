@@ -35,8 +35,14 @@ except ModuleNotFoundError as e:
 # Who performed the action (Tech Stack §5 `actor`).
 Actor = Literal["root", "sub", "tool"]
 
-# The two transports sharing the one trajectory schema (LOG-31).
-CallType = Literal["chat", "jev"]
+# What the event is (Tech Stack 5). One schema, several kinds:
+# - ``chat`` / ``jev`` : the two LLM transports (LOG-31)
+# - ``tool``          : one host-tool dispatch (ToolRegistry.dispatch)
+# - ``exec``          : one sandbox code block (Runtime._run_loop)
+# - ``note``          : a free-form RLM/operator annotation (Runtime._note)
+# Keeping them in one enum is what lets H3 cost aggregation separate model spend
+# from tool spend; labelling a tool call ``chat`` would corrupt that number.
+CallType = Literal["chat", "jev", "tool", "exec", "note"]
 
 
 @dataclass(frozen=True)
@@ -162,3 +168,25 @@ class Trajectory:
         with open(self.trajectory_path, "a", encoding="utf-8") as f:
             json.dump(info_dict, f, ensure_ascii=False)
             f.write("\n")
+
+    # ---------------------------------------------------------------- totals
+    def totals(self) -> dict[str, Any]:
+        """Sum this run's cost and tokens from ``trajectory.jsonl``.
+
+        Contract::
+
+            {"cost_usd": <float>, "tokens_in": <int>, "tokens_out": <int>,
+             "calls": <int>, "by_action": {<action>: {"cost_usd", "tokens_in",
+                                                   "tokens_out", "calls"}}}
+
+        Why the log and not ``Budget``: ``Budget`` is the **cap enforcer** and
+        only sees what the orchestrator tells it; JEV calls and host tools have
+        their own paths. The trajectory is written by the transport itself, so
+        it is the authoritative record for a reported ``$/query`` (R4). Missing
+        fields count as zero; a missing/empty file returns zeroed totals.
+
+        This is read-only and must never mutate or rewrite the log (F-02: the
+        audit trail is append-only).
+        """
+        raise NotImplementedError("M8 scaffold: implement Trajectory.totals")
+

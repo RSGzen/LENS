@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from lens import config
-from lens.models import CallResult
+from lens.models import CallResult, JevResult
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,11 @@ class Budget:
     ``record_*`` methods are called by the orchestrator only. ``can_continue``
     answers whether another root turn is allowed. ``stop_reason`` names the cap
     that was hit (for the partial-answer report), or ``None``.
+
+    Two jobs, two sources (R4): this object **enforces** the caps, and
+    :meth:`lens.observability.trajectory.Trajectory.totals` is what a reported
+    ``$/query`` is read from. They can differ — the caps only see what the
+    orchestrator records, while the transport logs every call itself.
     """
 
     limits: BudgetLimits = field(default_factory=BudgetLimits)
@@ -50,6 +55,16 @@ class Budget:
     def record_chat(self, result: CallResult) -> None:
         """Add one chat call's tokens and cost to the running totals."""
         raise NotImplementedError("M8 scaffold: implement Budget.record_chat")
+
+    def record_jev(self, result: JevResult) -> None:
+        """Add one JEV (decision-layer) call's tokens and cost.
+
+        JEV bills on **input** tokens only (``usage.cost`` is the per-call cost),
+        but it is still spend: leaving it out would understate the per-query cost
+        the caps enforce. ``JevResult`` has ``tokens_in`` / ``cost_usd`` and no
+        ``tokens_out`` — count output as zero.
+        """
+        raise NotImplementedError("M8 scaffold: implement Budget.record_jev")
 
     def record_exec(self, seconds: float) -> None:
         """Add one sandbox execution block's wall-clock seconds."""

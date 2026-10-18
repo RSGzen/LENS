@@ -244,19 +244,54 @@ DEFAULT_TIMEOUT_S = 120
 MAX_RETRIES = 3
 
 # ------------------------------------------------------------------ harness (M8)
-# Central RLM caps (Tech Stack §4a / §6, R-05). The orchestrator enforces these;
+# Central RLM caps (Tech Stack 4a / 6, R-05). The orchestrator enforces these;
 # the sandbox can only read them through ``rlm_api.budget()``.
-MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "10"))
-MAX_TOKENS_PER_QUERY = int(os.environ.get("LENS_MAX_TOKENS", "200000"))
-MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "0.50"))
+#
+# The caps are ORDERED so that a run ends because the model finished, not because
+# a counter ran out: FINAL_ANSWER -> iterations -> tokens -> cost. The token cap
+# is DERIVED below from the turn and context caps rather than being an
+# independent number, so the three can never fight each other by accident (an
+# independent 200k token cap used to bind at ~4 turns while the 10-turn cap
+# never fired).
+#
+# Model windows (OpenRouter model list, 18 Oct 2026): root ``openai/gpt-5``
+# 400,000 ctx / 128,000 max out, $1.25/1M in + $10/1M out; sub ``gpt-5-mini``
+# 400,000; dev ``qwen/qwen3-coder`` 262,144 / 65,536, $0.30 + $1.00. The
+# **narrowest** role (262k) bounds CONTEXT_TOKEN_LIMIT, not the root.
+MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "8"))
 MAX_EXEC_BLOCK_S = float(os.environ.get("LENS_MAX_EXEC_BLOCK_S", "120"))
 MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
+MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "0.50"))
 
 # Context assembly. Compaction triggers when the estimated root context exceeds
-# ``CONTEXT_COMPACT_RATIO * CONTEXT_TOKEN_LIMIT``.
-CONTEXT_TOKEN_LIMIT = int(os.environ.get("LENS_CONTEXT_TOKEN_LIMIT", "60000"))
+# ``CONTEXT_COMPACT_RATIO * CONTEXT_TOKEN_LIMIT`` (= 30,000 tokens by default).
+# 40k is ~10% of gpt-5's window and ~15% of qwen3-coder's. A turn needs far less:
+# the retrieved evidence stays a sandbox variable, so the context only carries a
+# printed digest (~1.5k tokens), the tool manifest, query.json and budget.md.
+CONTEXT_TOKEN_LIMIT = int(os.environ.get("LENS_CONTEXT_TOKEN_LIMIT", "40000"))
 CONTEXT_COMPACT_RATIO = float(os.environ.get("LENS_CONTEXT_COMPACT_RATIO", "0.75"))
-TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "2000"))
+# Wrap-up nudge (see ``agent.context.budget_warning``): at this fraction of any
+# cap the orchestrator asks the root to land the plane, so hitting a cap produces
+# a labelled partial answer instead of a truncation mid-thought.
+CONTEXT_WARN_RATIO = float(os.environ.get("LENS_CONTEXT_WARN_RATIO", "0.80"))
+# Output is the expensive half (gpt-5: $10/1M out vs $1.25/1M in), so each root
+# call gets a hard output cap. Long summarisation belongs in ``sub_call`` (mini).
+ROOT_MAX_OUTPUT_TOKENS = int(os.environ.get("LENS_ROOT_MAX_OUTPUT_TOKENS", "8000"))
+# Context-side observation cap (chars). The runner caps captured stdout too
+# (``SANDBOX_STDOUT_MAX_CHARS``); this is the second, tighter cut applied before
+# the observation becomes a message.
+TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "3000"))
+
+# Cumulative token cap, DERIVED (not tuned): iterations x compacted-context
+# target x 1.25 overhead (system prompt + tool manifest + final answer).
+# Default 8 x 30,000 x 1.25 = 300,000. This is a safety net above the cost cap —
+# a measured estimate, not a result; M11 reports the observed distribution.
+MAX_TOKENS_PER_QUERY = int(
+    os.environ.get(
+        "LENS_MAX_TOKENS",
+        str(int(MAX_ITERATIONS * CONTEXT_TOKEN_LIMIT * CONTEXT_COMPACT_RATIO * 1.25)),
+    )
+)
 
 # Run mode. ``LENS_RECORDED=1`` disables dev-only escape hatches (T3 SQL) so a
 # recorded run cannot bypass the graded funnel.
@@ -283,7 +318,10 @@ SANDBOX_PORT = int(os.environ.get("LENS_SANDBOX_PORT", "8080"))
 SANDBOX_CPUS = os.environ.get("LENS_SANDBOX_CPUS", "2")
 SANDBOX_MEMORY = os.environ.get("LENS_SANDBOX_MEMORY", "2g")
 SANDBOX_PIDS_LIMIT = int(os.environ.get("LENS_SANDBOX_PIDS_LIMIT", "256"))
-SANDBOX_STDOUT_MAX_CHARS = int(os.environ.get("LENS_SANDBOX_STDOUT_MAX_CHARS", "20000"))
+# Raw stdout captured per exec block. This is the first cut on observation size;
+# ``TOOL_RESULT_SUMMARY_CHARS`` is the second (before it becomes a message). At
+# 20,000 chars (~5k tokens) a single turn could eat a sixth of the context.
+SANDBOX_STDOUT_MAX_CHARS = int(os.environ.get("LENS_SANDBOX_STDOUT_MAX_CHARS", "6000"))
 
 # Host RPC server the sandbox calls back into. It binds all interfaces because
 # Docker Desktop reaches it via ``host.docker.internal``; a per-run token is the

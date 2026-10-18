@@ -34,7 +34,11 @@ except ImportError:  # host tests: package import
 # Hard cap on the code block itself (a guardrail, not a scientific value).
 MAX_CODE_CHARS = 200_000
 DEFAULT_PORT = 8080
-DEFAULT_STDOUT_MAX_CHARS = int(os.environ.get("LENS_SANDBOX_STDOUT_MAX_CHARS", "20000"))
+# First cut on observation size: the host applies a second, tighter cut
+# (config.TOOL_RESULT_SUMMARY_CHARS) before the text becomes a message. 6,000
+# chars is ~1.5k tokens — enough for a digest, small enough that 8 turns do not
+# fill the root context on their own.
+DEFAULT_STDOUT_MAX_CHARS = int(os.environ.get("LENS_SANDBOX_STDOUT_MAX_CHARS", "6000"))
 
 
 class Executor:

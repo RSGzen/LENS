@@ -9,7 +9,7 @@ import json
 import unittest
 
 from lens.agent.budget import Budget, BudgetLimits
-from lens.models import CallResult
+from lens.models import CallResult, JevResult
 
 
 def make_result(*, tokens_in: int = 10, tokens_out: int = 5, cost: float = 0.01) -> CallResult:
@@ -23,6 +23,17 @@ def make_result(*, tokens_in: int = 10, tokens_out: int = 5, cost: float = 0.01)
         tokens_out=tokens_out,
         latency_ms=1,
         cost_usd=cost,
+    )
+
+
+def make_jev(*, tokens_in: int = 10, cost: float = 0.001) -> JevResult:
+    return JevResult(
+        answers={},
+        model="typesafe/jev-1.13",
+        provider="TypeSafe",
+        tokens_in=tokens_in,
+        cost_usd=cost,
+        latency_ms=1,
     )
 
 
@@ -53,6 +64,14 @@ class BudgetTestCase(unittest.TestCase):
         self.assertEqual(snap["used"]["tokens_in"], 23)
         self.assertEqual(snap["used"]["tokens_out"], 9)
         self.assertAlmostEqual(snap["used"]["cost_usd"], 0.03)
+
+    def test_record_jev_counts_toward_the_cost_cap(self) -> None:
+        # JEV bills on input only; leaving it out would understate spend.
+        self.budget.record_jev(make_jev(tokens_in=40, cost=0.02))
+        snap = self.budget.snapshot()
+        self.assertEqual(snap["used"]["tokens_in"], 40)
+        self.assertEqual(snap["used"]["tokens_out"], 0)
+        self.assertAlmostEqual(snap["used"]["cost_usd"], 0.02)
 
     def test_iteration_cap_stops_the_loop(self) -> None:
         self.budget.record_iteration()

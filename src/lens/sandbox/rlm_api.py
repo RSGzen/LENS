@@ -12,6 +12,10 @@ Only these methods exist at depth 1::
 
 There is **no** ``self_call`` / recursion here (LOG-13, A-01). Every method is
 an RPC to the host; this module contains no tool logic and no credentials.
+
+Also importable in the namespace: ``networkx``, ``numpy``, ``pandas``, and
+``kg_query`` (the pure KG-traversal module — ``kg_neighbors`` / ``kg_triples`` /
+``kg_subgraph``) for the graph returned by ``tool("build_kg", ...)``.
 """
 
 from __future__ import annotations
@@ -61,18 +65,24 @@ def _post(
     *,
     timeout: float = DEFAULT_TIMEOUT_S,
 ) -> dict[str, Any]:
-    """POST one JSON payload to the host and unwrap ``{"ok": true, "result": ...}``.
+    """POST one JSON payload to the host and return the **parsed envelope**.
 
-    Use ``httpx`` (baked into the image) lazily so the host can import this
-    module for contract tests without the sandbox dependency installed. On a
-    transport/HTTP error raise :class:`RLMError`; on ``ok: false`` raise
-    :class:`RLMError` with the structured error body.
+    Contract:
+      - Return the host's JSON body unchanged: ``{"ok": true, "result": ...}``
+        or ``{"ok": false, "error": {...}}``. Do **not** unwrap here — the
+        callers pick out ``result`` and there is exactly one place that decides
+        what a failure looks like.
+      - Send ``Authorization: Bearer <token>`` from :func:`_token`.
+      - On a transport/HTTP error raise :class:`RLMError`; on ``ok: false`` raise
+        :class:`RLMError` carrying the structured error body.
+      - Use ``httpx`` (baked into the image) **lazily** so the host can import
+        this module for contract tests without the sandbox dependency installed.
     """
     raise NotImplementedError("M8 scaffold: implement rlm_api._post")
 
 
 def tool(name: str, **kwargs: Any) -> Any:
-    """Call a registered host tool by name; return its result."""
+    """Call a registered host tool by name; return its ``result``."""
     raise NotImplementedError("M8 scaffold: implement rlm_api.tool")
 
 
@@ -85,12 +95,22 @@ def sub_call(prompt: str, context: str | None = None) -> str:
 
 
 def budget() -> dict[str, Any]:
-    """Return the host's read-only budget snapshot."""
+    """Return the host's read-only budget snapshot (the ``result`` field)."""
     raise NotImplementedError("M8 scaffold: implement rlm_api.budget")
 
 
 def emit(value: Any, label: str | None = None) -> dict[str, Any]:
-    """Offload ``value`` to the run workspace; return ``{"ref", "path", ...}``."""
+    """Offload ``value`` to the run workspace.
+
+    Returns the host's ``result`` dict::
+
+        {"ref": "sha256:<hex>",   # content address (also the trajectory ref)
+         "path": "/workspace/emits/<name>",   # what *you* can open()
+         "host_path": "D:\\...",  # host-side copy; not visible here
+         "bytes": 1234}
+
+    Use ``path`` — ``host_path`` is meaningless inside the container.
+    """
     raise NotImplementedError("M8 scaffold: implement rlm_api.emit")
 
 

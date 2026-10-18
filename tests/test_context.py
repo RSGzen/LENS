@@ -5,7 +5,6 @@ Run:  .\.venv\Scripts\python.exe -m unittest tests.test_context -v
 
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,16 +69,25 @@ class ContextTestCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             paths = context.write_context_files(
                 tmp,
-                query_buckets={"problems": ["p1"]},
                 tool_manifest="- tool()",
                 budget_snapshot={"left": {"iterations": 3}},
             )
-            self.assertTrue(paths["query.json"].is_file())
             self.assertTrue(paths["tools.md"].is_file())
             self.assertTrue(paths["budget.md"].is_file())
             self.assertTrue(paths["AGENTS.md"].is_file())
-            data = json.loads(paths["query.json"].read_text(encoding="utf-8"))
-            self.assertEqual(data["problems"], ["p1"])
+            # query.json is M6's file (write_query_json), not this module's:
+            # one writer per file or the artifact drifts from the context.
+            self.assertNotIn("query.json", paths)
+
+    def test_budget_warning_is_silent_below_threshold(self) -> None:
+        snapshot = {"limits": {"tokens": 100}, "used": {"tokens_in": 10}}
+        self.assertIsNone(context.budget_warning(snapshot))
+
+    def test_budget_warning_fires_near_a_cap(self) -> None:
+        snapshot = {"limits": {"tokens": 100}, "used": {"tokens_in": 85}}
+        warning = context.budget_warning(snapshot)
+        self.assertIsNotNone(warning)
+        self.assertIn("FINAL_ANSWER", warning)
 
 
 if __name__ == "__main__":

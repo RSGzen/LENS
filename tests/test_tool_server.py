@@ -13,7 +13,9 @@ from lens.agent.tool_server import ToolServer
 
 class FakeRuntime:
     def handle_rpc(self, endpoint: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-        if endpoint == "/boom":
+        # A dispatch failure (not a route failure): unknown paths are 404, and a
+        # handler exception is a 500.
+        if payload.get("name") == "boom":
             raise RuntimeError("boom")
         return {"ok": True, "endpoint": endpoint, "payload": dict(payload)}
 

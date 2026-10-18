@@ -56,7 +56,13 @@ class ToolServer:
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> None:
-        """Bind and serve in a background thread. Port ``0`` selects a free port."""
+        """Bind and serve in a background thread. Port ``0`` selects a free port.
+
+        After binding, ``self.port`` holds the **actual** port. The sandbox's
+        ``LENS_HOST_RPC_URL`` must be built from it (``run.py`` does), otherwise
+        the container dials the configured default while the server listens
+        somewhere else.
+        """
         raise NotImplementedError("M8 scaffold: implement ToolServer.start")
 
     def stop(self) -> None:

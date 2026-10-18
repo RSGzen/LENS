@@ -89,7 +89,8 @@ class RuntimeTestCase(unittest.TestCase):
         self._orig_root = trajectory_module.LENS_RUNS_ROOT_PATH
         trajectory_module.LENS_RUNS_ROOT_PATH = self._tmp.name
         self.trajectory = Trajectory("run-test")
-        self.sandbox = FakeSandbox(self.trajectory.run_dir)
+        # The sandbox mounts <run_dir>/work; the artifacts stay in run_dir.
+        self.sandbox = FakeSandbox(self.trajectory.run_dir / "work")
         self.registry = ToolRegistry()
         self.registry.register("echo", echo, description="Echo a string.")
         self.client = FakeClient(
@@ -121,6 +122,16 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertFalse(result.partial)
         self.assertIn("The grounded answer", result.answer)
         self.assertTrue(result.answer_path.is_file())
+
+    def test_workspace_never_exposes_run_artifacts(self) -> None:
+        # The RLM can write anywhere in its workspace, so the workspace must be
+        # <run_dir>/work — trajectory.jsonl / tasks.json / answer.md stay outside
+        # it and stay trustworthy.
+        result = self.runtime.run()
+        self.assertEqual(self.runtime.workspace, self.trajectory.run_dir / "work")
+        self.assertEqual(result.answer_path.parent, self.trajectory.run_dir)
+        self.assertFalse((self.runtime.workspace / "trajectory.jsonl").exists())
+        self.assertFalse((self.runtime.workspace / "answer.md").exists())
 
     def test_handle_rpc_budget(self) -> None:
         response = self.runtime.handle_rpc("/budget", {})

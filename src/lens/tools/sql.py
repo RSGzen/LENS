@@ -61,6 +61,11 @@ def query_sql(
 ) -> list[dict[str, Any]]:
     """Execute one validated read-only query and return at most ``row_cap`` rows.
 
+    ``conn`` must be the **``lens_ro``** connection (``db.connect(readonly=True)``)
+    with ``autocommit=False``: ``SET TRANSACTION READ ONLY`` is a no-op under
+    autocommit, and the role's grants are the real boundary — the prefix/ keyword
+    checks below are only a cheap first line of defence.
+
     Steps: validate; open a cursor; ``SET LOCAL statement_timeout``; set the
     transaction read-only; execute; fetch at most ``row_cap + 1`` to detect
     truncation; map rows to dicts by column name.

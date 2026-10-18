@@ -1,13 +1,25 @@
 """M8 live sandbox verification (requires Docker Desktop).
 
-Checks, in order:
-  1. build/start ``lens-repl`` via compose;
-  2. ``/health`` answers;
+Checks, in dependency order — the first two are what the thesis claims, so they
+run before anything convenient:
+
+  0. **host RPC reachable from inside the container** — a block calls
+     ``rlm_api.budget()`` (or ``GET $LENS_HOST_RPC_URL/health``). If this fails on
+     ``sandbox-net: internal: true``, apply the compose fallback (fixed subnet +
+     bridge-gateway URL), do **not** drop ``internal``: no-egress is a claim
+     (Tech Stack 4b), not a nicety.
+  1. **general egress blocked** — a connect to ``1.1.1.1:443`` (or any host) must
+     fail from inside the sandbox. Record the failure: absence of egress is
+     evidence, not an assumption.
+  2. build/start ``lens-repl`` via compose; ``/health`` answers on the host side;
   3. namespace persistence (``x = 1`` then ``print(x + 1)`` -> ``2``);
   4. a timeout returns an error without killing the runner;
-  5. the workspace mount is writable;
+  5. the workspace mount is writable **and** the run artifacts are not visible
+     (``trajectory.jsonl`` / ``answer.md`` must be absent from ``/workspace``);
   6. no ``OPENROUTER_API_KEY`` / ``LENS_DB_PASSWORD`` is present inside the
-     container (``docker compose exec`` or ``/exec`` + ``os.environ``).
+     container (``/exec`` + ``os.environ``);
+  7. the image contains ``runner.py``, ``rlm_api.py`` and ``kg_query.py`` and the
+     RLM can ``import kg_query``.
 
 This is an integration script, not part of the no-key unit suite.
 """

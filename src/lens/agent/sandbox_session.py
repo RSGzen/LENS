@@ -3,8 +3,10 @@
 Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a/§4b; MVP Roadmap M8.
 
 The runtime starts **one** container per query session, mounts only the run
-workspace, passes the per-run RPC token, and talks to the passive runner over
-HTTP. The sandbox never receives the OpenRouter key or DB credentials.
+workspace (``<run_dir>/work``, never the artifact directory — see
+:mod:`lens.agent.runtime`), passes the per-run RPC token, and talks to the
+passive runner over HTTP. The sandbox never receives the OpenRouter key or DB
+credentials.
 """
 
 from __future__ import annotations
@@ -50,6 +52,7 @@ class SandboxSession:
         token: str,
         exec_timeout_s: float = config.MAX_EXEC_BLOCK_S,
         session: Any | None = None,
+        host_rpc_url: str | None = None,
     ) -> None:
         self.run_id = run_id
         self.workspace = Path(workspace)
@@ -60,6 +63,13 @@ class SandboxSession:
         self.token = token
         self.exec_timeout_s = exec_timeout_s
         self.session = session
+        # The URL the *container* uses to reach the host RPC server. Built by
+        # run.py from the server's real bound port, because ``ToolServer.start()``
+        # may bind port 0 and pick a free one. Default keeps the documented
+        # single-container setup working.
+        self.host_rpc_url = host_rpc_url or (
+            f"http://host.docker.internal:{config.HOST_RPC_PORT}"
+        )
 
     @property
     def url(self) -> str:
@@ -107,7 +117,15 @@ class SandboxSession:
     def _compose_env(self) -> dict[str, str]:
         """Return the environment for the compose subprocess.
 
-        Must **not** contain ``OPENROUTER_API_KEY`` or any ``LENS_DB_*`` secret.
+        Must **not** contain ``OPENROUTER_API_KEY`` or any ``LENS_DB_*`` secret —
+        the compose file interpolates only what is listed here.
+
+        Two traps:
+          - ``LENS_RUN_WORKSPACE`` goes into a volume spec, so it must be a
+            **forward-slash** path (``Path.as_posix()``); backslashes break
+            ``"<host>:/workspace"`` on Windows.
+          - ``LENS_HOST_RPC_URL`` is ``self.host_rpc_url`` (built from the port
+            the RPC server actually bound), not a constant.
         """
         raise NotImplementedError("M8 scaffold: implement SandboxSession._compose_env")
 

@@ -26,6 +26,20 @@ Verdict = Literal["pass", "fail", "uncertain"]
 # Do not invent numbers here; an empty map forces the caller to pass one.
 STAGE_THRESHOLDS: dict[str, float] = {}
 
+# Where the gate runs (M8). Each tool that produces a stage artifact maps to the
+# stage it completes; ``Runtime._dispatch_tool`` calls ``evaluate_stage`` after
+# the **first** successful call of each stage in a run and attaches the verdict to
+# the RPC envelope as ``{"gate": {...}}``, so the RLM can see it and backtrack.
+# One gate per stage per run, not per call: tier 1 is empty today, so tier 2 costs
+# one JEV input-only call (~$0.00002) per stage, and a rerun of the same stage
+# would not learn anything new.
+GATED_STAGES: dict[str, str] = {
+    "shallow_match": "retrieval",
+    "rerank_papers": "retrieval",
+    "rerank_chunks": "retrieval",
+    "build_kg": "kg",
+}
+
 
 @dataclass
 class StageVerdict:

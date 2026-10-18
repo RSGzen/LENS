@@ -5,8 +5,9 @@
 > (harness architecture + module map), which is thesis-side; this file is the
 > **repo-side** engineering view.
 >
-> **Status:** covers the built layers **M0–M2** plus the planned M5–M9 shape.
-> Regenerate the structural diagrams after M5/M8 (see §5).
+> **Status:** covers the built layers **M0–M7** plus the **M8 harness scaffold**
+> (18 Oct 2026). M8 logic bodies are student-owned (scaffold-and-fill, LOG-33).
+> Regenerate the structural diagrams after M8 logic lands (see §5).
 >
 > **Owner:** LENS thesis student. **Assistant-authored draft.**
 
@@ -31,12 +32,15 @@ Two runtimes, **one-way imports**:
 | `src/lens/db/connect.py` | M2: `connect(readonly=…)` → psycopg connection (admin / `lens_ro`). | `config` |
 | `src/lens/db/schema.py` | M2: idempotent pgvector migration + `tables_exist()`. | `config` |
 | `src/lens/tools/*` *(M5–M7)* | Host tools: `shallow_match`, `rerank_papers`, `deep_match`, `rerank_chunks`, `build_kg`, `evaluate_stage`. | `config`, DB driver |
-| `src/lens/agent/runtime.py` *(M8)* | Orchestrator: owns the loop, context compaction, sub-calls, budget, ledger. | `clients`, `tools`, `trajectory` |
-| `src/lens/sandbox/{runner,rlm_api}.py` *(M8)* | Passive executor + façade (`tool()` / `sub_call()` / `budget()` / `emit()` / `note()`). | sandbox only |
-| `src/lens/run.py` *(M9)* | Entry point: `python -m lens.run "<query>"`. | `agent.runtime` |
+| `src/lens/agent/runtime.py` *(M8 scaffold)* | Orchestrator: owns the loop, context compaction, sub-calls, budget, ledger. | `clients`, `tools`, `trajectory` |
+| `src/lens/agent/{context,budget,ledger,tool_registry,tool_server,sandbox_session}.py` *(M8 scaffold)* | Context assembly, caps, `tasks.json`, tool manifest/dispatch, host RPC, Docker lifecycle. | `config`, `clients`, `trajectory` |
+| `src/lens/sandbox/{runner,rlm_api}.py` *(M8 scaffold)* | Passive executor + façade (`tool()` / `sub_call()` / `budget()` / `emit()` / `note()`). | sandbox only |
+| `src/lens/tools/{evaluate,sql}.py` *(M8 scaffold)* | Per-stage gate; gated T3 `query(sql)`. | `clients`, DB driver |
+| `src/lens/run.py` *(M8 scaffold/M9)* | Entry point: `python -m lens.run "<query>"`. | `agent.runtime` |
 
 **Import direction (no cycles):** `models` ← `config` ← {`trajectory`, `clients`,
-`manifest`, `connect`, `schema`} ← `agent.runtime` ← `run`.
+`manifest`, `connect`, `schema`} ← `agent.{budget,ledger,context,tool_registry,tool_server,sandbox_session}`
+← `agent.runtime` ← `run`.
 
 ---
 
@@ -266,6 +270,52 @@ sequenceDiagram
 > `db/connect.py` is used **only** by the host side of this loop (the tool layer),
 > never imported by the sandbox.
 
+### 4.3 M8 harness scaffold (18 Oct 2026)
+
+The harness is **scaffolded and reworked** (LOG-92); all logic bodies are
+student-owned. Suite: **273 tests — 203 pass, 70 contract tests**
+`NotImplementedError` until filled. `compileall` and `docker compose config`
+pass. No live sandbox query has run yet.
+
+Invariants fixed in the rework: the sandbox mounts **`<run_dir>/work`** only (run
+artifacts live one level up and cannot be rewritten by generated code); caps are
+**derived and ordered** (8 iterations · 40k context · 300k tokens derived from
+them · $0.50 · 80 % wrap-up nudge · root output 8k); a reported `$/query` comes
+from `Trajectory.totals()`, not `Budget`; `emit()` returns a container path; the
+KG traversal helpers ship in the image as `kg_query`.
+
+| Component | Responsibility | Promise |
+|---|---|---|
+| `agent/runtime.py` | Owns the loop, RPC handlers, final/partial answer. | Host-pulled; every turn logged; stops at caps. |
+| `agent/context.py` | System prompt, tool manifest, `query.json`, budget, memory, compaction. | Root context stays bounded; large data stays in the sandbox. |
+| `agent/budget.py` | Iterations, tokens, cost, exec seconds, backtracks. | `budget()` is read-only; the orchestrator alone enforces caps. |
+| `agent/ledger.py` | Atomic `tasks.json`. | F-01 backtracking source; crash-recoverable. |
+| `agent/tool_registry.py` | Manifest + dispatch. | Names/signatures/docstrings only; args hashed; full result blobbed. |
+| `agent/tool_server.py` | Host RPC endpoints. | Sandbox reaches only `/tool`, `/sub_call`, `/budget`, `/emit`, `/note`; per-run token. |
+| `agent/sandbox_session.py` | Compose lifecycle + `/exec` client. | One container per run; mounts `<run_dir>/work` only; `host_rpc_url` from the real bound port; cleanup on failure. |
+| `sandbox/runner.py` | Passive persistent executor. | Variables survive steps; never calls an LLM; 120 s timeout. |
+| `sandbox/rlm_api.py` | Façade. | No key/DB; depth-1 only; no recursion. |
+| `kg_query.py` | Pure KG traversal (`kg_neighbors` / `kg_triples` / `kg_subgraph`). | Copied into the image as `kg_query`; `tools/kg.py` re-exports it (one source of truth). |
+| `tools/evaluate.py` | Three-tier stage gate. | Verdict + failing criterion; logged. |
+| `tools/sql.py` | Gated T3. | Read-only; off by default; forced off in recorded runs. |
+| `run.py` | CLI wiring. | `python -m lens.run "<query>"`; artifacts + summary. |
+
+**Protocol pinned by the scaffold**
+
+- Final answer = explicit **`FINAL_ANSWER:`** sentinel.
+- Host and runner use Python **stdlib HTTP**; the sandbox calls back via
+  `host.docker.internal`.
+- `docker-compose.yaml` declares **both** `lens-pg` and `lens-repl`; DB and
+  sandbox are on separate networks (`sandbox-net` is `internal: true`).
+- The sandbox holds **no OpenRouter key and no DB driver**.
+- Fill order: budget → ledger → context → registry → tool server → `rlm_api` →
+  `runner` → `sandbox_session` → `runtime` → `run.py` → evaluate/sql.
+
+**One-time migration:** stop/remove the old manual `lens-pg` container before
+compose starts; the `lens-pgdata` volume preserves data. Verify
+`host.docker.internal` on the `internal` sandbox network; if it fails, remove
+`internal: true` and keep the no-egress rule at the application layer.
+
 ---
 
 ## 5. Regenerating the diagrams
@@ -287,8 +337,9 @@ Optional crisp SVG/PNG: install Graphviz, then
 
 ## 6. Notes and caveats
 
-- Only the **built** modules (M0–M2) appear in the generated graphs; `tools/`,
-  `agent/`, `sandbox/`, `run.py` are planned (M5–M9) and shown dashed in §4 only.
+- The generated graphs still omit the M8 scaffold modules; `tools/`, most of
+  `agent/`, `sandbox/`, and `run.py` are shown in §4.3 instead. Regenerate after
+  M8 logic lands.
 - Static graphs show **imports and classes**, not the host↔sandbox RPC or the DB
   access path; §4 covers those.
 - One-way import direction is the invariant to keep; a future
