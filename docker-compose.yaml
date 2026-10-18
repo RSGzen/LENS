@@ -1,0 +1,83 @@
+# LENS local topology (M8).
+#
+# - lens-pg     : PostgreSQL + pgvector, host port 5433 (native PG17 owns 5432)
+# - lens-repl   : passive Python executor for the RLM, one container per session
+#
+# The sandbox network is separate from the DB network on purpose: the sandbox
+# must never reach Postgres directly. The host tool layer owns the DB connection.
+#
+# One-time migration: stop/remove the old manual lens-pg container, then
+# `docker compose up -d lens-pg`; the named volume lens-pgdata preserves data.
+#
+# `sandbox-net` is marked internal to block general egress. Verify on this Docker
+# Desktop version that host.docker.internal still resolves; if it does not, remove
+# `internal: true` and keep the no-egress policy at the application layer.
+
+name: lens
+
+services:
+  lens-pg:
+    image: pgvector/pgvector:pg16
+    container_name: lens-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LENS_DB_USER:-lens}
+      POSTGRES_PASSWORD: ${LENS_DB_PASSWORD:-lens}
+      POSTGRES_DB: ${LENS_DB_NAME:-lens}
+    ports:
+      - "5433:5432"
+    volumes:
+      - lens-pgdata:/var/lib/postgresql/data
+    command: ["-c", "shared_buffers=4GB"]
+    shm_size: 2gb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LENS_DB_USER:-lens} -d ${LENS_DB_NAME:-lens}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - db-net
+
+  lens-repl:
+    build:
+      context: ./src/lens/sandbox
+      dockerfile: Dockerfile
+    image: ${LENS_SANDBOX_IMAGE:-lens-repl:0.1.0}
+    container_name: lens-repl
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    volumes:
+      - "${LENS_RUN_WORKSPACE:-D:/lens-data/runs/_sandbox}:/workspace"
+    environment:
+      PYTHONPATH: /app
+      LENS_WORKSPACE: /workspace
+      LENS_RUN_ID: ${LENS_RUN_ID:-manual}
+      LENS_HOST_RPC_URL: ${LENS_HOST_RPC_URL:-http://host.docker.internal:8765}
+      LENS_RPC_TOKEN: ${LENS_RPC_TOKEN:-change-me}
+      LENS_SANDBOX_STDOUT_MAX_CHARS: ${LENS_SANDBOX_STDOUT_MAX_CHARS:-20000}
+    ports:
+      - "127.0.0.1:${LENS_SANDBOX_PORT:-8080}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: "2.0"
+    networks:
+      - sandbox-net
+
+networks:
+  db-net:
+    driver: bridge
+  sandbox-net:
+    driver: bridge
+    internal: true
+
+volumes:
+  lens-pgdata:
+    name: lens-pgdata

@@ -243,6 +243,66 @@ JEV_MODEL_ID = "typesafe/jev-1.13"
 DEFAULT_TIMEOUT_S = 120
 MAX_RETRIES = 3
 
+# ------------------------------------------------------------------ harness (M8)
+# Central RLM caps (Tech Stack §4a / §6, R-05). The orchestrator enforces these;
+# the sandbox can only read them through ``rlm_api.budget()``.
+MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "10"))
+MAX_TOKENS_PER_QUERY = int(os.environ.get("LENS_MAX_TOKENS", "200000"))
+MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "0.50"))
+MAX_EXEC_BLOCK_S = float(os.environ.get("LENS_MAX_EXEC_BLOCK_S", "120"))
+MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
+
+# Context assembly. Compaction triggers when the estimated root context exceeds
+# ``CONTEXT_COMPACT_RATIO * CONTEXT_TOKEN_LIMIT``.
+CONTEXT_TOKEN_LIMIT = int(os.environ.get("LENS_CONTEXT_TOKEN_LIMIT", "60000"))
+CONTEXT_COMPACT_RATIO = float(os.environ.get("LENS_CONTEXT_COMPACT_RATIO", "0.75"))
+TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "2000"))
+
+# Run mode. ``LENS_RECORDED=1`` disables dev-only escape hatches (T3 SQL) so a
+# recorded run cannot bypass the graded funnel.
+LENS_RECORDED = os.environ.get("LENS_RECORDED", "0").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "",
+}
+
+# The root's final answer is explicit, so the loop never has to guess.
+FINAL_ANSWER_MARKER = "FINAL_ANSWER:"
+
+# ------------------------------------------------------------------ sandbox (M8)
+# One ``lens-repl`` container per query session (LOG-31/LOG-32).
+SANDBOX_IMAGE = os.environ.get("LENS_SANDBOX_IMAGE", "lens-repl:0.1.0")
+SANDBOX_SERVICE = os.environ.get("LENS_SANDBOX_SERVICE", "lens-repl")
+SANDBOX_COMPOSE_FILE = os.environ.get(
+    "LENS_SANDBOX_COMPOSE_FILE", "docker-compose.yaml"
+)
+SANDBOX_WORKSPACE_PATH = os.environ.get("LENS_SANDBOX_WORKSPACE", "/workspace")
+# Host-side port mapped to the runner's /exec server (compose publishes 127.0.0.1).
+SANDBOX_PORT = int(os.environ.get("LENS_SANDBOX_PORT", "8080"))
+SANDBOX_CPUS = os.environ.get("LENS_SANDBOX_CPUS", "2")
+SANDBOX_MEMORY = os.environ.get("LENS_SANDBOX_MEMORY", "2g")
+SANDBOX_PIDS_LIMIT = int(os.environ.get("LENS_SANDBOX_PIDS_LIMIT", "256"))
+SANDBOX_STDOUT_MAX_CHARS = int(os.environ.get("LENS_SANDBOX_STDOUT_MAX_CHARS", "20000"))
+
+# Host RPC server the sandbox calls back into. It binds all interfaces because
+# Docker Desktop reaches it via ``host.docker.internal``; a per-run token is the
+# auth boundary (the API key never enters the container).
+HOST_RPC_BIND = os.environ.get("LENS_HOST_RPC_BIND", "0.0.0.0")
+HOST_RPC_PORT = int(os.environ.get("LENS_HOST_RPC_PORT", "8765"))
+HOST_RPC_TOKEN_ENV = "LENS_RPC_TOKEN"
+
+# ------------------------------------------------------------------ gated T3 (M8)
+# Dev-only read-only SQL escape hatch. Off by default; forced off in recorded runs.
+ALLOW_SQL = os.environ.get("LENS_ALLOW_SQL", "0").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "",
+}
+SQL_ROW_CAP = int(os.environ.get("LENS_SQL_ROW_CAP", "1000"))
+SQL_TIMEOUT_MS = int(os.environ.get("LENS_SQL_TIMEOUT_MS", "5000"))
+
 # ------------------------------------------------------------------ model registry
 @dataclass(frozen=True)
 class ModelSpec:

@@ -1,0 +1,6 @@
+# Baked into the lens-repl image at build time (Tech Stack §2.3 / LOG-32).
+# No torch, no DB driver, no API client SDK. Do not install at runtime.
+httpx>=0.28,<0.29
+numpy>=2.0,<3
+pandas>=2.2,<3
+networkx>=3.4,<4

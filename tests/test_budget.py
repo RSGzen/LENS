@@ -1,0 +1,84 @@
+r"""Contract tests for the M8 budget (no key, no network, zero cost).
+
+Run:  .\.venv\Scripts\python.exe -m unittest tests.test_budget -v
+"""
+
+from __future__ import annotations
+
+import json
+import unittest
+
+from lens.agent.budget import Budget, BudgetLimits
+from lens.models import CallResult
+
+
+def make_result(*, tokens_in: int = 10, tokens_out: int = 5, cost: float = 0.01) -> CallResult:
+    return CallResult(
+        text="ok",
+        message={"role": "assistant", "content": "ok"},
+        model="openai/gpt-5",
+        provider="openai",
+        model_snapshot=None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        latency_ms=1,
+        cost_usd=cost,
+    )
+
+
+class BudgetTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        self.limits = BudgetLimits(
+            max_iterations=2,
+            max_tokens=100,
+            max_cost_usd=1.0,
+            max_exec_block_s=10.0,
+            max_backtracks=1,
+        )
+        self.budget = Budget(limits=self.limits)
+
+    def test_initial_snapshot_is_zeroed(self) -> None:
+        snap = self.budget.snapshot()
+        self.assertEqual(snap["used"]["iterations"], 0)
+        self.assertEqual(snap["used"]["tokens_in"], 0)
+        self.assertEqual(snap["used"]["cost_usd"], 0.0)
+        self.assertEqual(snap["left"]["iterations"], 2)
+        self.assertEqual(snap["left"]["tokens"], 100)
+        self.assertIsNone(snap["stop_reason"])
+
+    def test_record_chat_accumulates_usage(self) -> None:
+        self.budget.record_chat(make_result(tokens_in=20, tokens_out=7, cost=0.02))
+        self.budget.record_chat(make_result(tokens_in=3, tokens_out=2, cost=0.01))
+        snap = self.budget.snapshot()
+        self.assertEqual(snap["used"]["tokens_in"], 23)
+        self.assertEqual(snap["used"]["tokens_out"], 9)
+        self.assertAlmostEqual(snap["used"]["cost_usd"], 0.03)
+
+    def test_iteration_cap_stops_the_loop(self) -> None:
+        self.budget.record_iteration()
+        self.assertTrue(self.budget.can_continue())
+        self.budget.record_iteration()
+        self.assertFalse(self.budget.can_continue())
+        self.assertEqual(self.budget.stop_reason(), "iterations")
+
+    def test_token_cap_stops_the_loop(self) -> None:
+        self.budget.record_chat(make_result(tokens_in=90, tokens_out=10, cost=0.0))
+        self.assertFalse(self.budget.can_continue())
+        self.assertEqual(self.budget.stop_reason(), "tokens")
+
+    def test_cost_cap_stops_the_loop(self) -> None:
+        self.budget.record_chat(make_result(tokens_in=1, tokens_out=1, cost=1.0))
+        self.assertFalse(self.budget.can_continue())
+        self.assertEqual(self.budget.stop_reason(), "cost")
+
+    def test_backtrack_cap(self) -> None:
+        self.budget.record_backtrack()
+        self.assertFalse(self.budget.can_continue())
+        self.assertEqual(self.budget.stop_reason(), "backtracks")
+
+    def test_snapshot_is_json_serializable(self) -> None:
+        json.dumps(self.budget.snapshot())
+
+
+if __name__ == "__main__":
+    unittest.main()
