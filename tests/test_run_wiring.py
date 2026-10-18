@@ -115,6 +115,60 @@ class MainWiringTestCase(unittest.TestCase):
         run_id = self.build_call.call_args.args[1]
         self.assertTrue(run_id.startswith("run-"), run_id)
 
+    # ------------------------------------------------- M8.5: read-only paths
+    def test_list_never_builds_a_runtime(self) -> None:
+        # --list must stay a directory scan: no key, no DB, no container.
+        with patch.object(run_module, "build_runtime") as build, patch(
+            "lens.agent.runstore.list_runs", return_value=[]
+        ) as listing, patch("lens.agent.runstore.sweep_interrupted", return_value=[]):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = run_module.main(["--list"])
+        self.assertEqual(code, 0)
+        build.assert_not_called()
+        listing.assert_called_once()
+
+    def test_show_never_builds_a_runtime(self) -> None:
+        from lens.agent.runstore import RunManifest
+
+        manifest = RunManifest.new("run-x", "a stored query")
+        with patch.object(run_module, "build_runtime") as build, patch(
+            "lens.agent.runstore.read_manifest", return_value=manifest
+        ):
+            with redirect_stdout(io.StringIO()):
+                code = run_module.main(["--show", "run-x"])
+        self.assertEqual(code, 0)
+        build.assert_not_called()
+
+    def test_show_unknown_run_exits_2(self) -> None:
+        with patch("lens.agent.runstore.read_manifest", return_value=None):
+            with redirect_stdout(io.StringIO()):
+                code = run_module.main(["--show", "missing"])
+        self.assertEqual(code, 2)
+
+    def test_missing_query_exits_2(self) -> None:
+        with patch.object(run_module, "build_runtime") as build:
+            with redirect_stdout(io.StringIO()):
+                code = run_module.main([])
+        self.assertEqual(code, 2)
+        build.assert_not_called()
+
+    def test_resume_takes_the_query_from_the_manifest(self) -> None:
+        from lens.agent.runstore import RunManifest
+
+        stored = RunManifest.new("run-x", "the stored question")
+        runtime = FakeRuntime()
+        with patch.object(run_module, "build_runtime", return_value=(runtime, FakeServer(), FakeSandbox())) as build, patch(
+            "lens.agent.runstore.read_manifest", return_value=stored
+        ):
+            with redirect_stdout(io.StringIO()):
+                code = run_module.main(["--resume", "run-x"])
+        self.assertEqual(code, 0)
+        args, kwargs = build.call_args
+        self.assertEqual(args[0], "the stored question")  # query
+        self.assertEqual(args[1], "run-x")                # run_id
+        self.assertIs(kwargs["resume"], True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -36,7 +36,8 @@ Two runtimes, **one-way imports**:
 | `src/lens/agent/{context,budget,ledger,tool_registry,tool_server,sandbox_session}.py` *(M8 scaffold)* | Context assembly, caps, `tasks.json`, tool manifest/dispatch, host RPC, Docker lifecycle. | `config`, `clients`, `trajectory` |
 | `src/lens/sandbox/{runner,rlm_api}.py` *(M8 scaffold)* | Passive executor + façade (`tool()` / `sub_call()` / `budget()` / `emit()` / `note()`). | sandbox only |
 | `src/lens/tools/{evaluate,sql}.py` *(M8 scaffold)* | Per-stage gate; gated T3 `query(sql)`. | `clients`, DB driver |
-| `src/lens/run.py` *(M8 scaffold/M9)* | Entry point: `python -m lens.run "<query>"`. | `agent.runtime` |
+| `src/lens/agent/runstore.py` *(M8.5 scaffold)* | `manifest.json` (identity/index), `resume.json` (cache), `list_runs`, `sweep_interrupted`, `fork_run`. | `config` (lazy) |
+| `src/lens/run.py` *(M8 scaffold/M9)* | Entry point: `python -m lens.run "<query>"`, `--list/--show/--resume/--fork`. | `agent.runtime`, `agent.runstore` |
 
 **Import direction (no cycles):** `models` ← `config` ← {`trajectory`, `clients`,
 `manifest`, `connect`, `schema`} ← `agent.{budget,ledger,context,tool_registry,tool_server,sandbox_session}`
@@ -273,7 +274,7 @@ sequenceDiagram
 ### 4.3 M8 harness scaffold (18 Oct 2026)
 
 The harness is **scaffolded and reworked** (LOG-92); all logic bodies are
-student-owned. Suite: **273 tests — 203 pass, 70 contract tests**
+student-owned. Suite: **301 tests — 203 pass, 98 contract tests**
 `NotImplementedError` until filled. `compileall` and `docker compose config`
 pass. No live sandbox query has run yet.
 
@@ -298,7 +299,8 @@ KG traversal helpers ship in the image as `kg_query`.
 | `kg_query.py` | Pure KG traversal (`kg_neighbors` / `kg_triples` / `kg_subgraph`). | Copied into the image as `kg_query`; `tools/kg.py` re-exports it (one source of truth). |
 | `tools/evaluate.py` | Three-tier stage gate. | Verdict + failing criterion; logged. |
 | `tools/sql.py` | Gated T3. | Read-only; off by default; forced off in recorded runs. |
-| `run.py` | CLI wiring. | `python -m lens.run "<query>"`; artifacts + summary. |
+| `agent/runstore.py` *(M8.5)* | `manifest.json` (identity/index), `resume.json` (cache), `list_runs`, `sweep_interrupted`, `fork_run`. | Tolerant readers (unknown keys preserved); atomic writes; manifest + cache live in `run_dir`, never `work/`. |
+| `run.py` | CLI wiring. | `python -m lens.run "<query>"`; `--list` / `--show` / `--resume` / `--fork` / `--no-replay`. |
 
 **Protocol pinned by the scaffold**
 
@@ -309,12 +311,50 @@ KG traversal helpers ship in the image as `kg_query`.
   sandbox are on separate networks (`sandbox-net` is `internal: true`).
 - The sandbox holds **no OpenRouter key and no DB driver**.
 - Fill order: budget → ledger → context → registry → tool server → `rlm_api` →
-  `runner` → `sandbox_session` → `runtime` → `run.py` → evaluate/sql.
+  `runner` → `sandbox_session` → `runtime` → `run.py` → evaluate/sql →
+  **runstore** (`M8.5`).
 
 **One-time migration:** stop/remove the old manual `lens-pg` container before
-compose starts; the `lens-pgdata` volume preserves data. Verify
-`host.docker.internal` on the `internal` sandbox network; if it fails, remove
-`internal: true` and keep the no-egress rule at the application layer.
+compose starts; the `lens-pgdata` volume preserves data. Verify the three
+host-boundary checks together (host RPC reachable from the container → general
+egress blocked → `/exec` reachable from the host). If `host.docker.internal`
+fails on `internal: true`, use the fixed-subnet + bridge-gateway URL — do **not**
+drop `internal`, the no-egress property is a claim (`Tech Stack` §4b).
+
+---
+
+### 4.4 M8.5 session persistence (19 Oct 2026)
+
+**The log is the session.** Every turn appends a root `chat` event (whose
+`prompt_ref` is the exact request body), an `exec` event (`code_ref` +
+`stdout_ref`) and a `budget` snapshot, so the root message list, the counters and
+the namespace map are **folded** from `trajectory.jsonl`
+(`Trajectory.rebuild() -> RebuiltState`) rather than duplicated into a checkpoint.
+That is the whole design: a session cannot drift from its own record.
+
+| File | Role | Authoritative? |
+|---|---|---|
+| `manifest.json` | identity + status + index (id, query, parent, models, caps, totals, provenance, artifacts) | yes (which runs exist / what state) |
+| `trajectory.jsonl` | the event log | yes (state) |
+| `resume.json` | cache: emit map (`var -> ref`) + workspace hashes + `namespace_complete` | no — rebuildable |
+| `tasks.json` / `work/` / `answer.md` | ledger / sandbox workspace / answer | yes |
+
+Resume = **rebuild**, never restore a container: new sandbox → context files
+rewritten into `work/` → `query.json` read from disk (re-segmenting would spend a
+call and could silently change the retrieval) → variables restored from **emit
+blobs only** → one `run.resume` note appended → continue at `last_seq`. A variable
+that was never emitted sets `namespace_complete: false` and the root is told to
+re-derive it — a labelled degraded resume.
+
+Recorded replay serves a tool result from `(tool, args_hash) -> result_ref` when
+present, tagged `"replayed": true`, so a replay is deterministic **and** offline.
+A fork is provenance (new run, `parent_run_id`, **fresh** log); resume is
+continuation. `--list` / `--show` build no runtime — they are what the M10 UI
+calls.
+
+Design rationale + the six-harness comparison: `Tech Stack (Draft).md` §4n.
+Tests: `tests/test_runstore.py`, plus `rebuild` in `test_trajectory.py` and
+resume/replay in `test_runtime.py` / `test_run_wiring.py`.
 
 ---
 

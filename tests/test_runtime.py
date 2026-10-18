@@ -16,7 +16,7 @@ import lens.observability.trajectory as trajectory_module
 from lens.agent.budget import Budget
 from lens.agent.runtime import Runtime
 from lens.agent.sandbox_session import ExecResult
-from lens.agent.tool_registry import ToolRegistry
+from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.models import CallResult, JevResult
 from lens.observability.trajectory import TraceCtx, Trajectory
 
@@ -132,6 +132,86 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertEqual(result.answer_path.parent, self.trajectory.run_dir)
         self.assertFalse((self.runtime.workspace / "trajectory.jsonl").exists())
         self.assertFalse((self.runtime.workspace / "answer.md").exists())
+
+    def test_log_is_rebuildable_after_a_run(self) -> None:
+        # M8.5: the root context must be a fold of the log, not a second copy.
+        self.runtime.run()
+        state = self.trajectory.rebuild()
+        self.assertGreaterEqual(state.last_seq, 1)
+        self.assertTrue(state.messages)
+        self.assertEqual(state.messages[0]["role"], "system")
+        contents = " ".join(str(m.get("content", "")) for m in state.messages)
+        self.assertIn("step", contents)  # the observation of the executed block
+
+    def test_manifest_records_terminal_status(self) -> None:
+        result = self.runtime.run()
+        from lens.agent import runstore
+
+        manifest = runstore.read_manifest(self.trajectory.run_dir)
+        self.assertIsNotNone(manifest)
+        assert manifest is not None
+        self.assertIn(manifest.status, {"completed", "partial"})
+        self.assertEqual(manifest.run_id, "run-test")
+        self.assertEqual(manifest.query, "test query")
+        self.assertTrue(manifest.artifacts)
+        self.assertAlmostEqual(manifest.totals["cost_usd"], result.cost_usd)
+
+    def test_resume_folds_the_prior_turn(self) -> None:
+        # A previous process logged one turn and died before the next chat.
+        ctx = TraceCtx(trace_id="run-test", step_idx=0, actor="root")
+        prompt_ref = self.trajectory.store_blob(
+            json.dumps({"messages": [{"role": "system", "content": "sys"},
+                                     {"role": "user", "content": "earlier question"}]})
+        )
+        self.trajectory.log_event(
+            trace_ctx=ctx, call_type="chat", action="chat.completion",
+            prompt_ref=prompt_ref,
+            completion_ref=self.trajectory.store_blob("```python\nprint('earlier')\n```"),
+        )
+        self.trajectory.log_event(
+            trace_ctx=ctx, call_type="exec", action="exec.block",
+            code_ref=self.trajectory.store_blob("print('earlier')"),
+            stdout_ref=self.trajectory.store_blob("earlier\n"),
+        )
+
+        runtime = Runtime(
+            "test query",
+            "run-test",
+            client=self.client,
+            trajectory=self.trajectory,
+            conn=None,
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=self.sandbox,
+            registry=self.registry,
+            budget=Budget(),
+            resume=True,
+        )
+        result = runtime.run()
+        self.assertFalse(result.partial)
+        # The earlier turn is in the prompt the model was sent, so nothing was lost.
+        first_prompt = self.client.chat_calls[0]["messages"]
+        joined = " ".join(str(m.get("content", "")) for m in first_prompt)
+        self.assertIn("earlier question", joined)
+        self.assertIn("earlier", joined)
+        # History is appended to, never rewritten.
+        actions = [json.loads(line).get("action") for line in
+                   self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines() if line]
+        self.assertIn("run.resume", actions)
+        self.assertEqual(actions[-1], "chat.completion")
+
+    def test_replay_serves_the_recorded_tool_result(self) -> None:
+        ref = self.trajectory.store_blob(json.dumps({"echo": "hi"}))
+        self.trajectory.log_event(
+            trace_ctx=TraceCtx(trace_id="run-test", step_idx=0, actor="tool"),
+            call_type="tool", action="tool.dispatch", tool="echo",
+            args_hash=args_hash({"text": "hi"}), result_ref=ref,
+        )
+        response = self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"], {"echo": "hi"})
+        self.assertTrue(response.get("replayed"))
 
     def test_handle_rpc_budget(self) -> None:
         response = self.runtime.handle_rpc("/budget", {})

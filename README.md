@@ -3,19 +3,26 @@
 Literature Evidence & Narrative Synthesis — an agentic systematic-literature-review
 harness over a GROBID-structured arXiv cs.AI corpus.
 
-> **Status (18 Oct 2026):** M0-M7 logic built; **M8 harness scaffolded and
-> reworked** (LOG-91/LOG-92: host orchestrator, sandbox executor, RPC layer,
-> compose). All M8 logic bodies are student-owned (scaffold-and-fill, LOG-33).
-> Suite: **273 tests — 203 pass, 70 M8 contract tests fail with
+> **Status (19 Oct 2026):** M0-M7 logic built; **M8 harness scaffolded and
+> reworked** (LOG-91/LOG-92) and **M8.5 session persistence scaffolded**
+> (LOG-93). All harness logic bodies are student-owned (scaffold-and-fill,
+> LOG-33). Suite: **301 tests — 203 pass, 98 contract tests fail with
 > `NotImplementedError`** until filled.
 
 > **M8 invariants that are easy to break:** the sandbox workspace is
 > `<run_dir>/work` (the run artifacts — `trajectory.jsonl`, `tasks.json`,
-> `answer.md` — live one level up and are *never* mounted); the caps are
-> **derived and ordered** (8 iterations · 40k context · 300k tokens · $0.50, with
-> an 80 % wrap-up nudge); a reported `$/query` comes from
-> `Trajectory.totals()`, not from `Budget`; `emit()` returns a **container**
+> `manifest.json`, `resume.json`, `answer.md` — live one level up and are *never*
+> mounted); the caps are **derived and ordered** (8 iterations · 40k context ·
+> 300k tokens · $0.50, with an 80 % wrap-up nudge); a reported `$/query` comes
+> from `Trajectory.totals()`, not from `Budget`; `emit()` returns a **container**
 > path; the KG traversal helpers ship into the image as `kg_query`.
+>
+> **M8.5 invariants:** **the log is the session** — root messages, budget
+> counters and the emit map are folded from `trajectory.jsonl`
+> (`Trajectory.rebuild`), never duplicated; `manifest.json` is identity/index,
+> `resume.json` is a cache; resume **rebuilds** (fresh container, variables from
+> emit blobs only) and appends `run.resume`; a fork starts a **fresh** log;
+> `--list` / `--show` build no runtime.
 
 ## Layout
 

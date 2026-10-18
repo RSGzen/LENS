@@ -143,6 +143,96 @@ class TrajectoryTestCase(unittest.TestCase):
         self.traj.totals()
         self.assertEqual(self.traj.trajectory_path.read_bytes(), before)
 
+    # --------------------------------------------------------------- rebuild
+    def _log_turn(self, step: int, messages: list[dict], code: str, stdout: str) -> None:
+        """Append one realistic turn: root chat + exec, the way the loop does it."""
+        root = TraceCtx(trace_id="t1", step_idx=step, actor="root")
+        prompt_ref = self.traj.store_blob(json.dumps({"model": "openai/gpt-5", "messages": messages}))
+        completion = f"```python\n{code}\n```"
+        completion_ref = self.traj.store_blob(completion)
+        self.traj.log_event(
+            trace_ctx=root, call_type="chat", action="chat.completion",
+            prompt_ref=prompt_ref, completion_ref=completion_ref,
+            tokens_in=100, tokens_out=10, cost_usd=0.001,
+        )
+        self.traj.log_event(
+            trace_ctx=TraceCtx(trace_id="t1", step_idx=step, actor="tool"),
+            call_type="exec", action="exec.block",
+            code_ref=self.traj.store_blob(code),
+            stdout_ref=self.traj.store_blob(stdout),
+            latency_ms=7,
+        )
+
+    def test_rebuild_on_empty_log_is_zeroed(self) -> None:
+        state = self.traj.rebuild()
+        self.assertEqual(state.messages, [])
+        self.assertEqual(state.budget, {})
+        self.assertEqual(state.emits, {})
+        self.assertEqual(state.last_seq, 0)
+
+    def test_rebuild_folds_messages_and_next_seq(self) -> None:
+        base = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "the query"},
+        ]
+        self._log_turn(0, base, "print(1)", "1\n")
+        second = base + [
+            {"role": "assistant", "content": "```python\nprint(1)\n```"},
+            {"role": "user", "content": "1\n"},
+        ]
+        self._log_turn(1, second, "print(2)", "2\n")
+
+        state = self.traj.rebuild()
+        self.assertEqual(state.last_seq, 2)
+        # The last chat carried the context up to that point; the trailing exec
+        # contributes the assistant block + its observation.
+        self.assertEqual(state.messages[:2], base)
+        self.assertEqual(state.messages[2]["role"], "assistant")
+        self.assertIn("print(2)", state.messages[2]["content"])
+        self.assertEqual(state.messages[3], {"role": "user", "content": "2\n"})
+
+    def test_rebuild_collects_budget_emits_and_tool_results(self) -> None:
+        ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
+        snapshot = {"used": {"tokens_in": 100, "cost_usd": 0.001}, "left": {"iterations": 7}}
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="note", action="budget", extra={"budget": snapshot}
+        )
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="emit", action="emit.store",
+            result_ref="sha256:abc", extra={"var": "chunks"},
+        )
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="tool", action="tool.dispatch",
+            tool="shallow_match", args_hash="hash1", result_ref="sha256:def",
+        )
+        state = self.traj.rebuild()
+        self.assertEqual(state.budget, snapshot)
+        self.assertEqual(state.emits, {"chunks": "sha256:abc"})
+        self.assertEqual(state.tool_results, {"shallow_match:hash1": "sha256:def"})
+
+    def test_rebuild_marks_an_interrupted_exec(self) -> None:
+        # Crash mid-block: the chat completed, the exec did not record stdout.
+        ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
+        prompt_ref = self.traj.store_blob(json.dumps({"messages": [{"role": "system", "content": "s"}]}))
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="chat", action="chat.completion",
+            prompt_ref=prompt_ref, completion_ref=self.traj.store_blob("```python\nx=1\n```"),
+        )
+        self.traj.log_event(trace_ctx=ctx, call_type="exec", action="exec.block")
+        state = self.traj.rebuild()
+        self.assertEqual(state.messages[-1]["role"], "user")
+        self.assertIn("interrupt", state.messages[-1]["content"].lower())
+
+    def test_rebuild_is_deterministic(self) -> None:
+        self._log_turn(0, [{"role": "user", "content": "q"}], "print(1)", "1\n")
+        self.assertEqual(self.traj.rebuild(), self.traj.rebuild())
+
+    def test_load_blob_round_trips(self) -> None:
+        ref = self.traj.store_blob("payload")
+        self.assertEqual(self.traj.load_blob(ref), "payload")
+        with self.assertRaises(FileNotFoundError):
+            self.traj.load_blob("sha256:" + "0" * 64)
+
 
 if __name__ == "__main__":
     unittest.main()
