@@ -3,11 +3,11 @@
 Literature Evidence & Narrative Synthesis — an agentic systematic-literature-review
 harness over a GROBID-structured arXiv cs.AI corpus.
 
-> **Status (19 Oct 2026):** M0-M7 logic built; **M8 harness scaffolded and
-> reworked** (LOG-91/LOG-92) and **M8.5 session persistence scaffolded**
-> (LOG-93). All harness logic bodies are student-owned (scaffold-and-fill,
-> LOG-33). Suite: **301 tests — 203 pass, 98 contract tests fail with
-> `NotImplementedError`** until filled.
+> **Status (20 Oct 2026):** M0-M7 logic built; **M8 harness scaffolded and
+> reworked** (LOG-91/LOG-92), **M8.5 session persistence** and **M8.5+ demo
+> playback + portable bundle** scaffolded (LOG-93/LOG-95). All harness logic
+> bodies are student-owned (scaffold-and-fill, LOG-33). Suite: **316 tests — 203
+> pass, 113 contract tests fail with `NotImplementedError`** until filled.
 
 > **M8 invariants that are easy to break:** the sandbox workspace is
 > `<run_dir>/work` (the run artifacts — `trajectory.jsonl`, `tasks.json`,
@@ -23,6 +23,14 @@ harness over a GROBID-structured arXiv cs.AI corpus.
 > `resume.json` is a cache; resume **rebuilds** (fresh container, variables from
 > emit blobs only) and appends `run.resume`; a fork starts a **fresh** log;
 > `--list` / `--show` build no runtime.
+>
+> **M8.5+ invariants:** the demo is **mode A — scrubbed playback** of a recorded
+> run (no GPU/DB/key), never presented as a live run; `replay_turns()` groups by
+> `step_idx` and distinguishes the **observation the model saw** from the full
+> stdout; blobs live in one global deduplicated store, so a portable run is a
+> `<run_id>.lens` **bundle** (`--export`/`--import`, only referenced blobs,
+> hash-verified). `args_ref` must exist in the log **before** a run is recorded
+> for the demo.
 
 ## Layout
 

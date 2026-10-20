@@ -16,7 +16,9 @@ Design rules (do not deviate)
 - **The index buys candidate recall; the cross-encoder buys top-precision.** A
   reranker cannot recover a candidate the HNSW scan never returned, so end-to-end
   quality is bounded by candidate recall — hence the generous ``k=100 -> n=20`` /
-  ``C=100 -> c=5`` funnel and why ``k`` / ``C`` are the recall knobs.
+  ``C=100`` funnel and why ``k`` / ``C`` are the recall knobs. ``c`` is
+  ``RETRIEVAL_C_TOP`` (100 by default), so Stage B reorders the candidates rather
+  than truncating them.
 - **Hydration is host-side, at the deep stage only** (§4i): ``shallow_match``,
   ``rerank_papers`` and ``deep_match`` return ids only; ``rerank_chunks`` returns
   the ``{chunks, papers, assets}`` payload the orchestrator ``emit()``s.

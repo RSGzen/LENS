@@ -274,7 +274,7 @@ sequenceDiagram
 ### 4.3 M8 harness scaffold (18 Oct 2026)
 
 The harness is **scaffolded and reworked** (LOG-92); all logic bodies are
-student-owned. Suite: **301 tests — 203 pass, 98 contract tests**
+student-owned. Suite: **316 tests — 203 pass, 113 contract tests**
 `NotImplementedError` until filled. `compileall` and `docker compose config`
 pass. No live sandbox query has run yet.
 
@@ -355,6 +355,30 @@ calls.
 Design rationale + the six-harness comparison: `Tech Stack (Draft).md` §4n.
 Tests: `tests/test_runstore.py`, plus `rebuild` in `test_trajectory.py` and
 resume/replay in `test_runtime.py` / `test_run_wiring.py`.
+
+### 4.5 Demo playback + portable bundle (M8.5+, 20 Oct 2026)
+
+A full run needs a GPU (embeddings, reranker, GLiNER), the DB, Docker and a key,
+so a live demo is not reproducible on an examiner's laptop — and a video cannot
+be interrogated. The recording can: `observability/replay.py` folds the log into
+**one `Turn` per `step_idx`** (completion, code, `stdout_full`, the **observation
+the model saw**, `tools[]` with args/latency/gate, `emits`, `budget`,
+`missing_refs`), and `replay_summary()` supplies the header numbers.
+
+| Mode | What it is | Needs |
+|---|---|---|
+| **A. scrubbed playback** (the demo) | viewer over a recording; `Step`/`Play` move a cursor | Python + Streamlit |
+| **B. deterministic harness replay** | re-runs the loop serving recorded tool results | Docker (no key/GPU) |
+| **C. live run** | the pipeline | GPU, DB, key |
+
+Blobs live in **one global deduplicated store** (`<runs_root>/blobs/`), so copying
+a run directory alone leaves every ref dangling. `--export` writes
+`<run_id>.lens/` with the artifacts, `work/` (minus `emits/`) and **only the
+referenced blobs** plus `bundle.json` (sizes, `trajectory_sha256`, missing refs);
+`--import` re-hashes every blob and refuses on mismatch. `args_ref` on tool events
+is what makes a call renderable (`args_hash` alone cannot be shown).
+
+Tests: `tests/test_replay.py`; bundle contracts in `test_runstore.py`.
 
 ---
 

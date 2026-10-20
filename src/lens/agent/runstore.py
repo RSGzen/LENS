@@ -242,21 +242,123 @@ def fork_run(
     raise NotImplementedError("M8.5 scaffold: implement fork_run")
 
 
+# ------------------------------------------------------------------- bundle
+# A bundle is a **self-contained, copyable directory** (``<run_id>.lens``) with a
+# run's artifacts and only the blobs its events reference. Blobs live in one
+# global ``<runs_root>/blobs/`` store (deduped across runs), so copying a run
+# directory alone leaves every ref dangling — that is why this exists.
+#
+# ``<run_id>.lens/``
+#   bundle.json        index: schema_version, run_id, created_at, blob list +
+#                      sizes, trajectory sha256, source manifest snapshot, missing
+#   manifest.json      copied verbatim
+#   trajectory.jsonl   copied verbatim
+#   tasks.json, answer.md, query.json   copied when present
+#   work/              the sandbox workspace minus ``emits/`` (those are blobs)
+#   blobs/<sha256>     only the referenced, content-addressed payloads
+#
+# Import re-hashes every blob against its filename, so a truncated or edited
+# bundle is rejected instead of silently rendering wrong evidence.
+
+BUNDLE_EXT = ".lens"
+BUNDLE_INDEX = "bundle.json"
+BUNDLE_RUN_FILES: tuple[str, ...] = (
+    "manifest.json",
+    "trajectory.jsonl",
+    "tasks.json",
+    "answer.md",
+    "resume.json",
+    "query.json",
+)
+# Every event field that holds a blob ref. Keep in sync with ``log_event``.
+REF_FIELDS: tuple[str, ...] = (
+    "prompt_ref",
+    "completion_ref",
+    "result_ref",
+    "code_ref",
+    "stdout_ref",
+    "stderr_ref",
+    "args_ref",
+)
+
+
+def referenced_refs(trajectory_path: str | Path) -> list[str]:
+    """Return every distinct blob ref used by the events in ``trajectory_path``.
+
+    Also includes the refs in a sibling ``resume.json`` (the namespace map), so a
+    resumed run exports everything its restore block needs. Order: first
+    appearance. Malformed lines are skipped (a damaged tail must not block an
+    export of the rest).
+    """
+    raise NotImplementedError("M8.5 scaffold: implement referenced_refs")
+
+
+def export_run(
+    run_id: str,
+    destination: str | Path,
+    *,
+    path: str | Path | None = None,
+) -> Path:
+    """Write ``<destination>/<run_id>.lens`` and return its path.
+
+    Copies the artifacts in ``BUNDLE_RUN_FILES`` (when present), ``work/`` minus
+    ``emits/`` (emits are blobs and would double the size), and the **referenced**
+    blobs only. ``bundle.json`` records each blob's size plus the trajectory's
+    sha256, and lists refs that were already missing in the source (``missing``)
+    instead of failing.
+
+    Contract: deterministic (same input -> same blob set), no network, and the
+    source run is never modified. Refuses an existing destination bundle
+    (``FileExistsError``) so a re-export cannot silently merge two runs.
+    """
+    raise NotImplementedError("M8.5 scaffold: implement export_run")
+
+
+def verify_bundle(bundle: str | Path) -> dict[str, Any]:
+    """Re-hash a bundle and return ``{"ok", "errors", "blobs", "bytes", "run_id"}``.
+
+    An error (not an exception) per damaged item: missing blob, hash mismatch,
+    index/trajectory sha mismatch, unreadable ``bundle.json``. This is what makes
+    "tamper-evident recording" a true statement in the demo rather than a claim.
+    """
+    raise NotImplementedError("M8.5 scaffold: implement verify_bundle")
+
+
+def import_run(bundle: str | Path, *, path: str | Path | None = None) -> RunManifest:
+    """Install a bundle into ``<runs_root>/<run_id>/`` and return its manifest.
+
+    Steps: ``verify_bundle`` first (any error -> ``ValueError`` listing them, no
+    partial install), then blobs into ``<runs_root>/blobs/<sha>`` (skip ones
+    already present — content-addressed, so identical bytes), then the run files
+    and ``work/``. An existing ``run_id`` is a ``FileExistsError``.
+
+    The imported manifest keeps its original ``created_at`` and marks itself
+    imported via ``extra["imported_at"]`` (provenance, not a rewrite).
+    """
+    raise NotImplementedError("M8.5 scaffold: implement import_run")
+
+
 __all__ = [
+    "BUNDLE_EXT",
+    "BUNDLE_INDEX",
     "MANIFEST_FILENAME",
     "RESUME_FILENAME",
     "SCHEMA_VERSION",
     "VALID_STATUSES",
     "RunManifest",
     "RunStatus",
+    "export_run",
     "fork_run",
+    "import_run",
     "list_runs",
     "now_iso",
     "read_manifest",
     "read_resume_cache",
+    "referenced_refs",
     "runs_root",
     "sweep_interrupted",
     "update_manifest",
+    "verify_bundle",
     "write_manifest",
     "write_resume_cache",
 ]

@@ -141,6 +141,8 @@ class Trajectory:
         result_ref: str | None = None,
         code_ref: str | None = None,
         stdout_ref: str | None = None,
+        stderr_ref: str | None = None,
+        args_ref: str | None = None,
         result_summary: str | None = None,
         args_hash: str | None = None,
         tool: str | None = None,
@@ -164,6 +166,10 @@ class Trajectory:
           - ``code_ref`` / ``stdout_ref`` are the ``exec`` event's payload refs
             (the code that ran and what it printed); they are what makes the root
             context reconstructible (:meth:`rebuild`).
+          - ``args_ref`` is the blobbed **arguments** of a ``tool`` event. The
+            ``args_hash`` is enough to *match* a recorded call for replay, but a
+            viewer cannot render a hash — the args blob is what makes a turn
+            displayable (M10b) and a bundle self-describing.
         """
         iso_string = datetime.now(timezone.utc).isoformat()
 
@@ -181,6 +187,8 @@ class Trajectory:
                      "result_ref": result_ref,
                      "code_ref": code_ref,
                      "stdout_ref": stdout_ref,
+                     "stderr_ref": stderr_ref,
+                     "args_ref": args_ref,
                      "result_summary": result_summary,
                      "args_hash": args_hash,
                      "tool": tool,

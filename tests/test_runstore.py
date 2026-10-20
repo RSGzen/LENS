@@ -170,6 +170,90 @@ class RunStoreTestCase(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             runstore.fork_run("run-src", "run-new", path=self.root)
 
+    # ----------------------------------------------------------------- bundle
+    def _make_runnable(self, run_id: str = "run-src") -> Path:
+        """A run with a trajectory that references two blobs, plus a stray blob."""
+        run_dir = self._make_run(run_id, status="completed")
+        blobs = self.root / "blobs"
+        blobs.mkdir(exist_ok=True)
+        (blobs / ("a" * 64)).write_text("payload-a", encoding="utf-8")
+        (blobs / ("b" * 64)).write_text("payload-b", encoding="utf-8")
+        (blobs / ("f" * 64)).write_text("unreferenced", encoding="utf-8")
+        events = [
+            {"step_idx": 0, "call_type": "chat",
+             "completion_ref": "sha256:" + "a" * 64},
+            {"step_idx": 0, "call_type": "tool",
+             "args_ref": "sha256:" + "b" * 64,
+             "result_ref": "sha256:" + "a" * 64},
+        ]
+        (run_dir / "trajectory.jsonl").write_text(
+            "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8"
+        )
+        (run_dir / "answer.md").write_text("answer\n", encoding="utf-8")
+        return run_dir
+
+    def test_referenced_refs_is_deduplicated_and_ordered(self) -> None:
+        run_dir = self._make_runnable()
+        refs = runstore.referenced_refs(run_dir / "trajectory.jsonl")
+        self.assertEqual(refs, ["sha256:" + "a" * 64, "sha256:" + "b" * 64])
+
+    def test_export_includes_only_referenced_blobs(self) -> None:
+        self._make_runnable()
+        dest = self.root / "out"
+        dest.mkdir()
+        bundle = runstore.export_run("run-src", dest, path=self.root)
+        self.assertTrue(bundle.is_dir())
+        self.assertEqual(bundle.name, "run-src" + runstore.BUNDLE_EXT)
+        self.assertTrue((bundle / runstore.BUNDLE_INDEX).is_file())
+        self.assertTrue((bundle / "trajectory.jsonl").is_file())
+        self.assertTrue((bundle / "answer.md").is_file())
+        exported = sorted(p.name for p in (bundle / "blobs").iterdir())
+        self.assertEqual(exported, sorted(["a" * 64, "b" * 64]))  # not the stray one
+        index = json.loads((bundle / runstore.BUNDLE_INDEX).read_text(encoding="utf-8"))
+        self.assertEqual(index["run_id"], "run-src")
+        self.assertEqual(index["schema_version"], runstore.SCHEMA_VERSION)
+        self.assertTrue(index["trajectory_sha256"])
+
+    def test_export_refuses_to_overwrite(self) -> None:
+        self._make_runnable()
+        dest = self.root / "out"
+        dest.mkdir()
+        runstore.export_run("run-src", dest, path=self.root)
+        with self.assertRaises(FileExistsError):
+            runstore.export_run("run-src", dest, path=self.root)
+
+    def test_verify_and_import_round_trip(self) -> None:
+        self._make_runnable()
+        dest = self.root / "out"
+        dest.mkdir()
+        bundle = runstore.export_run("run-src", dest, path=self.root)
+        self.assertTrue(runstore.verify_bundle(bundle)["ok"])
+
+        other_root = self.root / "laptop"
+        other_root.mkdir()
+        manifest = runstore.import_run(bundle, path=other_root)
+        self.assertEqual(manifest.run_id, "run-src")
+        self.assertTrue((other_root / "run-src" / "trajectory.jsonl").is_file())
+        self.assertEqual(
+            (other_root / "blobs" / ("a" * 64)).read_text(encoding="utf-8"), "payload-a"
+        )
+        # Idempotent by run id: importing twice must not merge silently.
+        with self.assertRaises(FileExistsError):
+            runstore.import_run(bundle, path=other_root)
+
+    def test_tampered_blob_fails_verification(self) -> None:
+        self._make_runnable()
+        dest = self.root / "out"
+        dest.mkdir()
+        bundle = runstore.export_run("run-src", dest, path=self.root)
+        target = bundle / "blobs" / ("a" * 64)
+        target.write_text("tampered", encoding="utf-8")
+        result = runstore.verify_bundle(bundle)
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["errors"])
+        with self.assertRaises(ValueError):
+            runstore.import_run(bundle, path=self.root / "elsewhere")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,9 +9,13 @@ Usage::
     python -m lens.run --show <run_id>            # read-only: manifest + answer
     python -m lens.run --resume <run_id>          # continue an interrupted run
     python -m lens.run --fork <run_id> --run-id new "same query, other arm"
+    python -m lens.run --export <run_id> --destination D:\\demo   # portable bundle
+    python -m lens.run --import D:\\demo\\<run_id>.lens           # install a bundle
 
-``--list`` / ``--show`` are **read-only**: they never build a runtime, call a
-model, or start a container. That is what makes the M10 UI cheap.
+``--list`` / ``--show`` / ``--export`` / ``--import`` are **read-only** (the last
+two touch only the destination / runs root): they never build a runtime, call a
+model, or start a container. That is what makes the M10 UI and the laptop demo
+cheap.
 """
 
 from __future__ import annotations
@@ -77,6 +81,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="do not serve recorded tool results on resume (re-query the corpus)",
     )
+    parser.add_argument(
+        "--export",
+        metavar="RUN_ID",
+        default=None,
+        help="write a portable <run_id>.lens bundle into --destination and exit",
+    )
+    parser.add_argument(
+        "--import",
+        dest="import_bundle",
+        metavar="BUNDLE",
+        default=None,
+        help="install a .lens bundle into the runs root and exit (hash-verified)",
+    )
+    parser.add_argument(
+        "--destination",
+        default=".",
+        help="output directory for --export (default: current directory)",
+    )
     return parser
 
 
@@ -135,7 +157,12 @@ def main(argv: Sequence[str] | None = None) -> int:
          cost), return 0. **No runtime.**
       2. ``--show <id>`` -> read the manifest + ``answer.md`` and print them.
          **No runtime.** A missing run returns 2 with a clear message.
-      3. Otherwise a query is required (exit 2 if absent). ``--resume`` forces
+      3. ``--export <id> --destination <dir>`` -> ``runstore.export_run``; print the
+         bundle path, blob count and size. **No runtime.**
+      4. ``--import <bundle>`` -> ``runstore.verify_bundle`` then
+         ``runstore.import_run``; print the installed run id or the verification
+         errors. **No runtime.**
+      5. Otherwise a query is required (exit 2 if absent). ``--resume`` forces
          ``run_id`` and ``resume=True`` and takes the query from the stored
          manifest (a resumed run is not a new question); ``--fork`` creates the
          child manifest first and runs with ``parent_run_id``. Then

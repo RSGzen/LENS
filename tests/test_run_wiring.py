@@ -153,6 +153,33 @@ class MainWiringTestCase(unittest.TestCase):
         self.assertEqual(code, 2)
         build.assert_not_called()
 
+    def test_export_and_import_never_build_a_runtime(self) -> None:
+        with patch.object(run_module, "build_runtime") as build, patch(
+            "lens.agent.runstore.export_run", return_value=Path("out/run-x.lens")
+        ) as export, patch("lens.agent.runstore.verify_bundle", return_value={"ok": True, "errors": []}), patch(
+            "lens.agent.runstore.import_run"
+        ) as importer:
+            from lens.agent.runstore import RunManifest
+
+            importer.return_value = RunManifest.new("run-x", "q")
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(run_module.main(["--export", "run-x"]), 0)
+                self.assertEqual(run_module.main(["--import", "out/run-x.lens"]), 0)
+        build.assert_not_called()
+        export.assert_called_once()
+        importer.assert_called_once()
+
+    def test_import_reports_a_bad_bundle(self) -> None:
+        with patch.object(run_module, "build_runtime") as build, patch(
+            "lens.agent.runstore.verify_bundle",
+            return_value={"ok": False, "errors": ["hash mismatch"], "run_id": "run-x"},
+        ), patch("lens.agent.runstore.import_run") as importer:
+            with redirect_stdout(io.StringIO()):
+                code = run_module.main(["--import", "bad.lens"])
+        self.assertEqual(code, 2)
+        build.assert_not_called()
+        importer.assert_not_called()
+
     def test_resume_takes_the_query_from_the_manifest(self) -> None:
         from lens.agent.runstore import RunManifest
 
