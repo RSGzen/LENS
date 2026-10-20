@@ -49,8 +49,8 @@ services:
 
   lens-repl:
     build:
-      context: ./src/lens/sandbox
-      dockerfile: Dockerfile
+      context: ./src              # was: ./src/lens/sandbox
+      dockerfile: lens/sandbox/Dockerfile   # note: relative to the CONTEXT
     image: ${LENS_SANDBOX_IMAGE:-lens-repl:0.1.0}
     container_name: lens-repl
     restart: "no"

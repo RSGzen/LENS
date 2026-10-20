@@ -18,10 +18,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY lens/sandbox/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY runner.py rlm_api.py kg_query.py ./
+COPY lens/sandbox/runner.py lens/sandbox/rlm_api.py lens/kg_query.py ./
 
 RUN useradd --create-home --uid 10001 lens \
     && mkdir -p /workspace \
