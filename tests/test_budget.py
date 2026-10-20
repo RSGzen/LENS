@@ -95,6 +95,29 @@ class BudgetTestCase(unittest.TestCase):
         self.assertFalse(self.budget.can_continue())
         self.assertEqual(self.budget.stop_reason(), "backtracks")
 
+    def test_exec_seconds_never_stops_the_loop(self) -> None:
+        # The 120 s cap is per block (the runner enforces it), so cumulative
+        # sandbox time must not end a run early with budget left.
+        for _ in range(8):
+            self.budget.record_exec(25.0)   # 200 s total, well past 120 s
+        self.assertTrue(self.budget.can_continue())
+        self.assertIsNone(self.budget.stop_reason())
+        assert self.budget.snapshot()["used"]["exec_seconds"] == 200.0
+
+    def test_left_is_clamped_and_has_no_exec_budget(self) -> None:
+        # Over-run every cap: `left` may never go negative, and exec time has no
+        # `left` entry because it is not a cumulative budget.
+        self.budget.record_iteration()
+        self.budget.record_iteration()
+        self.budget.record_chat(make_result(tokens_in=500, tokens_out=500, cost=5.0))
+        snap = self.budget.snapshot()
+        self.assertEqual(
+            set(snap["left"]), {"iterations", "tokens", "cost_usd", "backtracks"}
+        )
+        self.assertNotIn("exec_block_s", snap["left"])
+        for value in snap["left"].values():
+            self.assertGreaterEqual(value, 0)
+
     def test_snapshot_is_json_serializable(self) -> None:
         json.dumps(self.budget.snapshot())
 
