@@ -8,6 +8,16 @@ run before anything convenient:
      ``sandbox-net: internal: true``, apply the compose fallback (fixed subnet +
      bridge-gateway URL), do **not** drop ``internal``: no-egress is a claim
      (Tech Stack 4b), not a nicety.
+
+     > **The image has no shell and no ``curl``** (LOG-32 deletes ``/bin/sh``), so
+     > probe it with Python before the runner exists::
+     >
+     >     docker compose run --rm --entrypoint python lens-repl -c ^
+     >       "import urllib.request;print(urllib.request.urlopen('http://host.docker.internal:8765/health').status)"
+     >
+     > with any listener on the host (e.g. ``python -m http.server 8765``). Run
+     > this **before** filling ``runner.py``: it is the one failure that blocks
+     > everything downstream, and it needs no harness code.
   1. **general egress blocked** — a connect to ``1.1.1.1:443`` (or any host) must
      fail from inside the sandbox. Record the failure: absence of egress is
      evidence, not an assumption.

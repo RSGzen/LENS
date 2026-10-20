@@ -51,6 +51,42 @@ class TaskLedgerTestCase(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.ledger.update("missing", status="done")
 
+    def test_unknown_field_is_type_error(self) -> None:
+        # A typo must fail loudly: the old whitelist silently ignored every key
+        # (``"status" in Literal[...]`` is False), so updates were no-ops.
+        task = self.ledger.create("x")
+        with self.assertRaises(TypeError):
+            self.ledger.update(task.task_id, statuss="done")
+        self.assertEqual(self.ledger.list()[0].status, "pending")
+
+    def test_load_populates_tasks_and_restores_the_id_counter(self) -> None:
+        first = self.ledger.create("x")
+        self.ledger.create("y")
+        reloaded = TaskLedger(self.path)
+        self.assertEqual(reloaded.list(), [])   # nothing loaded yet
+        self.assertEqual(len(reloaded.load()), 2)
+        self.assertEqual(len(reloaded.list()), 2)
+        # The next id must not collide with an id that already exists.
+        third = reloaded.create("z")
+        self.assertNotIn(third.task_id, {first.task_id, "t2"})
+        self.assertEqual(len(TaskLedger(self.path).load()), 3)
+
+    def test_snapshot_does_not_alias_the_ledger(self) -> None:
+        # Callers get dicts, not the stored objects: mutating a snapshot must not
+        # change the ledger (the flip side of mutating tasks in place).
+        task = self.ledger.create("x")
+        self.ledger.add_evidence(task.task_id, ["c1"])
+        row = self.ledger.snapshot()[0]
+        row["evidence_refs"].append("injected")
+        row["status"] = "done"
+        self.assertEqual(self.ledger.list()[0].evidence_refs, ["c1"])
+        self.assertEqual(self.ledger.list()[0].status, "pending")
+
+    def test_save_leaves_no_temp_file(self) -> None:
+        self.ledger.create("x")
+        leftovers = [p.name for p in self.path.parent.iterdir() if p.name.endswith(".tmp")]
+        self.assertEqual(leftovers, [])
+
     def test_add_evidence_dedupes_and_preserves_order(self) -> None:
         task = self.ledger.create("x")
         self.ledger.add_evidence(task.task_id, ["c2", "c1", "c2"])

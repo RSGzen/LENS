@@ -89,27 +89,20 @@ class Budget:
     def can_continue(self) -> bool:
         """``True`` while every cap still has room for one more root turn.
 
-        Four caps, checked in the order ``stop_reason`` reports them:
-        iterations, tokens (**input + output** — output is the expensive half),
-        cost, backtracks. Deliberately **not** a cap: ``exec_seconds``. The 120 s
-        limit is *per block* and the runner enforces it, so summing blocks must
-        never end a run early (5 x 25 s would otherwise "exhaust" a 120 s budget
-        with the token budget barely touched).
+        The caps live in exactly **one** place, :meth:`stop_reason`, and this is a
+        thin alias for it. Two functions used to enumerate the same four caps;
+        if they ever drift (one edited, the other not) the loop continues and
+        then labels the partial answer with a *different* reason than the one that
+        actually stopped it — so the duplication is removed rather than
+        disciplined.
+
+        Caps: iterations, tokens (**input + output** — output is the expensive
+        half), cost, backtracks. Deliberately **not** a cap: ``exec_seconds``.
+        The 120 s limit is *per block* and the runner enforces it, so summing
+        blocks must never end a run early (5 x 25 s would otherwise "exhaust" a
+        120 s budget with the token budget barely touched).
         """
-
-        if self.iterations >= self.limits.max_iterations:
-            return False
-
-        if (self.tokens_in + self.tokens_out) >= self.limits.max_tokens:
-            return False
-
-        if self.cost_usd >= self.limits.max_cost_usd:
-            return False
-
-        if self.backtracks >= self.limits.max_backtracks:
-            return False
-
-        return True
+        return self.stop_reason() is None
 
     def stop_reason(self) -> str | None:
         """Return the first exhausted cap name, or ``None``.
