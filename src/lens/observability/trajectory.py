@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -258,7 +260,7 @@ class Trajectory:
             "tokens_in": 0,
             "tokens_out": 0,
             "calls": 0,
-            "by_action": []
+            "by_action": {}
         }
 
         if not self.trajectory_path.is_file():
@@ -267,18 +269,38 @@ class Trajectory:
         with open(self.trajectory_path, 'r', encoding="utf-8") as f:
             for line in f:
                 clean_line = line.strip()
-                data = json.loads(clean_line)
-
-                totals_dict["cost_usd"] += data["cost_usd"]
-                totals_dict["tokens_in"] += data["tokens_in"]
-                totals_dict["tokens_out"] += data["tokens_out"]
-                totals_dict["calls"] += 1
-
                 
-        
+                if not clean_line:
+                    continue
 
+                try:
+                    data = json.loads(clean_line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict):
+                    continue
 
-        raise NotImplementedError("M8 scaffold: implement Trajectory.totals")
+                action = data.get("action")
+                
+                bucket = {action: {"events": 0, "cost_usd": 0.0, "tokens_in": 0, "tokens_out": 0}}
+
+                bucket[action]["events"] += 1
+                bucket[action]["cost_usd"] += float(data.get("cost_usd", 0.0))
+                bucket[action]["tokens_in"] += data.get("cost_usd", 0.0)
+                bucket[action]["tokens_out"] += data.get("tokens_out", 0)
+
+                cur_cost =  float(data.get("cost_usd", 0.0))
+                totals_dict["tokens_in"] += data.get("tokens_in", 0)
+                totals_dict["tokens_out"] += data.get("tokens_out", 0)
+
+                totals_dict["cost_usd"] = math.fsum([totals_dict["cost_usd"], cur_cost])
+
+                if data.get("call_type") in ("chat", "jev") and "error" not in data:
+                    totals_dict["calls"] += 1
+
+                totals_dict["by_action"].update(bucket)
+
+        return totals_dict
 
     # --------------------------------------------------------------- rebuild
     def load_blob(self, ref: str) -> str:
