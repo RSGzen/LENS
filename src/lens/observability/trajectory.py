@@ -215,19 +215,69 @@ class Trajectory:
 
         Contract::
 
-            {"cost_usd": <float>, "tokens_in": <int>, "tokens_out": <int>,
-             "calls": <int>, "by_action": {<action>: {"cost_usd", "tokens_in",
-                                                   "tokens_out", "calls"}}}
+            {
+              "cost_usd":   <float>,   # sum over every event (tools add 0)
+              "tokens_in":  <int>,     # idem
+              "tokens_out": <int>,
+              "calls":      <int>,     # BILLABLE model calls: chat|jev, no "error"
+              "tool_calls": <int>,     # call_type == "tool"
+              "by_action":  {<action>: {"events": <int>, "cost_usd": <float>,
+                                        "tokens_in": <int>, "tokens_out": <int>}},
+            }
+
+        Vocabulary (Tech Stack §5) — do not conflate the levels:
+
+        - **run** = one review (this file, one ``run_id``);
+        - **turn** = one loop iteration (one ``step_idx``);
+        - **call** = one API request/response (``chat`` or ``jev``);
+        - **tool call** = one host-tool dispatch (``call_type="tool"``), which
+          costs no API money and is therefore counted **separately**.
+
+        ``calls`` is the number that sits next to cost in the thesis table
+        (H₃), so it must not move when retrieval does more work. It also must not
+        move on a retry: ``clients._post`` logs each failed attempt as a
+        ``chat.retry`` event **carrying an ``error``**, so only the successful
+        completion (no ``error`` key) counts. ``by_action`` keeps every action
+        visible, keyed by ``action`` — its buckets count ``events`` because
+        "call" is now a specific word.
 
         Why the log and not ``Budget``: ``Budget`` is the **cap enforcer** and
         only sees what the orchestrator tells it; JEV calls and host tools have
         their own paths. The trajectory is written by the transport itself, so
         it is the authoritative record for a reported ``$/query`` (R4). Missing
-        fields count as zero; a missing/empty file returns zeroed totals.
+        fields count as zero; a missing/empty file returns zeroed totals;
+        unreadable lines are skipped (a crash mid-append must not make a run
+        unreportable). Use ``math.fsum`` for ``cost_usd`` so the reported total
+        is correctly rounded and independent of event order.
 
         This is read-only and must never mutate or rewrite the log (F-02: the
         audit trail is append-only).
         """
+        totals_dict = {
+            "cost_usd": 0.0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "calls": 0,
+            "by_action": []
+        }
+
+        if not self.trajectory_path.is_file():
+            return totals_dict
+
+        with open(self.trajectory_path, 'r', encoding="utf-8") as f:
+            for line in f:
+                clean_line = line.strip()
+                data = json.loads(clean_line)
+
+                totals_dict["cost_usd"] += data["cost_usd"]
+                totals_dict["tokens_in"] += data["tokens_in"]
+                totals_dict["tokens_out"] += data["tokens_out"]
+                totals_dict["calls"] += 1
+
+                
+        
+
+
         raise NotImplementedError("M8 scaffold: implement Trajectory.totals")
 
     # --------------------------------------------------------------- rebuild

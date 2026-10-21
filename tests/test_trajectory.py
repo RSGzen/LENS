@@ -123,18 +123,42 @@ class TrajectoryTestCase(unittest.TestCase):
             trace_ctx=ctx, call_type="tool", action="tool.dispatch", tool="build_kg",
         )
         totals = self.traj.totals()
-        self.assertEqual(totals["calls"], 3)
+        # `calls` = BILLABLE model calls (chat + jev). The tool event is counted
+        # separately: lumping it in would make $/call move whenever retrieval
+        # does more work.
+        self.assertEqual(totals["calls"], 2)
+        self.assertEqual(totals["tool_calls"], 1)
         self.assertEqual(totals["tokens_in"], 150)
         self.assertEqual(totals["tokens_out"], 10)
         self.assertAlmostEqual(totals["cost_usd"], 0.0012)
-        # Tool/admin events carry no model spend and must not be counted as LLM calls.
-        self.assertEqual(totals["by_action"]["tool.dispatch"]["calls"], 1)
+        # by_action keeps every action visible; its buckets count `events`.
+        self.assertEqual(totals["by_action"]["tool.dispatch"]["events"], 1)
         self.assertAlmostEqual(totals["by_action"]["tool.dispatch"]["cost_usd"], 0.0)
+
+    def test_totals_does_not_count_a_retried_attempt_as_a_call(self) -> None:
+        # clients._post logs each failed attempt as `chat.retry` WITH an `error`.
+        # Only the successful completion is a billable call, so a flaky network
+        # must not inflate "calls per query" in the H3 table.
+        ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="chat", action="chat.retry",
+            error={"type": "RateLimit", "status": 429, "attempt": 1},
+        )
+        self.traj.log_event(
+            trace_ctx=ctx, call_type="chat", action="chat.completion",
+            tokens_in=100, cost_usd=0.001,
+        )
+        totals = self.traj.totals()
+        self.assertEqual(totals["calls"], 1)
+        self.assertEqual(totals["by_action"]["chat.retry"]["events"], 1)
+        self.assertAlmostEqual(totals["by_action"]["chat.completion"]["cost_usd"], 0.001)
 
     def test_totals_on_empty_log_is_zeroed(self) -> None:
         totals = self.traj.totals()
         self.assertEqual(totals["cost_usd"], 0.0)
         self.assertEqual(totals["calls"], 0)
+        self.assertEqual(totals["tool_calls"], 0)
+        self.assertEqual(totals["by_action"], {})
 
     def test_totals_does_not_rewrite_the_log(self) -> None:
         ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
