@@ -43,8 +43,11 @@ class ContextTestCase(unittest.TestCase):
         )
         self.assertIn("shallow_match", prompt)
         self.assertIn("aggregate long contexts", prompt)
-        self.assertNotIn("<<TOOL_MANIFEST>>", prompt)
         self.assertIn("FINAL_ANSWER:", prompt)
+        # Every placeholder must be gone: a prompt shipped to gpt-5 with a raw
+        # `<<BUDGET>>` is a silent quality bug, not a crash.
+        self.assertNotIn("<<", prompt)
+        self.assertNotIn(">>", prompt)
 
     def test_build_messages_starts_with_system(self) -> None:
         messages = context.build_messages(
