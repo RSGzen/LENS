@@ -202,6 +202,9 @@ class TaskLedger:
         The returned object **is** ``self.tasks[task_id]``: the mutation is in
         place, so the dict needs no re-assignment — only ``save()``.
         """
+        if self.tasks.get(task_id) is None:
+            raise KeyError(f"task id: {task_id} invalid and out of range")
+        
         task = self.tasks[task_id]
 
         unknown = set(fields) - UPDATABLE_FIELDS
