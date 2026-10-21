@@ -312,11 +312,21 @@ class Runtime:
 
         Per turn: call the root (``max_tokens=config.ROOT_MAX_OUTPUT_TOKENS``,
         record the chat in the budget), extract one ```python block or the
-        ``FINAL_ANSWER:`` text, send code to the sandbox, truncate the printed
-        observation with :func:`lens.agent.context.truncate_observation`, append
-        it as a ``user`` message, then log one ``budget`` event with
-        ``self.budget.snapshot()`` (this is what M11 reads for the cap-binding
-        rate) and check :meth:`Budget.can_continue`.
+        ``FINAL_ANSWER:`` text (**code wins**: a turn containing both is still
+        working, and the sentinel may just be quoted), send code to the sandbox,
+        truncate the printed observation with
+        :func:`lens.agent.context.truncate_observation`, append it as a ``user``
+        message, then log one ``budget`` event with ``self.budget.snapshot()``
+        (this is what M11 reads for the cap-binding rate) and check
+        :meth:`Budget.can_continue`.
+
+        **Final gate** (the second half of the double gate): on ``FINAL_ANSWER``
+        call ``evaluate_stage("final", {"score": None, "summary": {"answer":
+        …, "citations": [...]}})``. A ``fail`` hands the ``failing_criterion``
+        back as one more turn **inside the iteration cap**; ``None`` (gate off)
+        or ``pass``/``uncertain`` accepts the answer. If the cap is reached first,
+        return the answer as ``partial`` with ``stop_reason="iterations"`` — a
+        labelled partial answer, never a silently accepted fabrication.
         """
         raise NotImplementedError("M8 scaffold: implement Runtime._run_loop")
 
@@ -336,12 +346,18 @@ class Runtime:
         trajectory=self.trajectory)`` and return ``result.to_dict()`` (the
         registry already stored the blob and logged the event).
 
-        If ``name`` is in ``tools.evaluate.GATED_STAGES`` and that stage has not
-        been gated yet in this run, call
-        :func:`lens.tools.evaluate.evaluate_stage` on the successful result and
-        add ``"gate": verdict.to_dict()`` to the envelope. Record the verdict so
-        ``evaluate_stage`` is called **once per stage per run** (tier 2 is a JEV
-        call; repeating it on every rerank would only add cost).
+        **Stage gate.** If ``name`` is in ``tools.evaluate.GATED_STAGES`` and that
+        stage has not been gated yet in this run, build the bounded gate artifact
+        — ``{"score": <calibrated score or None>, "summary": <small dict>}``, never
+        the raw payload (``build_kg``'s graph would blow JEV's 32 K state cap) —
+        and call :func:`lens.tools.evaluate.evaluate_stage`. If it returns a
+        verdict, add ``"gate": verdict.to_dict()`` to the envelope; if it returns
+        ``None`` (``GATE_ENABLED=0``, the ablation arm), add **nothing** — an arm
+        with no gate must not look like a gate that always passes.
+
+        Only the **stage-completing** tools are mapped (``rerank_chunks``,
+        ``build_kg``). Earlier tools of the same stage return ids only, so gating
+        them would ask JEV whether a list of ``arxiv_id``s is "sufficient".
         """
         raise NotImplementedError("M8 scaffold: implement Runtime._dispatch_tool")
 

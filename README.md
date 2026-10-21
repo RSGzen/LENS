@@ -6,10 +6,10 @@ harness over a GROBID-structured arXiv cs.AI corpus.
 > **Status (20 Oct 2026):** M0-M7 logic built; **M8 harness scaffolded and
 > reworked** (LOG-91/LOG-92), **M8.5 session persistence** and **M8.5+ demo
 > playback + portable bundle** scaffolded (LOG-93/LOG-95). All harness logic
-> bodies are student-owned (scaffold-and-fill, LOG-33). Suite: **330 tests — 252
-> pass, 78 contract tests fail with `NotImplementedError`** until filled.
+> bodies are student-owned (scaffold-and-fill, LOG-33). Suite: **333 tests — 253
+> pass, 80 contract tests fail with `NotImplementedError`** until filled.
 > Fill progress: **`budget` + `ledger` + `trajectory` + `context` done**
-> (4/15, LOG-96/97/98/99).
+> (4/15, LOG-96/97/98/99). Gate wiring corrected (LOG-100).
 
 > **M8 invariants that are easy to break:** the sandbox workspace is
 > `<run_dir>/work` (the run artifacts — `trajectory.jsonl`, `tasks.json`,

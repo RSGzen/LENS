@@ -341,6 +341,19 @@ ALLOW_SQL = os.environ.get("LENS_ALLOW_SQL", "0").strip().lower() not in {
 SQL_ROW_CAP = int(os.environ.get("LENS_SQL_ROW_CAP", "1000"))
 SQL_TIMEOUT_MS = int(os.environ.get("LENS_SQL_TIMEOUT_MS", "5000"))
 
+# ------------------------------------------------------------------ gating (M8)
+# The decision-layer gates (Decision Layer §3.x.4b): the per-stage gate after each
+# stage-completing tool, and the final groundedness check before an answer is
+# accepted. Turning this off is the **decision-layer-OFF arm** of the M11
+# ablation — no JEV call and **no `gate` key** in the RPC envelope: an arm with no
+# gate must look like it has no gate, not like a gate that always passes.
+GATE_ENABLED = os.environ.get("LENS_GATE", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+
 # ------------------------------------------------------------------ model registry
 @dataclass(frozen=True)
 class ModelSpec:
