@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import copy
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -310,7 +311,17 @@ class Trajectory:
         blob is gone — a resume that cannot rebuild its evidence must fail
         loudly, not silently produce a thinner context.
         """
-        raise NotImplementedError("M8 scaffold: implement Trajectory.load_blob")
+        hexdigest = ref.split(":")[1]
+
+        blob_path = self.blobs_dir / hexdigest
+
+        if not blob_path.exists():
+            raise FileNotFoundError(f"Blob not found at {blob_path}")
+        else:
+            with open(blob_path, 'r', encoding="utf-8") as file:
+                content = file.read()
+
+                return content
 
     def rebuild(self) -> "RebuiltState":
         """Fold ``trajectory.jsonl`` back into the state a resume needs.
@@ -338,5 +349,65 @@ class Trajectory:
                that its effects are unknown — the resume must not pretend it ran.
           7. Deterministic: two calls on the same log return equal state.
         """
-        raise NotImplementedError("M8 scaffold: implement Trajectory.rebuild")
+        if not self.trajectory_path.is_file():
+            raise FileNotFoundError(f"Trajectory file not found at {self.trajectory_path}")
+
+        messages = []
+        budget = {}
+        emits = {}
+        tool_results = {}
+        last_seq = 0
+
+        with open(self.trajectory_path, 'r', encoding="utf-8") as f:
+            for line in f:
+                clean_line = line.strip()
+                
+                if not clean_line:
+                    continue
+                
+                try:
+                    data = json.loads(clean_line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+
+                trace_ctx = data.get("trace_ctx")
+
+                if trace_ctx is not None:
+                    last_seq = max(trace_ctx.step_idx+1, last_seq)
+
+                extra_budget_dict = data.get("extra", {}).get("budget")
+
+                if extra_budget_dict is not None:
+                    budget = copy.deepcopy(extra_budget_dict)
+
+                if data.get("call_type") == "emit" and "error" not in data:
+                    var_name = data.get("extra", {}).get("var")
+                    result_ref = data.get("result_ref")
+
+                    if var_name is not None and result_ref is not None:
+                        emits[var_name] = result_ref
+
+                if data.get("call_type") == "tool" and "error" not in data:
+                    tool = data.get("tool")
+                    args_hash = data.get("args_hash")
+                    result_ref = data.get("result_ref")
+
+                    if tool is not None and args_hash is not None and result_ref is not None:
+                        key_name = f"{tool}:{args_hash}"
+                        tool_results[key_name] = result_ref
+
+                if data.get("call_type") == "chat" and "error" not in data:
+                    prompt_ref = data.get("prompt_ref")
+        
+        rebuild_obj = RebuiltState(
+            messages=messages,
+            budget=budget,
+            emits=emits,
+            tool_results=tool_results,
+            last_seq=last_seq
+        )
+        
+        return rebuild_obj
 
