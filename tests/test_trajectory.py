@@ -153,6 +153,21 @@ class TrajectoryTestCase(unittest.TestCase):
         self.assertEqual(totals["by_action"]["chat.retry"]["events"], 1)
         self.assertAlmostEqual(totals["by_action"]["chat.completion"]["cost_usd"], 0.001)
 
+    def test_totals_accumulate_per_action(self) -> None:
+        # Two events with the same action must land in ONE bucket. An
+        # implementation that rebuilds the bucket per event keeps only the last.
+        for step in (0, 1):
+            self.traj.log_event(
+                trace_ctx=TraceCtx(trace_id="t1", step_idx=step, actor="root"),
+                call_type="chat", action="chat.completion",
+                tokens_in=100, tokens_out=10, cost_usd=0.001,
+            )
+        bucket = self.traj.totals()["by_action"]["chat.completion"]
+        self.assertEqual(bucket["events"], 2)
+        self.assertEqual(bucket["tokens_in"], 200)
+        self.assertEqual(bucket["tokens_out"], 20)
+        self.assertAlmostEqual(bucket["cost_usd"], 0.002)
+
     def test_totals_on_empty_log_is_zeroed(self) -> None:
         totals = self.traj.totals()
         self.assertEqual(totals["cost_usd"], 0.0)
@@ -200,6 +215,7 @@ class TrajectoryTestCase(unittest.TestCase):
             {"role": "user", "content": "the query"},
         ]
         self._log_turn(0, base, "print(1)", "1\n")
+        # What the orchestrator would send on turn 1: base + the turn-0 tail.
         second = base + [
             {"role": "assistant", "content": "```python\nprint(1)\n```"},
             {"role": "user", "content": "1\n"},
@@ -208,12 +224,16 @@ class TrajectoryTestCase(unittest.TestCase):
 
         state = self.traj.rebuild()
         self.assertEqual(state.last_seq, 2)
-        # The last chat carried the context up to that point; the trailing exec
-        # contributes the assistant block + its observation.
-        self.assertEqual(state.messages[:2], base)
-        self.assertEqual(state.messages[2]["role"], "assistant")
-        self.assertIn("print(2)", state.messages[2]["content"])
-        self.assertEqual(state.messages[3], {"role": "user", "content": "2\n"})
+        # The fold must equal the messages the *next* turn would have been sent:
+        # the last root prompt (which already subsumes turn 0) + turn 1's tail.
+        self.assertEqual(
+            state.messages,
+            second
+            + [
+                {"role": "assistant", "content": "```python\nprint(2)\n```"},
+                {"role": "user", "content": "2\n"},
+            ],
+        )
 
     def test_rebuild_collects_budget_emits_and_tool_results(self) -> None:
         ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
@@ -246,6 +266,30 @@ class TrajectoryTestCase(unittest.TestCase):
         state = self.traj.rebuild()
         self.assertEqual(state.messages[-1]["role"], "user")
         self.assertIn("interrupt", state.messages[-1]["content"].lower())
+
+    def test_rebuild_ignores_a_sub_call_message_array(self) -> None:
+        # A sub_call also logs call_type="chat" but with actor="sub" and its own,
+        # unrelated message array. Folding it in would replace the root history.
+        self._log_turn(
+            0,
+            [{"role": "system", "content": "sys"}, {"role": "user", "content": "q"}],
+            "print(1)",
+            "1\n",
+        )
+        self.traj.log_event(
+            trace_ctx=TraceCtx(trace_id="t1", step_idx=1, actor="sub"),
+            call_type="chat", action="chat.completion",
+            prompt_ref=self.traj.store_blob(
+                json.dumps({"messages": [{"role": "user", "content": "summarise blob 7"}]})
+            ),
+            completion_ref=self.traj.store_blob("a summary"),
+            tokens_in=50, cost_usd=0.0001,
+        )
+        contents = [m["content"] for m in self.traj.rebuild().messages]
+        self.assertEqual(contents[0], "sys")
+        self.assertEqual(contents[1], "q")
+        self.assertNotIn("summarise blob 7", contents)
+        self.assertNotIn("a summary", contents)
 
     def test_rebuild_is_deterministic(self) -> None:
         self._log_turn(0, [{"role": "user", "content": "q"}], "print(1)", "1\n")

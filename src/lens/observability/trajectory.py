@@ -261,6 +261,7 @@ class Trajectory:
             "tokens_in": 0,
             "tokens_out": 0,
             "calls": 0,
+            "tool_calls": 0,
             "by_action": {}
         }
 
@@ -281,25 +282,34 @@ class Trajectory:
                 if not isinstance(data, dict):
                     continue
 
-                action = data.get("action")
-                
-                bucket = {action: {"events": 0, "cost_usd": 0.0, "tokens_in": 0, "tokens_out": 0}}
+                action = data.get("action") or "unknown"
 
-                bucket[action]["events"] += 1
-                bucket[action]["cost_usd"] += float(data.get("cost_usd", 0.0))
-                bucket[action]["tokens_in"] += data.get("cost_usd", 0.0)
-                bucket[action]["tokens_out"] += data.get("tokens_out", 0)
+                # One bucket PER ACTION, reused across events: building a fresh
+                # dict per event and `.update()`-ing it in would keep only the
+                # last event of each action.
+                bucket = totals_dict["by_action"].setdefault(
+                    action,
+                    {"events": 0, "cost_usd": 0.0, "tokens_in": 0, "tokens_out": 0},
+                )
 
-                cur_cost =  float(data.get("cost_usd", 0.0))
-                totals_dict["tokens_in"] += data.get("tokens_in", 0)
-                totals_dict["tokens_out"] += data.get("tokens_out", 0)
+                bucket["events"] += 1
+                bucket["cost_usd"] += float(data.get("cost_usd", 0.0))
+                bucket["tokens_in"] += int(data.get("tokens_in") or 0)
+                bucket["tokens_out"] += int(data.get("tokens_out") or 0)
+
+                cur_cost = float(data.get("cost_usd", 0.0))
+                totals_dict["tokens_in"] += int(data.get("tokens_in") or 0)
+                totals_dict["tokens_out"] += int(data.get("tokens_out") or 0)
 
                 totals_dict["cost_usd"] = math.fsum([totals_dict["cost_usd"], cur_cost])
 
                 if data.get("call_type") in ("chat", "jev") and "error" not in data:
                     totals_dict["calls"] += 1
 
-                totals_dict["by_action"].update(bucket)
+                # Every dispatch counts, failed or not: a tool that errored was
+                # still called. (There are no tool.retry events, so no inflation.)
+                if data.get("call_type") == "tool":
+                    totals_dict["tool_calls"] += 1
 
         return totals_dict
 
@@ -349,22 +359,32 @@ class Trajectory:
                that its effects are unknown — the resume must not pretend it ran.
           7. Deterministic: two calls on the same log return equal state.
         """
-        if not self.trajectory_path.is_file():
-            raise FileNotFoundError(f"Trajectory file not found at {self.trajectory_path}")
-
         messages = []
         budget = {}
         emits = {}
         tool_results = {}
         last_seq = 0
 
+        if not self.trajectory_path.is_file():
+            rebuild_obj = RebuiltState(
+                messages=messages,
+                budget=budget,
+                emits=emits,
+                tool_results=tool_results,
+                last_seq=last_seq
+            )
+            return rebuild_obj
+
+        # Must live OUTSIDE the loop: the chat and its exec are two different lines.
+        pending_completion = None
+
         with open(self.trajectory_path, 'r', encoding="utf-8") as f:
             for line in f:
                 clean_line = line.strip()
-                
+
                 if not clean_line:
                     continue
-                
+
                 try:
                     data = json.loads(clean_line)
                 except json.JSONDecodeError:
@@ -372,42 +392,79 @@ class Trajectory:
                 if not isinstance(data, dict):
                     continue
 
-                trace_ctx = data.get("trace_ctx")
+                step_idx = data.get("step_idx")
 
-                if trace_ctx is not None:
-                    last_seq = max(trace_ctx.step_idx+1, last_seq)
+                if step_idx is not None:
+                    last_seq = max(int(step_idx) + 1, last_seq)
 
-                extra_budget_dict = data.get("extra", {}).get("budget")
+                extra = data.get("extra")
+                if isinstance(extra, dict) and extra.get("budget") is not None:
+                    budget = copy.deepcopy(extra["budget"])
 
-                if extra_budget_dict is not None:
-                    budget = copy.deepcopy(extra_budget_dict)
+                call_type = data.get("call_type")
 
-                if data.get("call_type") == "emit" and "error" not in data:
-                    var_name = data.get("extra", {}).get("var")
+                # To play the /sub_call/ part of the request, the body is an API
+                # request with `messages`; a `sub_call` also logs call_type="chat"
+                # but with actor="sub" and a small, unrelated history, so the fold
+                # must match actor == "root" or it would destroy the context.
+                if call_type == "chat" and data.get("actor") == "root" and "error" not in data:
+                    # prompt_ref holds the WHOLE request body, so its `messages`
+                    # is the authoritative history so far: REPLACE, never extend
+                    # (extending would re-append every earlier turn, quadratically).
+                    payload = json.loads(self.load_blob(data["prompt_ref"]))
+                    messages = list(payload.get("messages") or [])
+                    pending_completion = self.load_blob(data["completion_ref"])
+
+                # `jev` (and `tool`/`emit`/`note`) never contribute to the root
+                # context: a JEV request is `state` + `questions`, not messages.
+                elif call_type == "exec":
+                    if pending_completion is not None:
+                        messages.append({"role": "assistant", "content": pending_completion})
+                        pending_completion = None
+
+                    if data.get("stdout_ref"):
+                        messages.append({
+                            "role": "user",
+                            "content": self.load_blob(data["stdout_ref"]),
+                        })
+                    elif data.get("error"):
+                        messages.append({
+                            "role": "user",
+                            "content": f"[block failed: {data['error']}]",
+                        })
+                    else:
+                        messages.append({
+                            "role": "user",
+                            "content": "[block interrupted; effects unknown]",
+                        })
+
+                elif call_type == "emit" and "error" not in data:
+                    var_name = extra.get("var") if isinstance(extra, dict) else None
                     result_ref = data.get("result_ref")
 
                     if var_name is not None and result_ref is not None:
+                        # name -> REF (prefix kept), not the content:
+                        # Runtime._restore_state calls load_blob(ref) itself.
                         emits[var_name] = result_ref
 
-                if data.get("call_type") == "tool" and "error" not in data:
+                elif call_type == "tool" and "error" not in data:
                     tool = data.get("tool")
                     args_hash = data.get("args_hash")
                     result_ref = data.get("result_ref")
 
                     if tool is not None and args_hash is not None and result_ref is not None:
-                        key_name = f"{tool}:{args_hash}"
-                        tool_results[key_name] = result_ref
+                        tool_results[f"{tool}:{args_hash}"] = result_ref
 
-                if data.get("call_type") == "chat" and "error" not in data:
-                    prompt_ref = data.get("prompt_ref")
-        
-        rebuild_obj = RebuiltState(
+        # A chat whose exec never happened (crash between the two): the block it
+        # wrote is still part of the state the resumed model must see.
+        if pending_completion is not None:
+            messages.append({"role": "assistant", "content": pending_completion})
+
+        return RebuiltState(
             messages=messages,
             budget=budget,
             emits=emits,
             tool_results=tool_results,
-            last_seq=last_seq
+            last_seq=last_seq,
         )
-        
-        return rebuild_obj
 
