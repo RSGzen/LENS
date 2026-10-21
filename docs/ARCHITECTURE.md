@@ -274,9 +274,10 @@ sequenceDiagram
 ### 4.3 M8 harness scaffold (18 Oct 2026)
 
 The harness is **scaffolded and reworked** (LOG-92); all logic bodies are
-student-owned. Suite: **325 tests — 235 pass, 90 contract tests**
-`NotImplementedError` until filled (`budget` + `ledger` + `trajectory`, LOG-96/97/98).
-`compileall` and `docker compose config` pass. No live sandbox query has run yet.
+student-owned. Suite: **330 tests — 252 pass, 78 contract tests**
+`NotImplementedError` until filled (`budget` + `ledger` + `trajectory` + `context`,
+LOG-96/97/98/99). `compileall` and `docker compose config` pass. No live sandbox
+query has run yet.
 
 Invariants fixed in the rework: the sandbox mounts **`<run_dir>/work`** only (run
 artifacts live one level up and cannot be rewritten by generated code); caps are
