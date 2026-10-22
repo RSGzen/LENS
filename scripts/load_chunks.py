@@ -94,7 +94,7 @@ def main() -> None:
         papers, chunks = load_chunks(
             conn=conn,
             entries=entries,
-            xml_dir=config.GROBID_XML_DIR_PATH,
+            xml_dir=config.require_path("LENS_GROBID_XML_DIR", config.GROBID_XML_DIR_PATH),
             count_tokens=count_tokens,
             embedder=embedder,
             papers_per_batch=config.PAPERS_PER_BATCH,

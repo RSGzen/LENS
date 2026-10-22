@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -31,13 +32,45 @@ os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("TQDM_DISABLE", "1")
 
 # ------------------------------------------------------------------ paths
-# One source of truth. The env override keeps the same code portable across
-# machines; the default is the local runtime root (outside Google Drive).
-LENS_RUNS_ROOT_PATH = os.environ.get("LENS_RUNS_ROOT", r"D:\lens-data\runs")
+# **Path portability (M8.0).** Code is installed read-only; runtime data lives in
+# ONE writable root. Nothing below is an absolute literal, so the same checkout
+# runs on a machine with no `D:` drive.
+#
+#   PACKAGE_DIR / REPO_ROOT   files that ship with the code (compose file, docs)
+#   DATA_ROOT                 runs / logs / cache / manifests   (env: LENS_DATA_ROOT)
+#   LENS_ARXIV_METADATA / LENS_GROBID_XML_DIR   external corpus inputs, NO default
+#
+# The local developer keeps the old layout by putting `LENS_DATA_ROOT=D:\lens-data`
+# in the gitignored `.env` (see `.env.example`) — the default never has to be a
+# particular machine's path.
+PACKAGE_DIR = Path(__file__).resolve().parent          # .../src/lens
+REPO_ROOT = PACKAGE_DIR.parents[1]                     # .../lens (the git checkout)
+
+
+def _data_root() -> Path:
+    """Resolve the writable data root: env override, else the platform dir.
+
+    No third-party dependency: ``%LOCALAPPDATA%`` on Windows, ``$XDG_DATA_HOME``
+    on Linux, else ``~/.local/share`` (macOS users normally set
+    ``LENS_DATA_ROOT``). One anchor, everything else is relative to it.
+    """
+    override = (os.environ.get("LENS_DATA_ROOT") or "").strip()
+    if override:
+        return Path(override).expanduser()
+
+    base = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_DATA_HOME")
+    root = Path(base) if base else Path.home() / ".local" / "share"
+
+    return root / "lens"
+
+
+DATA_ROOT = _data_root()
+
+LENS_RUNS_ROOT_PATH = Path(os.environ.get("LENS_RUNS_ROOT") or DATA_ROOT / "runs")
 BLOBS_DIR_NAME = "blobs"
 TRAJECTORY_FILENAME = "trajectory.jsonl"
 # Long-running dev-run logs (e.g. the M3 bulk load) kept for thesis evidence.
-LENS_LOGS_ROOT_PATH = os.environ.get("LENS_LOGS_ROOT", r"D:\lens-data\logs")
+LENS_LOGS_ROOT_PATH = Path(os.environ.get("LENS_LOGS_ROOT") or DATA_ROOT / "logs")
 
 # ------------------------------------------------------------------ dataset (M1)
 # Source corpus locations and manifest-build knobs. Same env-override pattern as the runs root.
@@ -55,14 +88,38 @@ PAPER_YEAR_RANGE = {"15", "16", "17", "18", "19", "20", "21", "22", "23", "24", 
 PAPER_START_YEAR = 2015
 PAPER_END_YEAR = 2026
 
-LENS_MANIFESTS_ROOT_PATH = os.environ.get("LENS_MANIFESTS_ROOT", r"D:\lens-data\manifests")
-ARXIV_METADATA_JSON_PATH = os.environ.get(
-    "LENS_ARXIV_METADATA",
-    r"D:\Thesis Dataset\Dataset\kaggle_arxiv-metadata-oai-snapshot.json",
+LENS_MANIFESTS_ROOT_PATH = Path(
+    os.environ.get("LENS_MANIFESTS_ROOT") or DATA_ROOT / "manifests"
 )
-GROBID_XML_DIR_PATH = os.environ.get("LENS_GROBID_XML_DIR", r"D:\Thesis Dataset\cs_AI_Extracted_XML")
+# **Corpus inputs: no default on purpose.** They are machine-specific, huge, and
+# cannot be shipped; the harness itself runs without them, so only the M1/M3/M4
+# loaders resolve them — via :func:`require_path`, which fails early with the env
+# var name instead of a ``TypeError`` deep inside a loader.
+ARXIV_METADATA_JSON_PATH: str | None = os.environ.get("LENS_ARXIV_METADATA") or None
+GROBID_XML_DIR_PATH: str | None = os.environ.get("LENS_GROBID_XML_DIR") or None
 # Source lines between checkpoint writes during the scan.
 MANIFEST_CHECKPOINT_INTERVAL = 3000
+
+
+def require_path(env_name: str, value: str | None) -> Path:
+    """Resolve a corpus path or exit with an actionable message.
+
+    Only the M1/M3/M4 loaders call this — the harness itself must run on a machine
+    that has no corpus at all, and validating at *use* (not at import) keeps
+    ``--help`` working there too. Failing here names the env var; failing later
+    would be a ``TypeError`` inside a loader, hours into a run.
+    """
+    if not value:
+        raise SystemExit(
+            f"{env_name} is not set. Copy .env.example to .env (gitignored) and point "
+            f"it at the corpus, or export {env_name}=<path>."
+        )
+
+    path = Path(value).expanduser()
+    if not path.exists():
+        raise SystemExit(f"{env_name} does not exist: {path}")
+
+    return path
 
 # ------------------------------------------------------------------ database (M2)
 # Local pgvector container (MVP Roadmap §2.1/§3). These are DEV defaults only;
@@ -80,10 +137,12 @@ LENS_DB_PASSWORD = os.environ.get("LENS_DB_PASSWORD")
 LENS_DB_RO_USER = os.environ.get("LENS_DB_RO_USER", "lens_ro")
 LENS_DB_RO_PASSWORD = os.environ.get("LENS_DB_RO_PASSWORD")
 
-# Container / image / volume used by `scripts/setup_db.py` docs and M2 evidence.
+# Container / image used by `scripts/setup_db.py` docs and M2 evidence.
+# PGDATA itself is the Docker **named volume** `lens-pgdata` (never a host path):
+# a Windows bind mount made index I/O ~100x slower and was migrated away on 11 Oct.
 LENS_DB_CONTAINER_NAME = os.environ.get("LENS_DB_CONTAINER", "lens-pg")
 LENS_DB_IMAGE = "pgvector/pgvector:pg16"
-LENS_DB_VOLUME_PATH = os.environ.get("LENS_DB_VOLUME", r"D:\lens-data\postgres")
+LENS_DB_VOLUME_NAME = os.environ.get("LENS_DB_VOLUME_NAME", "lens-pgdata")
 
 # Embedding width + pgvector storage type: nomic-embed-text-v1.5, Matryoshka
 # 768 -> 512, stored as `halfvec` (fp16). Note 2*512+8 == 4*256+8 bytes/row —
@@ -171,7 +230,7 @@ RERANK_BATCH_SIZE = int(os.environ.get("LENS_RERANK_BATCH", "32"))
 # the resulting graph is handed to the RLM as a networkx namespace variable (K-07),
 # never dumped into root context. The subgraph is cached by (paper set + ontology
 # version + extractor identity) — K-06.
-LENS_CACHE_ROOT_PATH = os.environ.get("LENS_CACHE_ROOT", r"D:\lens-data\cache")
+LENS_CACHE_ROOT_PATH = Path(os.environ.get("LENS_CACHE_ROOT") or DATA_ROOT / "cache")
 KG_CACHE_DIR_NAME = "kg"
 # Bump on ANY change to the entity/relation schema: it is the KG re-extraction key
 # (mirrors EMBEDDING_VERSION / T-08). Also the cache-key component (K-06).
@@ -197,8 +256,9 @@ KG_EXTRACT_WINDOW_OVERLAP = int(os.environ.get("LENS_KG_EXTRACT_OVERLAP", "32"))
 KG_POSTPROCESS_ENABLED = os.environ.get("LENS_KG_POSTPROCESS", "1").strip() != "0"
 KG_TYPE_INFERENCE = os.environ.get("LENS_KG_TYPE_INFERENCE", "1").strip() != "0"
 KG_GAZETTEER_ENABLED = os.environ.get("LENS_KG_GAZETTEER", "1").strip() != "0"
-KG_GAZETTEER_PATH = os.environ.get(
-    "LENS_KG_GAZETTEER_PATH", r"D:\lens-data\cache\kg\gazetteer_corpus.json"
+KG_GAZETTEER_PATH = Path(
+    os.environ.get("LENS_KG_GAZETTEER_PATH")
+    or LENS_CACHE_ROOT_PATH / "kg" / "gazetteer_corpus.json"
 )
 # Only trust gazetteer entries above this confidence (count-based: 0.7=<5,
 # 0.8=5-9, 0.9>=10). Prevents low-count false positives (e.g. "spaCy").
@@ -309,8 +369,8 @@ FINAL_ANSWER_MARKER = "FINAL_ANSWER:"
 # One ``lens-repl`` container per query session (LOG-31/LOG-32).
 SANDBOX_IMAGE = os.environ.get("LENS_SANDBOX_IMAGE", "lens-repl:0.1.0")
 SANDBOX_SERVICE = os.environ.get("LENS_SANDBOX_SERVICE", "lens-repl")
-SANDBOX_COMPOSE_FILE = os.environ.get(
-    "LENS_SANDBOX_COMPOSE_FILE", "docker-compose.yaml"
+SANDBOX_COMPOSE_FILE = Path(
+    os.environ.get("LENS_SANDBOX_COMPOSE_FILE") or REPO_ROOT / "docker-compose.yaml"
 )
 SANDBOX_WORKSPACE_PATH = os.environ.get("LENS_SANDBOX_WORKSPACE", "/workspace")
 # Host-side port mapped to the runner's /exec server (compose publishes 127.0.0.1).

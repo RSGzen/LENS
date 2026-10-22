@@ -47,7 +47,7 @@ def main() -> None:
         return len(tokenizer.encode(text, add_special_tokens=False, truncation=False))
 
     # --- parse + chunk (CPU) ------------------------------------------------
-    xml_dir = Path(config.GROBID_XML_DIR_PATH)
+    xml_dir = config.require_path("LENS_GROBID_XML_DIR", config.GROBID_XML_DIR_PATH)
     t0 = time.perf_counter()
     chunks = []
     for entry in sample:
