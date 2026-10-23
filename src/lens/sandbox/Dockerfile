@@ -18,8 +18,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Update pip before it fetches anything: pip < 26.2.2 trusts its vendored certifi
+# whatever the system store says, so it keeps trusting the revoked eMudhra
+# intermediates (CVE-2026-111943). Hash-pinned direct URL, so this one download
+# needs no trust in the CA chain at all.
+RUN python -m pip install --no-cache-dir --no-deps \
+    "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+
 COPY lens/sandbox/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY lens/sandbox/runner.py lens/sandbox/rlm_api.py lens/kg_query.py ./
 
