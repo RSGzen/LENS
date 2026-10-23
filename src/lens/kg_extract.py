@@ -394,7 +394,7 @@ class GlinerExtractor:
         return windows
 
     def extract(self, text: str) -> list[dict[str, Any]]:
-        """Return raw triples for one chunk of ``text``.
+        r"""Return raw triples for one chunk of ``text``.
 
         Return ``[]`` for blank text (do **not** call the models). The text is
         split into <= ``max_tokens`` windows (see :meth:`_text_windows`) because
