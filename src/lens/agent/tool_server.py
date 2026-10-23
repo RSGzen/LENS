@@ -213,7 +213,7 @@ class ToolServer:
             # A client that connects and stalls must not pin a worker thread.
             timeout = 300
 
-            def log_message(self, fmt: str, *args: Any) -> None:
+            def log_message(self, format: str, *args: Any) -> None:
                 # Default writes every request line to stderr, which would
                 # interleave with the agent loop's CLI output. Silent on purpose:
                 # the trajectory is the record, not stderr.
