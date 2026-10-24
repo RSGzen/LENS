@@ -11,8 +11,12 @@ credentials.
 
 from __future__ import annotations
 
+import requests
 import subprocess
 import time
+import json
+import os
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,7 +38,15 @@ class ExecResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Return the RPC-shaped dict the orchestrator appends as an observation."""
-        raise NotImplementedError("M8 scaffold: implement ExecResult.to_dict")
+        return {
+            "ok": self.ok,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "result": self.result,
+            "error": self.error,
+            "duration_ms": self.duration_ms,
+            "truncated": self.truncated,
+        }
 
 
 class SandboxSession:
@@ -46,7 +58,7 @@ class SandboxSession:
         workspace: str | Path,
         *,
         image: str = config.SANDBOX_IMAGE,
-        compose_file: str = config.SANDBOX_COMPOSE_FILE,
+        compose_file: Path = config.SANDBOX_COMPOSE_FILE,
         service: str = config.SANDBOX_SERVICE,
         port: int = config.SANDBOX_PORT,
         token: str,
@@ -62,7 +74,10 @@ class SandboxSession:
         self.port = port
         self.token = token
         self.exec_timeout_s = exec_timeout_s
-        self.session = session
+        # The injected session is the test seam and the production client at
+        # once: ``requests`` (the module) has ``get``/``post`` with the same
+        # signature, so no wrapper is needed.
+        self.session = session or requests
         # The URL the *container* uses to reach the host RPC server. Built by
         # run.py from the server's real bound port, because ``ToolServer.start()``
         # may bind port 0 and pick a free one. Default keeps the documented
@@ -88,21 +103,68 @@ class SandboxSession:
              <service>`` from the repo root.
           3. Poll :meth:`wait_until_healthy`; on failure, call :meth:`stop` and
              raise a clear error.
+
+        ``--force-recreate`` is the load-bearing flag: a stopped container is
+        reused with its **previous** environment, so the new token and RPC URL
+        would silently not apply (symptom: every call is a 401).
+        ``--no-deps`` keeps ``lens-pg`` untouched.
         """
-        raise NotImplementedError("M8 scaffold: implement SandboxSession.start")
+        result = self._run_compose(
+            ["up", "-d", "--no-deps", "--force-recreate", self.service]
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"docker compose up failed for {self.service!r}: "
+                f"{(result.stderr or result.stdout).strip()[:500]}"
+            )
+
+        if not self.wait_until_healthy():
+            # Leave nothing running: a half-started container would hold the
+            # published port and the next run would fail on "port is allocated".
+            self.stop()
+            raise RuntimeError(
+                f"sandbox {self.service!r} started but /health never answered"
+            )
 
     def stop(self) -> None:
-        """Remove the container (``docker compose ... rm -sf <service>``)."""
-        raise NotImplementedError("M8 scaffold: implement SandboxSession.stop")
+        """Remove the container (``docker compose ... rm -sf <service>``).
+
+        ``rm -sf`` and **never** ``down``: ``down`` removes the networks, and
+        ``down -v`` would delete the ``lens-pgdata`` volume — the loaded corpus.
+        Best-effort by design (it runs from a ``finally``): removing a container
+        that is not there is a no-op, and a failure must not mask the original
+        error.
+        """
+        self._run_compose(["rm", "-sf", self.service])
 
     def wait_until_healthy(self, timeout_s: float = 30.0) -> bool:
         """Poll ``/health`` until ready or the timeout expires."""
-        raise NotImplementedError("M8 scaffold: implement SandboxSession.wait_until_healthy")
+        deadline = time.monotonic() + timeout_s
+
+        while time.monotonic() < deadline:
+            try:
+                if self.health():
+                    return True
+
+            # Not listening yet: normal for the first second
+            except requests.RequestException:
+                pass                      
+            time.sleep(0.25)
+
+        return False
 
     # -------------------------------------------------------------- transport
     def health(self) -> bool:
-        """Return ``True`` when ``GET /health`` answers ``ok``."""
-        raise NotImplementedError("M8 scaffold: implement SandboxSession.health")
+        """Return ``True`` when ``GET /health`` answers 200.
+
+        The per-request timeout keeps a half-open socket from blocking the
+        caller; the *retry budget* lives in :meth:`wait_until_healthy`. They are
+        different clocks and the second one is not a substitute for the first.
+        """
+        response = self.session.get(f"{self.url}/health", timeout=2)
+
+        return response.status_code == 200
 
     def exec(self, code: str) -> ExecResult:
         """POST one Python block to ``/exec`` and parse the response.
@@ -111,7 +173,40 @@ class SandboxSession:
         type. Client-side timeout is ``exec_timeout_s + 10`` so the runner's own
         timeout fires first. Transport errors become ``ExecResult(ok=False, ...)``.
         """
-        raise NotImplementedError("M8 scaffold: implement SandboxSession.exec")
+        try:
+            response = self.session.post(
+                f"{self.url}/exec",
+                data=json.dumps({"code": code}),
+                timeout=self.exec_timeout_s + 10,
+            )
+            data = response.json()
+        except requests.RequestException as exc:
+            # Refused / timed out / reset: the container is unreachable or dead.
+            return ExecResult(
+                ok=False,
+                error={"type": type(exc).__name__, "message": str(exc)[:300]},
+            )
+
+        if response.status_code != 200:
+            return ExecResult(
+                ok=False,
+                error={
+                    "type": "HTTPError",
+                    "message": f"runner answered {response.status_code}",
+                },
+            )
+
+        return ExecResult(
+            # The runner reports a failed block as 200 + ``ok: false``; an HTTP
+            # error above means the transport broke, not the model's code.
+            ok=data.get("error") is None,
+            stdout=data.get("stdout") or "",
+            stderr=data.get("stderr") or "",
+            result=data.get("result"),
+            error=data.get("error"),
+            duration_ms=data.get("duration_ms"),
+            truncated=bool(data.get("truncated")),
+        )
 
     # ------------------------------------------------------------------ utils
     def _compose_env(self) -> dict[str, str]:
@@ -132,9 +227,39 @@ class SandboxSession:
         not in the image, so the runner's timeout comes from this variable alone.
         Let the two drift and the host gives up on a block the runner would still
         finish (or waits on one it already killed).
+
+        ``LENS_SANDBOX_STDOUT_MAX_CHARS`` is passed too: the compose default is
+        20,000 while ``config.SANDBOX_STDOUT_MAX_CHARS`` is 6,000, so leaving it
+        to the file silently widens the sandbox's cut.
+
+        Every value must be a **string** — ``env=`` is passed straight to
+        ``subprocess``, and an ``int`` there is a ``TypeError`` on Windows.
         """
-        raise NotImplementedError("M8 scaffold: implement SandboxSession._compose_env")
+        return {
+            "LENS_RUN_WORKSPACE": self.workspace.as_posix(),
+            "LENS_RUN_ID": self.run_id,
+            "LENS_RPC_TOKEN": self.token,
+            # The *container's* view of the host, not this host-side URL.
+            "LENS_HOST_RPC_URL": self.host_rpc_url,
+            "LENS_SANDBOX_IMAGE": self.image,
+            "LENS_SANDBOX_PORT": str(self.port),
+            "LENS_MAX_EXEC_BLOCK_S": str(self.exec_timeout_s),
+            "LENS_SANDBOX_STDOUT_MAX_CHARS": str(config.SANDBOX_STDOUT_MAX_CHARS),
+        }
 
     def _run_compose(self, args: list[str]) -> subprocess.CompletedProcess[str]:
-        """Run ``docker compose -f <file> <args>`` and return the completed process."""
-        raise NotImplementedError("M8 scaffold: implement SandboxSession._run_compose")
+        """Run ``docker compose -f <file> <args>`` and return the completed process.
+
+        ``env`` is the ambient environment **plus** :meth:`_compose_env`, never
+        the latter alone: without ``PATH``/``DOCKER_HOST`` the ``docker`` lookup
+        itself fails. Failures are returned, not raised — the caller decides
+        (``start`` raises, ``stop`` ignores).
+        """
+        return subprocess.run(
+            ["docker", "compose", "-f", str(self.compose_file), *args],
+            cwd=config.REPO_ROOT,
+            env={**os.environ, **self._compose_env()},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
