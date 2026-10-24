@@ -26,9 +26,11 @@
 # internal network, so the published port is silently dropped (`docker port`
 # prints nothing; HostConfig.PortBindings is set but NetworkSettings.Ports is
 # empty) — verified 24 Oct, LOG-107. Publishing a port therefore implies egress,
-# which (2) forbids. The host reaches the runner through `docker compose exec`
-# (a process inside the container can dial 127.0.0.1:8080 there), not through a
-# published port; the `ports:` entry below is kept only for manual debugging.
+# which (2) forbids. **Adopted (LOG-108):** the host reaches the runner with
+# `docker compose exec -T lens-repl python /app/exec_client.py` — a process
+# inside the container dials 127.0.0.1:8080 there, so `internal: true` and the
+# runner are untouched. The `ports:` entry below is kept only for manual
+# debugging and is NOT the exec path.
 
 name: lens
 

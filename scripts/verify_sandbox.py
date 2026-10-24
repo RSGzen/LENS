@@ -21,8 +21,11 @@ run before anything convenient:
   1. **general egress blocked** — a connect to ``1.1.1.1:443`` (or any host) must
      fail from inside the sandbox. Record the failure: absence of egress is
      evidence, not an assumption.
-  2. build/start ``lens-repl`` via compose; ``/health`` answers on the host side;
-  3. namespace persistence (``x = 1`` then ``print(x + 1)`` -> ``2``);
+  2. build/start ``lens-repl`` via compose; ``/health`` answers **from inside the
+     container** (``docker compose exec -T lens-repl python /app/exec_client.py
+     health``). It cannot be reached over the published port: an ``internal``
+     network gets no DNAT rule, so Docker silently drops the mapping (LOG-107);
+   3. namespace persistence (``x = 1`` then ``print(x + 1)`` -> ``2``);
   4. a timeout returns an error without killing the runner;
   5. the workspace mount is writable **and** the run artifacts are not visible
      (``trajectory.jsonl`` / ``answer.md`` must be absent from ``/workspace``);

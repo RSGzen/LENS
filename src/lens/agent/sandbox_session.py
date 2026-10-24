@@ -11,17 +11,21 @@ credentials.
 
 from __future__ import annotations
 
-import requests
-import subprocess
-import time
 import json
 import os
+import subprocess
+import time
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from lens import config
+
+#: Runs **inside** the container and posts to the runner there (option C). The
+#: runner is not reachable over TCP while ``sandbox-net`` is ``internal: true``
+#: (LOG-107), so the host reaches it with ``docker compose exec``.
+EXEC_CLIENT = "/app/exec_client.py"
 
 
 @dataclass
@@ -63,7 +67,6 @@ class SandboxSession:
         port: int = config.SANDBOX_PORT,
         token: str,
         exec_timeout_s: float = config.MAX_EXEC_BLOCK_S,
-        session: Any | None = None,
         host_rpc_url: str | None = None,
     ) -> None:
         self.run_id = run_id
@@ -74,10 +77,6 @@ class SandboxSession:
         self.port = port
         self.token = token
         self.exec_timeout_s = exec_timeout_s
-        # The injected session is the test seam and the production client at
-        # once: ``requests`` (the module) has ``get``/``post`` with the same
-        # signature, so no wrapper is needed.
-        self.session = session or requests
         # The URL the *container* uses to reach the host RPC server. Built by
         # run.py from the server's real bound port, because ``ToolServer.start()``
         # may bind port 0 and pick a free one. Default keeps the documented
@@ -156,49 +155,68 @@ class SandboxSession:
 
     # -------------------------------------------------------------- transport
     def health(self) -> bool:
-        """Return ``True`` when ``GET /health`` answers 200.
+        """Return ``True`` when the in-container ``GET /health`` answers ``ok``.
 
-        The per-request timeout keeps a half-open socket from blocking the
-        caller; the *retry budget* lives in :meth:`wait_until_healthy`. They are
-        different clocks and the second one is not a substitute for the first.
+        Runs over ``docker exec`` (option C): the runner is not reachable from the
+        host as long as ``sandbox-net`` stays ``internal: true``. The 30 s
+        deadline here is the compose call's; the retry budget lives in
+        :meth:`wait_until_healthy` — different clocks, both needed.
         """
-        response = self.session.get(f"{self.url}/health", timeout=2)
+        result = self._run_compose(
+            ["exec", "-T", self.service, "python", EXEC_CLIENT, "health"], timeout=30
+        )
 
-        return response.status_code == 200
+        if result.returncode != 0:
+            return False
+
+        try:
+            return bool(json.loads(result.stdout).get("ok"))
+        except (json.JSONDecodeError, AttributeError):
+            return False
 
     def exec(self, code: str) -> ExecResult:
-        """POST one Python block to ``/exec`` and parse the response.
+        """Run one Python block in the container and parse the runner's envelope.
 
-        Request body: ``data=json.dumps({"code": code})`` with a JSON content
-        type. Client-side timeout is ``exec_timeout_s + 10`` so the runner's own
-        timeout fires first. Transport errors become ``ExecResult(ok=False, ...)``.
+        The code travels on **stdin** (no quoting, no shell) to
+        ``/app/exec_client.py``, which posts it to the runner inside the
+        container. Client-side timeout is ``exec_timeout_s + 20`` (docker exec
+        overhead on top of the runner's own cap), so a runaway block comes back
+        as a structured ``TimeoutError`` instead of a client abort.
         """
         try:
-            response = self.session.post(
-                f"{self.url}/exec",
-                data=json.dumps({"code": code}),
-                timeout=self.exec_timeout_s + 10,
+            result = self._run_compose(
+                ["exec", "-T", self.service, "python", EXEC_CLIENT, "exec"],
+                input=code,
+                timeout=self.exec_timeout_s + 20,
             )
-            data = response.json()
-        except requests.RequestException as exc:
-            # Refused / timed out / reset: the container is unreachable or dead.
+        except subprocess.TimeoutExpired as exc:
             return ExecResult(
                 ok=False,
-                error={"type": type(exc).__name__, "message": str(exc)[:300]},
+                error={"type": "TimeoutExpired", "message": str(exc)[:300]},
             )
 
-        if response.status_code != 200:
+        if result.returncode != 0:
+            # The transport broke (container gone, docker down) — distinct from a
+            # block that failed, which is a 0 exit with ``ok: false``.
             return ExecResult(
                 ok=False,
                 error={
-                    "type": "HTTPError",
-                    "message": f"runner answered {response.status_code}",
+                    "type": "ContainerExecError",
+                    "message": (result.stderr or result.stdout).strip()[:300],
                 },
             )
 
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return ExecResult(
+                ok=False,
+                error={"type": "BadEnvelope", "message": result.stdout[:300]},
+            )
+
         return ExecResult(
-            # The runner reports a failed block as 200 + ``ok: false``; an HTTP
-            # error above means the transport broke, not the model's code.
+            # The runner reports a failed block as 200 + ``ok: false``; a
+            # non-zero exit above means the transport broke, not the model's code.
             ok=data.get("error") is None,
             stdout=data.get("stdout") or "",
             stderr=data.get("stderr") or "",
@@ -247,19 +265,29 @@ class SandboxSession:
             "LENS_SANDBOX_STDOUT_MAX_CHARS": str(config.SANDBOX_STDOUT_MAX_CHARS),
         }
 
-    def _run_compose(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+    def _run_compose(
+        self,
+        args: list[str],
+        *,
+        input: str | None = None,
+        timeout: float = 120,
+    ) -> subprocess.CompletedProcess[str]:
         """Run ``docker compose -f <file> <args>`` and return the completed process.
 
         ``env`` is the ambient environment **plus** :meth:`_compose_env`, never
         the latter alone: without ``PATH``/``DOCKER_HOST`` the ``docker`` lookup
         itself fails. Failures are returned, not raised — the caller decides
         (``start`` raises, ``stop`` ignores).
+
+        ``input`` feeds stdin, which is how code reaches
+        ``exec_client.py``: no shell, no quoting, no argv length limit.
         """
         return subprocess.run(
             ["docker", "compose", "-f", str(self.compose_file), *args],
             cwd=config.REPO_ROOT,
             env={**os.environ, **self._compose_env()},
+            input=input,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout,
         )
