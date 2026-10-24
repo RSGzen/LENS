@@ -126,6 +126,12 @@ class SandboxSession:
             ``"<host>:/workspace"`` on Windows.
           - ``LENS_HOST_RPC_URL`` is ``self.host_rpc_url`` (built from the port
             the RPC server actually bound), not a constant.
+
+        ``LENS_MAX_EXEC_BLOCK_S`` must be passed as **the same value** as
+        ``exec_timeout_s`` (i.e. ``config.MAX_EXEC_BLOCK_S``): ``lens.config`` is
+        not in the image, so the runner's timeout comes from this variable alone.
+        Let the two drift and the host gives up on a block the runner would still
+        finish (or waits on one it already killed).
         """
         raise NotImplementedError("M8 scaffold: implement SandboxSession._compose_env")
 
