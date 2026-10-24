@@ -20,6 +20,7 @@ Also importable in the namespace: ``networkx``, ``numpy``, ``pandas``, and
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Mapping
 
@@ -29,6 +30,15 @@ HOST_URL_ENV = "LENS_HOST_RPC_URL"
 TOKEN_ENV = "LENS_RPC_TOKEN"
 
 DEFAULT_TIMEOUT_S = 180.0
+
+#: endpoint -> HTTP method. Mirrors ``tool_server._ROUTES``: ``/budget`` is
+#: GET-only (a POST is a 405), everything else takes a JSON body.
+#:
+#: Duplicated **on purpose**: the image ships this module on its own — there is no
+#: ``lens`` package in ``lens-repl`` (LOG-32), only ``runner.py``, ``rlm_api.py``
+#: and ``kg_query.py`` — so importing the host's route table is a
+#: ``ModuleNotFoundError`` inside the sandbox, i.e. the façade never loads.
+_METHODS: dict[str, str] = {"/budget": "GET"}
 
 
 class RLMError(RuntimeError):
@@ -64,7 +74,7 @@ def _post(
     payload: Mapping[str, Any],
     *,
     timeout: float = DEFAULT_TIMEOUT_S,
-) -> dict[str, Any]:
+) -> dict[str, Any]:    
     """POST one JSON payload to the host and return the **parsed envelope**.
 
     Contract:
@@ -78,12 +88,54 @@ def _post(
       - Use ``httpx`` (baked into the image) **lazily** so the host can import
         this module for contract tests without the sandbox dependency installed.
     """
-    raise NotImplementedError("M8 scaffold: implement rlm_api._post")
+    import httpx
+
+    method = _METHODS.get(endpoint, "POST")
+    headers = {"Authorization": f"Bearer {_token()}"}
+
+    try:
+        response = httpx.request(
+            method,
+            _host_url() + endpoint,
+            # No body on GET: the server does not read one for GET, so its bytes
+            # would sit in the keep-alive socket and corrupt the next request.
+            json=payload if method == "POST" else None,
+            headers=headers,
+            timeout=timeout,
+        )
+    except httpx.HTTPError as exc:
+        raise RLMError(f"host RPC {endpoint} failed: {exc}") from exc
+
+    try:
+        body = json.loads(response.text)
+    except json.JSONDecodeError as exc:
+        raise RLMError(
+            f"host RPC {endpoint} returned non-JSON (HTTP {response.status_code})",
+            status=response.status_code,
+        ) from exc
+
+    if not body.get("ok"):
+        error = body.get("error") or {
+            "type": "HostRPCError",
+            "message": f"host RPC {endpoint} failed with HTTP {response.status_code}",
+        }
+        raise RLMError(
+            error.get("message", "host RPC failed"),
+            status=response.status_code,
+            error=error,
+        )
+
+    return body
 
 
 def tool(name: str, **kwargs: Any) -> Any:
     """Call a registered host tool by name; return its ``result``."""
-    raise NotImplementedError("M8 scaffold: implement rlm_api.tool")
+    payload = {
+        "name": name,
+        "args": kwargs
+    }
+
+    return _post("/tool", payload)["result"]
 
 
 def sub_call(prompt: str, context: str | None = None) -> str:
@@ -91,12 +143,19 @@ def sub_call(prompt: str, context: str | None = None) -> str:
 
     No tools, no REPL, no recursion. The host performs the call and logs it.
     """
-    raise NotImplementedError("M8 scaffold: implement rlm_api.sub_call")
+    payload = {
+        "prompt": prompt,
+        "context": context
+    }
+
+    return _post("/sub_call", payload)["result"]
 
 
 def budget() -> dict[str, Any]:
     """Return the host's read-only budget snapshot (the ``result`` field)."""
-    raise NotImplementedError("M8 scaffold: implement rlm_api.budget")
+    payload = {}
+
+    return _post("/budget", payload)["result"]
 
 
 def emit(value: Any, label: str | None = None) -> dict[str, Any]:
@@ -111,12 +170,20 @@ def emit(value: Any, label: str | None = None) -> dict[str, Any]:
 
     Use ``path`` — ``host_path`` is meaningless inside the container.
     """
-    raise NotImplementedError("M8 scaffold: implement rlm_api.emit")
+    payload = {
+        "value": value,
+        "label": label
+    }
+
+    return _post("/emit", payload)["result"]
 
 
 def note(text: str) -> None:
     """Append one free-form note to the trajectory."""
-    raise NotImplementedError("M8 scaffold: implement rlm_api.note")
+    payload = {
+        "text": text
+    }
 
+    return _post("/note", payload)["result"]
 
 __all__ = ["RLMError", "budget", "emit", "note", "sub_call", "tool"]
