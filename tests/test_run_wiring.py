@@ -196,6 +196,33 @@ class MainWiringTestCase(unittest.TestCase):
         self.assertEqual(args[1], "run-x")                # run_id
         self.assertIs(kwargs["resume"], True)
 
+    def test_fork_creates_the_child_then_runs_under_the_parent(self) -> None:
+        runtime = FakeRuntime()
+        with patch.object(
+            run_module, "build_runtime", return_value=(runtime, FakeServer(), FakeSandbox())
+        ) as build, patch("lens.agent.runstore.fork_run") as fork:
+            with redirect_stdout(io.StringIO()):
+                code = run_module.main(
+                    ["--fork", "run-src", "--run-id", "run-new", "same question"]
+                )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(fork.call_args.args[:2], ("run-src", "run-new"))
+        self.assertEqual(build.call_args.kwargs["parent_run_id"], "run-src")
+
+    def test_no_replay_reaches_the_wiring(self) -> None:
+        self._invoke(FakeRuntime(), ["q", "--no-replay"])
+        self.assertIs(self.build_call.call_args.kwargs["replay"], False)
+
+    def test_resume_of_a_missing_run_exits_2(self) -> None:
+        with patch.object(run_module, "build_runtime") as build, patch(
+            "lens.agent.runstore.read_manifest", return_value=None
+        ):
+            with redirect_stdout(io.StringIO()):
+                code = run_module.main(["--resume", "missing"])
+        self.assertEqual(code, 2)
+        build.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
