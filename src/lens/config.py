@@ -355,8 +355,10 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "3000"
 
 # Cumulative token cap, DERIVED (not tuned): iterations x compacted-context
 # target x 1.25 overhead (system prompt + tool manifest + final answer).
-# Default 8 x 30,000 x 1.25 = 300,000. This is a safety net above the cost cap —
-# a measured estimate, not a result; M11 reports the observed distribution.
+# Default 8 x 30,000 x 1.25 = 300,000. With the cost cap at $1.00 (LOG-120) this is
+# the cap most likely to bind on a measured gpt-5 run (the anchor used 141k tokens
+# and $0.436), which is a defensible stop reason; a measured estimate, not a result
+# - M11 reports the observed distribution.
 MAX_TOKENS_PER_QUERY = int(
     os.environ.get(
         "LENS_MAX_TOKENS",
@@ -404,9 +406,10 @@ SANDBOX_PIDS_LIMIT = int(os.environ.get("LENS_SANDBOX_PIDS_LIMIT", "256"))
 # 20,000 chars (~5k tokens) a single turn could eat a sixth of the context.
 SANDBOX_STDOUT_MAX_CHARS = int(os.environ.get("LENS_SANDBOX_STDOUT_MAX_CHARS", "6000"))
 
-# Host RPC server the sandbox calls back into. It binds all interfaces because
-# Docker Desktop reaches it via ``host.docker.internal``; a per-run token is the
-# auth boundary (the API key never enters the container).
+# Host RPC server the sandbox calls back into. It binds all interfaces because the
+# *relay* connects to it over ``rpc-net`` (LOG-114); a per-run token is the auth
+# boundary (the API key never enters the container, and neither does the sandbox
+# ever see this address — it dials ``lens-relay``).
 HOST_RPC_BIND = os.environ.get("LENS_HOST_RPC_BIND", "0.0.0.0")
 HOST_RPC_PORT = int(os.environ.get("LENS_HOST_RPC_PORT", "8765"))
 HOST_RPC_TOKEN_ENV = "LENS_RPC_TOKEN"

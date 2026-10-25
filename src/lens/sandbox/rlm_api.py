@@ -57,8 +57,16 @@ class RLMError(RuntimeError):
 
 
 def _host_url() -> str:
-    """Return the host RPC base URL from the container environment."""
-    return os.environ.get(HOST_URL_ENV, "http://host.docker.internal:8765").rstrip("/")
+    """Return the host RPC base URL as the **container** sees it.
+
+    ``LENS_HOST_RPC_URL`` is set by the compose environment from the relay's
+    address (``config.SANDBOX_RELAY_URL``). The fallback is that same relay
+    address: ``host.docker.internal`` is unreachable from an ``internal: true``
+    bridge (LOG-114), so defaulting to it would turn a missing variable into a
+    confusing "network unreachable" instead of a connection to the one peer the
+    sandbox is allowed to have.
+    """
+    return os.environ.get(HOST_URL_ENV, "http://lens-relay:8090").rstrip("/")
 
 
 def _token() -> str:

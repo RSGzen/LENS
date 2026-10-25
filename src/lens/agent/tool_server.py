@@ -86,17 +86,19 @@ class ToolServer:
 
     @property
     def url(self) -> str:
-        """Host-side URL (the sandbox uses ``host.docker.internal`` instead)."""
+        """Host-side URL. The container never uses it — it dials the relay."""
         return f"http://127.0.0.1:{self.port}"
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> None:
         """Bind and serve in a background thread. Port ``0`` selects a free port.
 
-        After binding, ``self.port`` holds the **actual** port. The sandbox's
-        ``LENS_HOST_RPC_URL`` must be built from it (``run.py`` does), otherwise
-        the container dials the configured default while the server listens
-        somewhere else.
+        After binding, ``self.port`` holds the **actual** port. The relay forwards to
+        it: ``run.py`` sets ``sandbox.host_rpc_port = server.port`` and the compose
+        environment carries it as ``LENS_RELAY_TARGET_PORT``. The relay's own
+        address is the constant ``config.SANDBOX_RELAY_URL``, which is what the
+        container's ``LENS_HOST_RPC_URL`` holds — a random port never has to be
+        written into the compose file.
         """
         self._httpd = ThreadingHTTPServer((self.host, self.port), self._build_handler())
         self.port = self._httpd.server_address[1]

@@ -250,7 +250,9 @@ def make_server(host: str, port: int, executor: Executor) -> HTTPServer:
 
 def main() -> None:
     """Read ``HOST``/``PORT`` from the environment and serve forever."""
-    host = os.environ.get("HOST", "0.0.0.0")  # inside the container: accept the published port
+    # Bind all interfaces: the host reaches the runner through `docker compose exec`
+    # (a process inside this container dials 127.0.0.1), and nothing is published.
+    host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", str(DEFAULT_PORT)))
 
     # The only log line: log_message() is silenced, so without this a healthy

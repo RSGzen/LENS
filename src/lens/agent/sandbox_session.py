@@ -90,7 +90,15 @@ class SandboxSession:
 
     @property
     def url(self) -> str:
-        """Host-side runner URL (compose publishes the port on 127.0.0.1)."""
+        """Legacy host-side URL, kept readable but no longer the exec path.
+
+        The compose file publishes no port any more: an ``internal: true`` network
+        gets no DNAT rule, so Docker silently drops the mapping (LOG-107). The host
+        reaches the runner with ``docker compose exec`` (:meth:`health`,
+        :meth:`exec`), and the *container* reaches the host through the relay.
+        Nothing calls this; it exists so an operator debugging by hand knows the
+        shape a hypothetical published port would have.
+        """
         return f"http://127.0.0.1:{self.port}"
 
     # ------------------------------------------------------------- lifecycle
@@ -99,7 +107,8 @@ class SandboxSession:
 
         Steps:
           1. Build the compose environment: ``LENS_RUN_WORKSPACE``,
-             ``LENS_RUN_ID``, ``LENS_RPC_TOKEN``, ``LENS_HOST_RPC_URL``,
+             ``LENS_RUN_ID``, ``LENS_RPC_TOKEN``, ``LENS_HOST_RPC_URL`` (the relay's
+             address), ``LENS_RELAY_TARGET_PORT`` (the port that relay forwards to),
              ``LENS_SANDBOX_IMAGE``, ``LENS_SANDBOX_PORT``.
           2. Run ``docker compose -f <file> up -d --no-deps --force-recreate
              <service>`` from the repo root.
@@ -133,8 +142,8 @@ class SandboxSession:
             )
 
         if not self.wait_until_healthy():
-            # Leave nothing running: a half-started container would hold the
-            # published port and the next run would fail on "port is allocated".
+            # Leave nothing running: a half-started container (or relay) would keep
+            # the workspace mount and confuse the next run's health check.
             self.stop()
             raise RuntimeError(
                 f"sandbox {self.service!r} started but /health never answered"
