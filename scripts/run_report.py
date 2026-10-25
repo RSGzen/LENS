@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 from lens.agent import runstore
-from lens.observability.citations import resolve_citations
+from lens.observability.citations import resolve_citations, write_sources_md
 from lens.observability.replay import Turn, replay_summary, replay_turns
 from lens.observability.trajectory import Trajectory
 
@@ -171,6 +171,11 @@ def write_report(run_id: str) -> Path:
 
     path = run_dir / "report.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # The citation trace beside the answer (M9 item 2): `answer.md` stays the
+    # model's own words, `sources.md` is the derived join against the recorded
+    # payloads, and unresolved ids are listed rather than hidden.
+    write_sources_md(citations, run_dir / "sources.md")
 
     return path
 
