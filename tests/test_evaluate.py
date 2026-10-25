@@ -58,5 +58,125 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertIsNone(verdict)
 
 
+class _FakeJevClient:
+    """Transport double: one canned ``answers`` object, no network."""
+
+    trajectory = None
+
+    def __init__(self, answers: dict | None = None, exc: Exception | None = None) -> None:
+        self.answers = answers if answers is not None else {}
+        self.exc = exc
+        self.calls: list[tuple[str, dict]] = []
+
+    def jev(self, state, questions, *, trace_ctx):
+        from lens.models import JevResult
+
+        self.calls.append((state, questions))
+
+        if self.exc is not None:
+            raise self.exc
+
+        return JevResult(
+            answers=self.answers,
+            model="typesafe/jev-1.13",
+            provider="TypeSafe",
+            tokens_in=1,
+            cost_usd=0.0,
+            latency_ms=1,
+        )
+
+
+class _FakeBudget:
+    def __init__(self) -> None:
+        self.jev_calls = 0
+
+    def record_jev(self, result) -> None:
+        self.jev_calls += 1
+
+
+class EvaluateTierTestCase(unittest.TestCase):
+    """Tier 1 / tier 2 / degradation — the paths the five contracts skip."""
+
+    ctx = TraceCtx(trace_id="t", step_idx=0, actor="root")
+
+    def test_tier1_accepts_on_a_calibrated_score_without_a_client(self) -> None:
+        verdict = evaluate_stage(
+            "retrieval", {"score": 0.83, "summary": {}},
+            client=None, trace_ctx=self.ctx, threshold=0.7,  # type: ignore[arg-type]
+        )
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "pass")
+        self.assertEqual(verdict.tier, "threshold")
+        self.assertAlmostEqual(verdict.confidence or 0, 0.83)
+
+    def test_low_score_goes_to_tier2_not_to_fail(self) -> None:
+        # One threshold can only accept: below it we ask JEV, never reject.
+        client = _FakeJevClient({"gate": {"answer": True, "confidence": 0.66}})
+
+        verdict = evaluate_stage(
+            "retrieval", {"score": 0.10, "summary": {"chunks": 20}},
+            client=client, trace_ctx=self.ctx, threshold=0.7,  # type: ignore[arg-type]
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.tier, "jev")
+        self.assertEqual(verdict.verdict, "pass")
+        self.assertEqual(len(client.calls), 1)
+        self.assertIn('"chunks"', client.calls[0][0])   # the bounded summary is the state
+
+    def test_final_gate_rejects_and_carries_the_criterion(self) -> None:
+        client = _FakeJevClient(
+            {"gate": {"answer": False, "confidence": 0.91, "failing_criterion": "claim 2 uncited"}}
+        )
+
+        verdict = evaluate_stage(
+            "final",
+            {"score": None, "summary": {"answer": "A claim [c1].", "citations": ["c1"]}},
+            client=client, trace_ctx=self.ctx,  # type: ignore[arg-type]
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "fail")
+        self.assertEqual(verdict.failing_criterion, "claim 2 uncited")
+
+    def test_unrecognised_answer_shape_is_uncertain_not_a_crash(self) -> None:
+        client = _FakeJevClient({"gate": {"probability": 0.4}})
+
+        verdict = evaluate_stage(
+            "kg", {"score": None, "summary": {}},
+            client=client, trace_ctx=self.ctx,  # type: ignore[arg-type]
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "uncertain")
+
+    def test_dead_decision_layer_degrades_to_uncertain(self) -> None:
+        client = _FakeJevClient(exc=RuntimeError("timeout"))
+
+        verdict = evaluate_stage(
+            "kg", {"score": None, "summary": {}},
+            client=client, trace_ctx=self.ctx,  # type: ignore[arg-type]
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "uncertain")
+        self.assertIn("unavailable", verdict.failing_criterion or "")
+
+    def test_jev_cost_is_recorded_against_the_budget(self) -> None:
+        budget = _FakeBudget()
+        client = _FakeJevClient({"gate": {"answer": True, "confidence": 0.9}})
+
+        evaluate_stage(
+            "retrieval", {"score": None, "summary": {}},
+            client=client, trace_ctx=self.ctx, budget=budget,  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(budget.jev_calls, 1)
+
+    def test_verdict_dict_keeps_a_stable_shape(self) -> None:
+        keys = set(StageVerdict(verdict="uncertain").to_dict())
+        self.assertEqual(keys, {"verdict", "confidence", "failing_criterion", "tier"})
+
+
 if __name__ == "__main__":
     unittest.main()

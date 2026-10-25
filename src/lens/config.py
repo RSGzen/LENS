@@ -414,6 +414,41 @@ GATE_ENABLED = os.environ.get("LENS_GATE", "1").strip().lower() not in {
     "off",
 }
 
+
+def _parse_stage_thresholds(raw: str) -> dict[str, float]:
+    """Parse ``"retrieval=0.72,kg=0.65"`` into ``{stage: threshold}``.
+
+    Strict on purpose: a malformed entry is a calibration mistake, and a typo that
+    silently removes a threshold would make the gate look calibrated when it is not.
+    """
+    thresholds: dict[str, float] = {}
+
+    for item in raw.split(","):
+        item = item.strip()
+
+        if not item:
+            continue
+
+        stage, separator, value = item.partition("=")
+
+        if not separator or not stage.strip():
+            raise ValueError(f"bad LENS_STAGE_THRESHOLDS entry: {item!r} (expected stage=float)")
+
+        thresholds[stage.strip()] = float(value)
+
+    return thresholds
+
+
+# Calibrated per-stage acceptance thresholds (Decision Layer §3.x.4b tier 1).
+# **Empty until a stage has a reliability curve** (M11): do not invent numbers — an
+# empty map simply skips tier 1 and lets the JEV `noul` check decide, which is the
+# honest state before calibration. A single threshold can only *accept*: without a
+# lower τ_fail, "below τ_pass" means "ask tier 2", never "fail".
+# Override without a code edit: LENS_STAGE_THRESHOLDS="retrieval=0.72,kg=0.65".
+STAGE_THRESHOLDS: dict[str, float] = _parse_stage_thresholds(
+    os.environ.get("LENS_STAGE_THRESHOLDS", "")
+)
+
 # ------------------------------------------------------------------ model registry
 @dataclass(frozen=True)
 class ModelSpec:

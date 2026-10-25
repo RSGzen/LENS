@@ -18,6 +18,29 @@ from unittest.mock import patch
 from lens import config
 
 
+class StageThresholdsTestCase(unittest.TestCase):
+    """``LENS_STAGE_THRESHOLDS`` parsing (LOG-113).
+
+    Empty is the honest default (tier 1 skipped); a malformed entry must raise,
+    because a typo that silently drops a threshold makes the gate *look* calibrated.
+    """
+
+    def test_default_is_empty(self) -> None:
+        self.assertEqual(config._parse_stage_thresholds(""), {})
+
+    def test_pairs_parse_with_whitespace(self) -> None:
+        self.assertEqual(
+            config._parse_stage_thresholds(" retrieval=0.72, kg=0.65 "),
+            {"retrieval": 0.72, "kg": 0.65},
+        )
+
+    def test_malformed_entry_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            config._parse_stage_thresholds("retrieval:0.7")
+        with self.assertRaises(ValueError):
+            config._parse_stage_thresholds("retrieval=high")
+
+
 class PathAnchorTestCase(unittest.TestCase):
     def test_no_absolute_path_literals(self) -> None:
         # The portability bug this closes: five hard-coded ``r"D:\..."`` defaults.

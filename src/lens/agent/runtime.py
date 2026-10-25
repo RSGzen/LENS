@@ -807,20 +807,20 @@ class Runtime:
         *,
         trace_ctx: TraceCtx,
     ) -> Any:
-        """Call the stage gate, tolerating an evaluator that is still scaffolded.
+        """Call the stage gate, recording its cost against the budget.
 
-        ``tools/evaluate.py`` is not implemented yet; without this the first
-        gated tool (or the first ``FINAL_ANSWER``) would kill every run. A skipped
-        gate is **logged as a note**, so the log never implies a gate passed — that
-        silence is the exact failure mode the gate exists to prevent.
+        The decision layer is cheap but not free, so the call is accounted for
+        (H₃). A gate failure is **not** caught here: ``evaluate_stage`` already
+        degrades a dead decision layer to ``uncertain``, and anything else is a
+        harness bug that should surface.
         """
-        try:
-            return evaluate_stage(
-                stage, artifact, client=self.client, trace_ctx=trace_ctx
-            )
-        except NotImplementedError:
-            self._note(f"gate {stage}: skipped (evaluator not implemented)")
-            return None
+        return evaluate_stage(
+            stage,
+            artifact,
+            client=self.client,
+            trace_ctx=trace_ctx,
+            budget=self.budget,
+        )
 
     def _dispatch_tool(
         self,
