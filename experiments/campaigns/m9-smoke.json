@@ -1,0 +1,54 @@
+{
+  "name": "m9-smoke",
+  "repeats": 1,
+  "arms": [
+    {
+      "name": "base",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "M9 engineering smoke arm: decision layer on, KG on, T3 off. Not a reported result (Roadmap §7)."
+    },
+    {
+      "name": "dev",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_ROOT_MODEL": "openai/gpt-5-mini",
+        "LENS_SUB_MODEL": "openai/gpt-5-mini",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Plumbing arm: root downgraded to mini so a broken seam costs cents, not dollars."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?"
+    },
+    {
+      "id": "single-fact",
+      "expect": "answerable",
+      "text": "Which paper introduces the OOLONG long-context aggregation benchmark, and what task does its trec_coarse subset use?"
+    },
+    {
+      "id": "comparison",
+      "expect": "answerable",
+      "text": "Compare how two of the retrieved systems bound the cost or runtime of their recursive calls."
+    },
+    {
+      "id": "negative",
+      "expect": "not-answerable",
+      "text": "What ablations does the LENS harness itself report for its knowledge-graph verifier budget?",
+      "note": "Negative control: LENS is not in the cs.AI corpus. A grounded system must say so instead of inventing an ablation table - this row is the honesty check for Tier 3."
+    },
+    {
+      "id": "compound",
+      "expect": "answerable",
+      "text": "I am reviewing long-context evidence synthesis for a literature review. Which approaches decompose the query before retrieval, what constraints do they place on the evidence they keep, and what do they report about faithfulness of the citations they produce?"
+    }
+  ]
+}

@@ -76,6 +76,7 @@ from lens.agent.sandbox_session import SandboxSession
 from lens.agent.segmentation import segment_query, write_query_json
 from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.clients import LensClient
+from lens.experiments.arm import arm_fingerprint
 from lens.observability.trajectory import TraceCtx, Trajectory
 from lens.tools.evaluate import GATED_STAGES, evaluate_stage
 
@@ -334,6 +335,12 @@ class Runtime:
                 caps=self.budget.snapshot()["limits"],
                 created_by=self._provenance(),
             )
+            # The arm is written once, at creation, and deliberately **not**
+            # updatable (``UPDATABLE`` excludes ``extra``): a resumed run keeps the
+            # arm it started with, which is what makes an old run attributable.
+            manifest.extra["arm"] = arm_fingerprint(
+                recorded=self.recorded, replay=self.replay
+            )
         else:
             # Resume: identity and lineage survive, status does not.
             manifest.status = "running"
@@ -353,6 +360,10 @@ class Runtime:
         return {
             "commit": os.environ.get("LENS_COMMIT") or None,
             "image": config.SANDBOX_IMAGE,
+            # The tag alone is not reproducible (it is rebuilt in place); the digest
+            # is what E-04 wants. The launcher resolves it (`docker inspect`) and
+            # passes it in, so this stays a cheap env read with an honest ``None``.
+            "image_digest": os.environ.get("LENS_SANDBOX_DIGEST") or None,
             "python": platform.python_version(),
             "recorded": self.recorded,
         }

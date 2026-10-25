@@ -13,7 +13,7 @@ Rules
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -369,6 +369,16 @@ FINAL_ANSWER_MARKER = "FINAL_ANSWER:"
 # One ``lens-repl`` container per query session (LOG-31/LOG-32).
 SANDBOX_IMAGE = os.environ.get("LENS_SANDBOX_IMAGE", "lens-repl:0.1.0")
 SANDBOX_SERVICE = os.environ.get("LENS_SANDBOX_SERVICE", "lens-repl")
+# The sandbox's only peer. An ``internal: true`` bridge has no route to the host
+# (LOG-114), so the container cannot use ``host.docker.internal``; it dials this
+# relay, which forwards one port to the host RPC server. Same image, different
+# entrypoint (``/app/relay.py``).
+SANDBOX_RELAY_SERVICE = os.environ.get("LENS_RELAY_SERVICE", "lens-relay")
+SANDBOX_RELAY_URL = os.environ.get(
+    "LENS_RELAY_URL",
+    f"http://{os.environ.get('LENS_RELAY_SERVICE', 'lens-relay')}:"
+    f"{os.environ.get('LENS_RELAY_PORT', '8090')}",
+)
 SANDBOX_COMPOSE_FILE = Path(
     os.environ.get("LENS_SANDBOX_COMPOSE_FILE") or REPO_ROOT / "docker-compose.yaml"
 )
@@ -477,34 +487,68 @@ class ModelSpec:
     seed: int | None = None
 
 
+def _model_override(spec: ModelSpec, raw: str | None) -> ModelSpec:
+    """Return ``spec`` with its id replaced by ``raw`` (a dev/ablation override).
+
+    Why this exists: a plumbing run does not need the Tier-1 instrument, and
+    ``MODEL_REGISTRY`` used to be the only way to say which model a role uses, so
+    every harness debug iteration cost ``gpt-5`` prices. ``LENS_ROOT_MODEL`` /
+    ``LENS_SUB_MODEL`` / ``LENS_DEV_MODEL`` override the **id only**; the id is
+    recorded per call, so a recorded run stays attributable (E-04).
+
+    Provider pins are vendor **slugs**: an override from a different vendor drops
+    them rather than pinning the wrong one (``allow_fallbacks`` stays ``False``).
+    The price columns above stay documentation — ``Budget`` books the real
+    ``usage.cost``, so an override cannot silently under-count.
+    """
+    if not raw:
+        return spec
+
+    vendor = raw.split("/", 1)[0]
+
+    if vendor in spec.provider_only:
+        return replace(spec, id=raw)
+
+    return replace(spec, id=raw, provider_only=(), provider_order=())
+
+
 MODEL_REGISTRY: dict[Role, ModelSpec] = {
-    "root": ModelSpec(
-        id="openai/gpt-5",
-        supports_reasoning=True,
-        reasoning_effort="medium",
-        supports_tools=True,
-        supports_response_format=True,
-        provider_only=("openai",),
-        provider_order=("openai",),
+    "root": _model_override(
+        ModelSpec(
+            id="openai/gpt-5",
+            supports_reasoning=True,
+            reasoning_effort="medium",
+            supports_tools=True,
+            supports_response_format=True,
+            provider_only=("openai",),
+            provider_order=("openai",),
+        ),
+        os.environ.get("LENS_ROOT_MODEL"),
     ),
-    "sub": ModelSpec(
-        id="openai/gpt-5-mini",
-        supports_reasoning=True,
-        reasoning_effort="low",
-        supports_tools=True,
-        supports_response_format=True,
-        provider_only=("openai",),
-        provider_order=("openai",),
+    "sub": _model_override(
+        ModelSpec(
+            id="openai/gpt-5-mini",
+            supports_reasoning=True,
+            reasoning_effort="low",
+            supports_tools=True,
+            supports_response_format=True,
+            provider_only=("openai",),
+            provider_order=("openai",),
+        ),
+        os.environ.get("LENS_SUB_MODEL"),
     ),
-    "dev": ModelSpec(
-        id="qwen/qwen3-coder",
-        supports_reasoning=False,
-        reasoning_effort=None,
-        supports_tools=True,
-        supports_response_format=False,
-        provider_only=("google-vertex",),
-        provider_order=("google-vertex",),
-        temperature=0.1,
+    "dev": _model_override(
+        ModelSpec(
+            id="qwen/qwen3-coder",
+            supports_reasoning=False,
+            reasoning_effort=None,
+            supports_tools=True,
+            supports_response_format=False,
+            provider_only=("google-vertex",),
+            provider_order=("google-vertex",),
+            temperature=0.1,
+        ),
+        os.environ.get("LENS_DEV_MODEL"),
     ),
 }
 

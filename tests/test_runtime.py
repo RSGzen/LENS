@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import lens.observability.trajectory as trajectory_module
+from lens import config
 from lens.agent.budget import Budget
 from lens.agent.runtime import Runtime
 from lens.agent.sandbox_session import ExecResult
@@ -186,6 +187,53 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertEqual(manifest.query, "test query")
         self.assertTrue(manifest.artifacts)
         self.assertAlmostEqual(manifest.totals["cost_usd"], result.cost_usd)
+
+    def test_manifest_records_the_arm(self) -> None:
+        # E-04/M11: a run whose k/n/KG/gate flags are unknown is unattributable
+        # months later, so the arm travels with the manifest (M9).
+        self.runtime.run()
+        from lens.agent import runstore
+
+        manifest = runstore.read_manifest(self.trajectory.run_dir)
+        assert manifest is not None
+        arm = manifest.extra["arm"]
+        self.assertEqual(arm["retrieval"]["k"], config.RETRIEVAL_K)
+        self.assertEqual(arm["retrieval"]["c"], config.RETRIEVAL_C_TOP)
+        self.assertEqual(arm["mode"]["recorded"], self.runtime.recorded)
+        self.assertEqual(arm["models"]["root"], config.MODEL_REGISTRY["root"].id)
+        # The tag is not reproducible; the digest slot exists even when unknown.
+        self.assertIn("image_digest", manifest.created_by)
+
+    def test_resume_keeps_the_original_arm(self) -> None:
+        # A resumed run must not be re-fingerprinted with today's defaults: the
+        # arm is written once at creation because ``extra`` is not updatable.
+        self.runtime.run()
+        from lens.agent import runstore
+
+        manifest = runstore.read_manifest(self.trajectory.run_dir)
+        assert manifest is not None
+        manifest.extra["arm"]["sentinel"] = "original"
+        runstore.write_manifest(self.trajectory.run_dir, manifest)
+
+        resumed = Runtime(
+            "test query",
+            "run-test",
+            client=self.client,
+            trajectory=self.trajectory,
+            conn=None,
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=self.sandbox,
+            registry=self.registry,
+            budget=Budget(),
+            resume=True,
+        )
+        resumed.run()
+
+        after = runstore.read_manifest(self.trajectory.run_dir)
+        assert after is not None
+        self.assertEqual(after.extra["arm"]["sentinel"], "original")
 
     def test_resume_folds_the_prior_turn(self) -> None:
         # A previous process logged one turn and died before the next chat.

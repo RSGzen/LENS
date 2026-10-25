@@ -10,27 +10,24 @@
 # `docker compose up -d lens-pg`; the named volume lens-pgdata preserves data.
 #
 # `sandbox-net` is internal to block general egress (Tech Stack 4b: "no network"
-# is a thesis claim, not a convenience). That flag interacts with the two other
-# host-boundary choices, so verify all three together, in this order:
-#   1. host RPC reachable FROM the container: GET $LENS_HOST_RPC_URL/health
-#   2. general egress blocked:                a connect to 1.1.1.1:443 must FAIL
-#   3. sandbox /exec reachable from the host: GET 127.0.0.1:$LENS_SANDBOX_PORT/health
-# If (1) fails while `internal: true` is set, do NOT drop the flag. Give the
-# network a fixed subnet and point the RPC at the bridge gateway instead:
-#   networks: {sandbox-net: {driver: bridge, internal: true,
-#                            ipam: {config: [{subnet: 172.28.0.0/24}]}}}
-#   LENS_HOST_RPC_URL=http://172.28.0.1:8765
-# (This is the documented F16 fallback; scripts/verify_sandbox.py asserts 1 and 2.)
-#
-# (3) CANNOT pass while `internal: true`: Docker installs no DNAT rule for an
-# internal network, so the published port is silently dropped (`docker port`
-# prints nothing; HostConfig.PortBindings is set but NetworkSettings.Ports is
-# empty) — verified 24 Oct, LOG-107. Publishing a port therefore implies egress,
-# which (2) forbids. **Adopted (LOG-108):** the host reaches the runner with
-# `docker compose exec -T lens-repl python /app/exec_client.py` — a process
-# inside the container dials 127.0.0.1:8080 there, so `internal: true` and the
-# runner are untouched. The `ports:` entry below is kept only for manual
-# debugging and is NOT the exec path.
+# is a thesis claim, not a convenience). Three host-boundary facts are pinned by
+# measurement (25 Oct 2026, LOG-114) rather than by hope:
+#   1. Host RPC is reachable ONLY through `lens-relay`. From an internal network
+#      there is no route to the host at all: `host-gateway` maps to the WSL2 VM's
+#      own gateway (ENETUNREACH), the internal network has no DNS (gaierror), and
+#      the host's real address (192.168.65.254) is off-bridge. A normal bridge
+#      returns 200 for the same probe — so the flag, not the transport, is the
+#      constraint. Dropping `internal` would open egress; hence the relay.
+#   2. General egress stays blocked: `lens-repl` is on `sandbox-net` only, and its
+#      single peer (`lens-relay`) forwards one hard-coded host:port. The relay's
+#      second network (`rpc-net`) is the trusted side; the relay takes no target
+#      from the client, so it is not a proxy.
+#   3. Sandbox `/exec` is reached with
+#      `docker compose exec -T lens-repl python /app/exec_client.py` — a process
+#      inside the container dials 127.0.0.1:8080 there. Publishing a port is not
+#      an option: an internal network gets no DNAT rule, so Docker silently drops
+#      the mapping (LOG-107).
+# `scripts/verify_sandbox.py` asserts 1 and 2.
 
 name: lens
 
@@ -57,6 +54,30 @@ services:
     networks:
       - db-net
 
+  # The sandbox's only peer: forwards one hard-coded host:port so the RLM can
+  # reach the host RPC server without giving the sandbox a route off its bridge.
+  # It is infrastructure, not an agent capability: no token, no target from the
+  # client, no shell.
+  lens-relay:
+    image: ${LENS_SANDBOX_IMAGE:-lens-repl:0.1.0}
+    container_name: lens-relay
+    restart: "no"
+    entrypoint: ["python", "/app/relay.py"]
+    read_only: true
+    environment:
+      LENS_RELAY_LISTEN_PORT: ${LENS_RELAY_PORT:-8090}
+      LENS_RELAY_TARGET_HOST: ${LENS_RELAY_TARGET_HOST:-host.docker.internal}
+      LENS_RELAY_TARGET_PORT: ${LENS_HOST_RPC_PORT:-8765}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    networks:
+      - sandbox-net    # the sandbox dials this side
+      - rpc-net        # the trusted side; the relay only ever forwards one port
+
   lens-repl:
     build:
       context: ./src              # was: ./src/lens/sandbox
@@ -73,16 +94,13 @@ services:
       PYTHONPATH: /app
       LENS_WORKSPACE: /workspace
       LENS_RUN_ID: ${LENS_RUN_ID:-manual}
-      LENS_HOST_RPC_URL: ${LENS_HOST_RPC_URL:-http://host.docker.internal:8765}
+      # The relay's address on sandbox-net — never the host directly (see above).
+      LENS_HOST_RPC_URL: ${LENS_HOST_RPC_URL:-http://lens-relay:8090}
       LENS_RPC_TOKEN: ${LENS_RPC_TOKEN:-change-me}
       LENS_SANDBOX_STDOUT_MAX_CHARS: ${LENS_SANDBOX_STDOUT_MAX_CHARS:-20000}
       # Must be the same number as the host's config.MAX_EXEC_BLOCK_S: the image
       # has no lens.config, so this is the runner's only source for the cap.
       LENS_MAX_EXEC_BLOCK_S: ${LENS_MAX_EXEC_BLOCK_S:-120}
-    ports:
-      - "127.0.0.1:${LENS_SANDBOX_PORT:-8080}:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     cap_drop:
       - ALL
     security_opt:
@@ -99,6 +117,10 @@ networks:
   sandbox-net:
     driver: bridge
     internal: true
+  # The trusted side of the relay: plain bridge, and it is the relay — not the
+  # sandbox — that is attached to it.
+  rpc-net:
+    driver: bridge
 
 volumes:
   lens-pgdata:

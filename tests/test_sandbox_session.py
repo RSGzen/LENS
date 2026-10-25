@@ -118,20 +118,33 @@ class SandboxSessionLifecycleTestCase(unittest.TestCase):
         self.assertNotIn("127.0.0.1", env["LENS_HOST_RPC_URL"])
         self.assertEqual(env["LENS_MAX_EXEC_BLOCK_S"], str(self.session.exec_timeout_s))
         self.assertIn("LENS_SANDBOX_STDOUT_MAX_CHARS", env)
+        # The relay target is the port the RPC server actually bound.
+        self.assertEqual(env["LENS_RELAY_TARGET_PORT"], str(self.session.host_rpc_port))
 
     def test_start_ups_force_recreate_then_waits(self) -> None:
         self.session.wait_until_healthy = lambda timeout_s=30.0: True
         self.session.start()
+        # The relay comes with the sandbox: it is the only route to the host RPC
+        # server, and a stale relay target port would break every tool call.
         self.assertEqual(
             [args for args, _ in self.fake.calls],
-            [["up", "-d", "--no-deps", "--force-recreate", "lens-repl"]],
+            [
+                [
+                    "up",
+                    "-d",
+                    "--no-deps",
+                    "--force-recreate",
+                    "lens-relay",
+                    "lens-repl",
+                ]
+            ],
         )
 
     def test_start_raises_and_stops_when_never_healthy(self) -> None:
         self.session.wait_until_healthy = lambda timeout_s=30.0: False
         with self.assertRaises(RuntimeError):
             self.session.start()
-        self.assertEqual(self.fake.last_args, ["rm", "-sf", "lens-repl"])
+        self.assertEqual(self.fake.last_args, ["rm", "-sf", "lens-repl", "lens-relay"])
 
     def test_start_raises_on_a_compose_failure(self) -> None:
         self.fake.returncode = 1
@@ -140,9 +153,9 @@ class SandboxSessionLifecycleTestCase(unittest.TestCase):
             self.session.start()
         self.assertIn("port is already allocated", str(caught.exception))
 
-    def test_stop_removes_only_the_service(self) -> None:
+    def test_stop_removes_both_containers(self) -> None:
         self.session.stop()
-        self.assertEqual(self.fake.last_args, ["rm", "-sf", "lens-repl"])
+        self.assertEqual(self.fake.last_args, ["rm", "-sf", "lens-repl", "lens-relay"])
 
 
 class ExecClientTestCase(unittest.TestCase):

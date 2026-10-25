@@ -28,7 +28,7 @@ RUN python -m pip install --no-cache-dir --no-deps \
 COPY lens/sandbox/requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY lens/sandbox/runner.py lens/sandbox/rlm_api.py lens/sandbox/exec_client.py lens/kg_query.py ./
+COPY lens/sandbox/runner.py lens/sandbox/rlm_api.py lens/sandbox/exec_client.py lens/sandbox/relay.py lens/kg_query.py ./
 
 RUN useradd --create-home --uid 10001 lens \
     && mkdir -p /workspace \

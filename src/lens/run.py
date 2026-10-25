@@ -154,9 +154,10 @@ def build_runtime(
          (only when ``sql_is_allowed(recorded=..., allow_sql=...)``).
       5. ``token = secrets.token_urlsafe(32)``; ``sandbox = SandboxSession(run_id,
          workspace, token=token)``; ``server = ToolServer(runtime, token=token)``;
-         ``server.start()`` — **then** set ``sandbox.host_rpc_url =
-         f"http://host.docker.internal:{server.port}"``, because the server may
-         have bound port 0. The sandbox is started by ``Runtime.run``.
+         ``server.start()`` — **then** set ``sandbox.host_rpc_port =
+         server.port``, because the server may bind port 0. The container never
+         sees that port: it dials the relay, and the relay is retargeted through
+         ``LENS_RELAY_TARGET_PORT``. The sandbox is started by ``Runtime.run``.
       6. Pass ``resume`` / ``parent_run_id`` / ``replay`` straight through to
          ``Runtime`` (M8.5). On resume, the trajectory and manifest already exist;
          do not truncate or recreate them.
@@ -241,7 +242,9 @@ def build_runtime(
                         token=token)
     server.start()
 
-    sandbox.host_rpc_url = f"http://host.docker.internal:{server.port}"
+    # The relay forwards to the port the server actually bound; the container's
+    # URL stays the constant relay address (config.SANDBOX_RELAY_URL).
+    sandbox.host_rpc_port = server.port
 
     return (runtime, server, sandbox)
 

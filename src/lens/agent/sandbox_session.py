@@ -68,6 +68,8 @@ class SandboxSession:
         token: str,
         exec_timeout_s: float = config.MAX_EXEC_BLOCK_S,
         host_rpc_url: str | None = None,
+        host_rpc_port: int = config.HOST_RPC_PORT,
+        relay_service: str = config.SANDBOX_RELAY_SERVICE,
     ) -> None:
         self.run_id = run_id
         self.workspace = Path(workspace)
@@ -77,13 +79,14 @@ class SandboxSession:
         self.port = port
         self.token = token
         self.exec_timeout_s = exec_timeout_s
-        # The URL the *container* uses to reach the host RPC server. Built by
-        # run.py from the server's real bound port, because ``ToolServer.start()``
-        # may bind port 0 and pick a free one. Default keeps the documented
-        # single-container setup working.
-        self.host_rpc_url = host_rpc_url or (
-            f"http://host.docker.internal:{config.HOST_RPC_PORT}"
-        )
+        self.relay_service = relay_service
+        # The port the RELAY forwards to (`run.py` sets it from the server's real
+        # bound port: ``ToolServer.start()`` may bind port 0).
+        self.host_rpc_port = host_rpc_port
+        # The URL the *container* uses. It is the relay's address on the internal
+        # network, never the host's: from an internal bridge there is no route to
+        # the host at all (LOG-114), so the relay is the only peer.
+        self.host_rpc_url = host_rpc_url or config.SANDBOX_RELAY_URL
 
     @property
     def url(self) -> str:
@@ -107,9 +110,20 @@ class SandboxSession:
         reused with its **previous** environment, so the new token and RPC URL
         would silently not apply (symptom: every call is a 401).
         ``--no-deps`` keeps ``lens-pg`` untouched.
+
+        The **relay** starts first (and is recreated for the same reason): it is
+        the sandbox's only route to the host RPC server, so a stale relay target
+        port would send every ``tool()`` to a closed port.
         """
         result = self._run_compose(
-            ["up", "-d", "--no-deps", "--force-recreate", self.service]
+            [
+                "up",
+                "-d",
+                "--no-deps",
+                "--force-recreate",
+                self.relay_service,
+                self.service,
+            ]
         )
 
         if result.returncode != 0:
@@ -133,9 +147,9 @@ class SandboxSession:
         ``down -v`` would delete the ``lens-pgdata`` volume — the loaded corpus.
         Best-effort by design (it runs from a ``finally``): removing a container
         that is not there is a no-op, and a failure must not mask the original
-        error.
+        error. The relay goes with it - one run, one sandbox, one relay.
         """
-        self._run_compose(["rm", "-sf", self.service])
+        self._run_compose(["rm", "-sf", self.service, self.relay_service])
 
     def wait_until_healthy(self, timeout_s: float = 30.0) -> bool:
         """Poll ``/health`` until ready or the timeout expires."""
@@ -237,8 +251,10 @@ class SandboxSession:
           - ``LENS_RUN_WORKSPACE`` goes into a volume spec, so it must be a
             **forward-slash** path (``Path.as_posix()``); backslashes break
             ``"<host>:/workspace"`` on Windows.
-          - ``LENS_HOST_RPC_URL`` is ``self.host_rpc_url`` (built from the port
-            the RPC server actually bound), not a constant.
+          - ``LENS_HOST_RPC_URL`` is the **relay's** address on the internal
+            network (``self.host_rpc_url``), not the host's; the relay's target
+            port is passed separately (``LENS_RELAY_TARGET_PORT``) because the RPC
+            server may bind a port the compose file cannot know.
 
         ``LENS_MAX_EXEC_BLOCK_S`` must be passed as **the same value** as
         ``exec_timeout_s`` (i.e. ``config.MAX_EXEC_BLOCK_S``): ``lens.config`` is
@@ -257,8 +273,10 @@ class SandboxSession:
             "LENS_RUN_WORKSPACE": self.workspace.as_posix(),
             "LENS_RUN_ID": self.run_id,
             "LENS_RPC_TOKEN": self.token,
-            # The *container's* view of the host, not this host-side URL.
+            # The *container's* view: the relay on the internal network.
             "LENS_HOST_RPC_URL": self.host_rpc_url,
+            # What the relay forwards to (the RPC server's real bound port).
+            "LENS_RELAY_TARGET_PORT": str(self.host_rpc_port),
             "LENS_SANDBOX_IMAGE": self.image,
             "LENS_SANDBOX_PORT": str(self.port),
             "LENS_MAX_EXEC_BLOCK_S": str(self.exec_timeout_s),
