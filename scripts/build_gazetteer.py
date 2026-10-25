@@ -93,8 +93,10 @@ def _names(text: str) -> tuple[list[str], list[str], list[str]]:
         suffix_datasets.extend(match.group(1) for match in pattern.finditer(text))
     metrics.extend(match.group(1) for match in METRIC_RE.finditer(text))
 
-    clean = lambda names: [n for n in (_clean(x) for x in names) if _keep(n)]
-    return (clean(eval_datasets), clean(suffix_datasets), clean(metrics))
+    def _clean_all(names):
+        return [n for n in (_clean(x) for x in names) if _keep(n)]
+
+    return (_clean_all(eval_datasets), _clean_all(suffix_datasets), _clean_all(metrics))
 
 
 def _iter_chunks(conn, limit: int, section_types: tuple[str, ...], batch_size: int):

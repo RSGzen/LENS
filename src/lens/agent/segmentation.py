@@ -118,7 +118,7 @@ def parse_segmentation_json(text: str) -> dict[str, Any]:
             data = json.loads(json_str)
             return data
         
-        raise ValueError(f"No JSON body is found from segmentation LLM response.")
+        raise ValueError("No JSON body is found from segmentation LLM response.")
 
     except Exception as e:
         raise ValueError(f"Unparseable text from segmentation LLM response. Error code: {e}")

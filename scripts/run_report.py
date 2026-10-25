@@ -155,13 +155,19 @@ def write_report(run_id: str) -> Path:
         lines += ["*(no answer.md)*", ""]
 
     if citations.citations:
-        lines += ["## Citations", "", "| cited id | paper | section | turn |", "|---|---|---|---|"]
+        lines += [
+            "## Citations",
+            "",
+            "| cited id | paper | section | turn | status |",
+            "|---|---|---|---|---|",
+        ]
 
         for citation in citations.citations:
             status = "OK" if citation.resolved else "**unresolved**"
             lines.append(
                 f"| `{citation.token}` | {citation.arxiv_id or '-'} | "
-                f"{citation.section_type or '-'} | {citation.turn if citation.turn is not None else '-'} |"
+                f"{citation.section_type or '-'} | "
+                f"{citation.turn if citation.turn is not None else '-'} | {status} |"
             )
 
         lines.append("")

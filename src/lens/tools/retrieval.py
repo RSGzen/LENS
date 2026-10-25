@@ -208,7 +208,7 @@ def hnsw_config_sql(ef_search: int, iterative_scan: bool = False) -> list[str]:
 
     # Enable iterative scanning (Scans until reaches enough matching rows / hit safety limit)
     if iterative_scan:
-        set_statement_list.append(f"SET hnsw.iterative_scan = 'relaxed_order';")
+        set_statement_list.append("SET hnsw.iterative_scan = 'relaxed_order';")
 
     return set_statement_list
 

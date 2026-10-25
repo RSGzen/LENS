@@ -22,7 +22,6 @@ import datetime as dt
 import json
 import sys
 
-from lens import config
 from lens.agent.segmentation import segment_query, write_query_json
 from lens.clients import LensClient, LensTransportError
 from lens.observability.run_logging import setup_file_logging

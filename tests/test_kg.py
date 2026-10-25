@@ -371,7 +371,6 @@ class ExtractPipelineTest(unittest.TestCase):
 
     def test_char_to_token_mapping_multi_token(self) -> None:
         # "The BERT base model uses SQuAD." under GLiREL's regex.
-        text = "The BERT base model uses SQuAD."
         spans = [(0, 3), (4, 8), (9, 13), (14, 19), (20, 24), (25, 30), (30, 31)]
         ents = [{"start": 4, "end": 13, "text": "BERT base", "label": "Method", "score": 0.9}]
         ex = GlinerExtractor(ner_model=FakeNerModel(ents), rel_model=FakeRelModel([]))

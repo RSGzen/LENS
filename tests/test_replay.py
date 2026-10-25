@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from pathlib import Path
 
 import lens.observability.trajectory as trajectory_module
 from lens.observability.replay import replay_summary, replay_turns

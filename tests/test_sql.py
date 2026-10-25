@@ -6,6 +6,7 @@ Run:  .\.venv\Scripts\python.exe -m unittest tests.test_sql -v
 from __future__ import annotations
 
 import unittest
+from typing import Any
 
 from lens.tools.sql import sql_is_allowed, validate_sql
 

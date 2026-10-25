@@ -54,7 +54,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, TypeVar, cast
+from typing import Iterator, cast
 
 from lxml import etree
 

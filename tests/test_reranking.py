@@ -13,7 +13,6 @@ import unittest
 
 import numpy as np
 
-from lens import config
 from lens.reranking import Reranker
 
 

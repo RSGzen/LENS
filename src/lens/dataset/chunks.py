@@ -37,7 +37,7 @@ from __future__ import annotations
 import datetime
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
