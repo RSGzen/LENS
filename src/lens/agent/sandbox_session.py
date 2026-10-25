@@ -156,13 +156,14 @@ class SandboxSession:
         deadline = time.monotonic() + timeout_s
 
         while time.monotonic() < deadline:
-            try:
-                if self.health():
-                    return True
+            # ``health()`` never raises: it wraps ``docker compose exec`` and returns
+            # False on any failure. The old ``except requests.RequestException`` here
+            # referred to a module that stopped being imported when the transport
+            # moved to ``docker exec``, so the handler was a latent ``NameError`` on
+            # the one path that was supposed to be defensive (LOG-120, found by ruff).
+            if self.health():
+                return True
 
-            # Not listening yet: normal for the first second
-            except requests.RequestException:
-                pass                      
             time.sleep(0.25)
 
         return False

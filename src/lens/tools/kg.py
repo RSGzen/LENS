@@ -70,6 +70,28 @@ from lens.tools.retrieval import fetch_chunks
 # The triple shape and the traversal helpers live in ``lens.kg_query`` (a pure
 # module with no project imports) so the same code ships into the sandbox image.
 # Everything is re-exported here: host callers and tests keep one import path.
+# ``__all__`` is what makes the re-export explicit - without it a linter sees four
+# unused imports and "fixes" the public surface away (LOG-120).
+__all__ = [
+    # re-exported from lens.kg_query
+    "Triple",
+    "create_triple_instance",
+    "kg_neighbors",
+    "kg_subgraph",
+    "kg_triples",
+    "normalize_entity",
+    # this module
+    "build_graph",
+    "build_kg",
+    "cache_key",
+    "dedup_triples",
+    "filter_ontology",
+    "graph_from_nodelink",
+    "graph_to_nodelink",
+    "kg_index_summary",
+    "load_ontology",
+    "normalize_relation",
+]
 
 
 # ------------------------------------------------------------------ ontology
