@@ -1,4 +1,7 @@
-"""Assert the M9 gate on one recorded run (read-only, no key, no DB, no Docker).
+"""Assert the M9 gate on one recorded run (read-only: no key, no DB, no model call).
+
+Docker is *optional*: the "sandbox stopped" check is skipped when ``docker`` is not
+available, so the same command works on an imported bundle.
 
 Spec: ``MVP Build Roadmap.md`` M9 verify clause ("reproducible command; cost
 reported") and §6 hard gate ("within caps, >= 4 event types, ``tasks.json``

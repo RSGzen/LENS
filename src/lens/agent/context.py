@@ -23,8 +23,10 @@ from typing import Any, Mapping, Sequence
 
 from lens import config
 
-# Draft v0. The student owns the final wording; placeholders are replaced by
-# ``build_system_prompt`` so literal JSON braces in the prompt stay safe.
+# The root system prompt. It is the first bytes of every request (so it must stay
+# byte-stable for prefix caching), and the tool manifest, the M6 buckets and the
+# budget snapshot are injected through the placeholders below - never by string
+# formatting, so literal JSON braces in the payload stay safe.
 # Placeholders: <<TOOL_MANIFEST>>, <<QUERY_JSON>>, <<BUDGET>>
 SYSTEM_PROMPT_TEMPLATE = """\
 You are the root RLM in LENS, a literature-evidence synthesis harness.

@@ -11,9 +11,10 @@ a parallel debug path:
      **not** drop ``internal``: no-egress is a claim (Tech Stack 4b).
   1. **general egress blocked** - a connect to ``1.1.1.1:443`` must fail. Record
      the failure: absence of egress is evidence, not an assumption.
-  2. build/start ``lens-repl`` via compose; health answers from **inside** the
-     container. It cannot be reached over the published port: an ``internal``
-     network gets no DNAT rule, so Docker silently drops the mapping (LOG-107).
+  2. build/start ``lens-repl`` **and** ``lens-relay`` via compose; health answers
+     from **inside** the container. There is no published port to try: an
+     ``internal`` network gets no DNAT rule, so Docker silently drops the mapping
+     (LOG-107/114).
   3. namespace persistence (``x = 41`` then ``print(x + 1)`` -> ``42``);
   4. a timeout returns a structured error without killing the runner;
   5. the workspace mount is writable **and** the run artifacts are not visible
