@@ -161,6 +161,35 @@ class SandboxSessionLifecycleTestCase(unittest.TestCase):
 class ExecClientTestCase(unittest.TestCase):
     """The in-container client: stdin in, one JSON object out (option C)."""
 
+    def test_exec_uses_utf8_on_the_transport(self) -> None:
+        # With text=True alone, Python encodes stdin with the locale (cp1252 on
+        # Windows): an em dash the model wrote arrives as 0x97, the container
+        # decodes a lone surrogate, and exec() dies. One character, one lost turn.
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        captured: dict = {}
+
+        def fake_run(command, **kwargs):
+            captured.update(kwargs)
+            captured["command"] = command
+
+            class Done:
+                returncode = 0
+                stdout = '{"ok": true, "stdout": "2\\n"}'
+                stderr = ""
+
+            return Done()
+
+        session = SandboxSession("run-1", Path(tempfile.mkdtemp()), token="t")
+
+        with patch("lens.agent.sandbox_session.subprocess.run", fake_run):
+            session.exec("print('\u2014')")
+
+        self.assertEqual(captured["encoding"], "utf-8")
+        self.assertTrue(captured["text"])
+
     def test_exec_posts_the_code_from_stdin(self) -> None:
         import io
         from unittest.mock import patch

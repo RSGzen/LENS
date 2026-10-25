@@ -56,7 +56,7 @@ tools are implemented; ``tools/assets.py`` remains the only deferred follow-up.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, TypeVar
 
 import numpy as np
@@ -110,22 +110,47 @@ def format_query(buckets: QueryBuckets) -> str:
       single space, in the mapping's **insertion order** (M6 owns building the
       dict in a fixed order). Empty / whitespace-only values are skipped.
 
+    Flattening is shape-tolerant on purpose. The M6 shape is
+    ``{"objectives": ["clause", ...], ...}``, but the RLM may hand over
+    ``{"query": "one clause"}`` or a nested list. Iterating a *string* value as if
+    it were a list of clauses splits it into **characters** — the embedded query
+    becomes ``"s o m e   c l a u s e"`` and the funnel returns unrelated papers
+    (found in the M9 smoke, LOG-115). So a string is one clause, a mapping or a
+    sequence is flattened recursively, and anything else is ignored.
+
     Example: ``{"objective": ["improve Y"], "problem": ["why X"]}`` ->
     ``"improve Y why X"``.
     """
-    
-    # Return if the param is already a formatted string
     if isinstance(buckets, str):
         return buckets
 
-    # Flatten every bucket's clauses, skipping empty values, in insertion order.
     parts: list[str] = []
-    for clauses in buckets.values():
-        for clause in clauses:
-            if clause and clause.strip():
-                parts.append(clause.strip())
+
+    for clause in _flatten_clauses(buckets):
+        if clause.strip():
+            parts.append(clause.strip())
 
     return " ".join(parts)
+
+
+def _flatten_clauses(value: Any) -> Iterator[str]:
+    """Yield every clause string under ``value``, whatever the nesting.
+
+    A plain string is yielded whole (never character by character); mappings and
+    sequences are walked; numbers/None/booleans carry no clause text and are
+    skipped, so a stray field cannot poison the embedded query.
+    """
+    if isinstance(value, str):
+        yield value
+
+    elif isinstance(value, Mapping):
+        for nested in value.values():
+            yield from _flatten_clauses(nested)
+
+    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        for nested in value:
+            yield from _flatten_clauses(nested)
+
 
 
 def year_from_arxiv_id(arxiv_id: str) -> int | None:

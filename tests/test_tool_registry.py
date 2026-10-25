@@ -79,6 +79,40 @@ class ToolRegistryTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.registry.register("echo", echo)
 
+    def test_parameters_lists_positional_names_in_call_order(self) -> None:
+        # The sandbox binding maps positional args onto these names (LOG-115).
+        def funnel(buckets: dict, k: int = 100, *, note: str | None = None) -> list:
+            """Do the thing."""
+            return list(buckets)
+
+        self.registry.register("funnel", funnel, description="Do the thing.")
+
+        self.assertEqual(self.registry.parameters()["funnel"], ["buckets", "k"])
+        self.assertEqual(self.registry.parameters()["echo"], ["text"])
+
+    def test_a_db_type_does_not_break_the_dispatch(self) -> None:
+        # fetch_papers returns rows with a ``date``; json.dumps used to raise and
+        # the whole turn was lost ("Object of type date is not JSON serializable",
+        # M9 smoke, LOG-115). The blob and the envelope narrow with str.
+        from datetime import date
+
+        def paper_row(arxiv_id: str) -> dict:
+            """One paper row."""
+            return {"arxiv_id": arxiv_id, "update_date": date(2026, 10, 25)}
+
+        self.registry.register("paper_row", paper_row, description="One paper row.")
+
+        result = self.registry.dispatch(
+            "paper_row",
+            {"arxiv_id": "2512.24601"},
+            trace_ctx=TraceCtx("run-test", 0, "tool"),
+            trajectory=self.trajectory,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertNotIn("error", result.to_dict())
+        self.assertIn("2026-10-25", self.trajectory.load_blob(result.result_ref))
+
     def test_names_and_manifest_agree_on_registration_order(self) -> None:
         self.registry.register("alpha", echo, description="a")
 

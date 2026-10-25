@@ -162,6 +162,29 @@ def _evidence_index(turns: list[Turn], trajectory: Trajectory) -> tuple[dict, di
     return chunks, papers, provenance
 
 
+def cited_ids(text: str) -> list[str]:
+    """Return the unique ``chunk_uuid`` / arXiv ids cited in ``text``, in order.
+
+    Cheap and pure, for callers that need the ids but not the evidence join: the
+    **final groundedness gate** used to be handed ``"citations": []`` hard-coded,
+    so it was asked "is every claim supported by the cited chunks" about an answer
+    whose citations it had never seen - a blind check (§4m, LOG-115).
+    """
+    tokens: list[str] = []
+
+    # Sorted by position so the list reads in the answer's own order: a chunk id
+    # and an arXiv id interleaved in one sentence must not be reported grouped by
+    # kind (two passes would do exactly that).
+    matches = [(match.start(), match.group(0)) for match in _CHUNK_RE.finditer(text or "")]
+    matches += [(match.start(), match.group(1)) for match in _ARXIV_RE.finditer(text or "")]
+
+    for _, token in sorted(matches):
+        if token not in tokens:
+            tokens.append(token)
+
+    return tokens
+
+
 def resolve_citations(run_id: str) -> CitationReport:
     """Join ``answer.md`` against the evidence the run recorded.
 
@@ -296,4 +319,10 @@ def write_sources_md(report: CitationReport, path: str | Path | None = None) -> 
     return path
 
 
-__all__ = ["Citation", "CitationReport", "resolve_citations", "write_sources_md"]
+__all__ = [
+    "Citation",
+    "CitationReport",
+    "cited_ids",
+    "resolve_citations",
+    "write_sources_md",
+]

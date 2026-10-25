@@ -38,6 +38,12 @@ Role
 Tools
 <<TOOL_MANIFEST>>
 
+Calling tools
+- Each tool above is also bound as a plain function in the namespace, so
+  ``shallow_match(buckets=..., k=100)`` works. ``rlm_api.tool("shallow_match", ...)``
+  is the generic form and behaves identically — both go through one dispatch path.
+  Keyword arguments bind by name; an omitted argument uses the tool's default.
+
 Sandbox modules
 - ``kg_query`` — KG traversal on the graph variable you build from build_kg():
   kg_neighbors(G, entity, relation=None, direction="out|in|both"),
@@ -56,10 +62,22 @@ Output contract
 2. Print a compact summary of what you learned — at most ~15 lines. Large values
    belong in a variable or in rlm_api.emit(value, label=...); never print whole
    papers or raw tool payloads.
-3. Cite evidence by chunk_uuid and arxiv_id in the final answer.
+3. **Retrieve first.** Run the funnel (`shallow_match` → `rerank_chunks`, and
+   `build_kg` when relations matter) and keep the returned chunks in a variable.
+   Answering from memory is a failure: cite the real `chunk_uuid` + `arxiv_id` for
+   every claim. "See the retrieved evidence" or "[above]" is not a citation.
+4. Cite evidence by chunk_uuid and arxiv_id in the final answer.
 4. To finish, output a line beginning with ``FINAL_ANSWER:`` followed by the answer.
    A normal assistant message without code is NOT a final answer.
-5. When asked to wrap up (budget nudge), answer from what you already have and
+5. **Never print ``FINAL_ANSWER:`` inside a ```python block.** Code wins over the
+   sentinel, so the turn keeps working and the answer is thrown away. Finish with
+   plain text after the block.
+6. Record your work in the ledger, not only in prose: ``ledger_create("<what this
+   step must establish>")`` when you start a step, ``ledger_update(task_id,
+   "done")`` (or ``"failed"``) when it ends, and ``ledger_add_evidence(task_id,
+   [chunk_uuid, ...])`` when you have the ids. The ledger is what a reviewer reads
+   to see which claims you actually supported.
+7. When asked to wrap up (budget nudge), answer from what you already have and
    list the claims you could not support. A labelled partial answer is a valid
    result; an over-budget run is not.
 
@@ -367,19 +385,31 @@ def extract_python_block(text: str) -> str | None:
 
 
 def extract_final_answer(text: str) -> str | None:
-    """Return the text after ``FINAL_ANSWER:``, or ``None`` if absent.
+    """Return the text after the last ``FINAL_ANSWER:`` that sits **outside** a fence.
 
-    The **last** occurrence wins: the model may quote the sentinel in its
-    reasoning ("I will emit FINAL_ANSWER: when done") before actually using it.
-    The caller must still prefer a code block over this, so a stray mention cannot
-    end a turn that also contains executable code.
+    Fenced blocks are removed before the search, for two reasons found in the M9
+    smoke (LOG-115):
+
+    - A sentinel printed from Python (``print("FINAL_ANSWER: ...")``) belongs to the
+      block, not to the conversation. It must not end a run.
+    - The opposite failure was just as damaging: a model that ran code **and** then
+      appended a real answer after the fence never finished, because "code wins"
+      sent the turn back to the loop until the iteration cap, and ``answer.md`` came
+      out empty.
+
+    Removing fenced text separates those two cases without guessing. The **last**
+    outside-the-fence marker wins, because the model may quote the sentinel while
+    reasoning ("I will emit FINAL_ANSWER: when done").
     """
     marker = config.FINAL_ANSWER_MARKER
+    outside = _FENCE_RE.sub(" ", text or "")
 
-    if marker not in text:
+    if marker not in outside:
         return None
 
-    return text.rsplit(marker, 1)[-1].strip()
+    answer = outside.rsplit(marker, 1)[-1].strip()
+
+    return answer or None
 
 
 # Static: no per-run numbers (those live in budget.md) and no tool list (that is
@@ -394,13 +424,22 @@ Answer the research query from the arXiv cs.AI corpus. You write Python; it runs
 in a persistent sandbox namespace, so variables survive between turns.
 
 ## Hard rules
-- No shell, no network, no API key. The only effects are `rlm_api.tool()`,
-  `rlm_api.sub_call()`, `rlm_api.emit()`, `rlm_api.note()` and `rlm_api.budget()`.
+- **Retrieve before you answer.** Call the funnel first (`shallow_match` →
+  `rerank_chunks`, optionally `build_kg`) and cite the `chunk_uuid`s you actually
+  read. An answer with no citation is treated as unsupported by the final gate —
+  "see the retrieved evidence" or "[above]" is not a citation.
+- No shell, no network, no API key. The only effects are the bound tool functions
+  (`shallow_match(buckets=..., k=100)`), `rlm_api.tool(name, **kwargs)` (the same
+  dispatch), `rlm_api.sub_call()`, `rlm_api.emit()`, `rlm_api.note()` and
+  `rlm_api.budget()`.
 - Never invent evidence. Cite `chunk_uuid` + `arxiv_id` for every claim.
 - One fenced ```python block per turn. Print a compact digest (<= 15 lines);
   large values go to `rlm_api.emit(value, label="name")`.
-- Finish with a line starting `FINAL_ANSWER:`. A message without code is not an
-  answer.
+- Finish with a line starting `FINAL_ANSWER:` **as plain text**, never inside the
+  code block: code wins over the sentinel, so an answer printed from Python is
+  discarded and the turn keeps working.
+- Record steps in the ledger (`ledger_create` / `ledger_update` /
+  `ledger_add_evidence`). A reviewer reads it to see which claims you supported.
 
 ## Files in /workspace
 | File | What it is |
@@ -411,6 +450,56 @@ in a persistent sandbox namespace, so variables survive between turns.
 | `ontology.md` | KG entity/relation types — only when the KG is enabled |
 | `emits/` | values you have offloaded with `emit()` |
 """
+
+
+def tool_bindings(parameters: Mapping[str, Sequence[str]]) -> str:
+    """Return the sandbox code that binds each host tool as a plain function.
+
+    Why this exists: the manifest the prompt shows prints
+    ``shallow_match(buckets: dict[str, Any]) -> list[str]``, so the model writes
+    ``shallow_match(buckets=...)``. The façade only exposed ``rlm_api.tool(...)``,
+    so that call was a ``NameError`` on every turn — the model then reported
+    "retrieval unavailable" and never retrieved anything (M9 smoke, LOG-115).
+
+    The block defines one module-level name per tool and maps positional
+    arguments onto the tool's real parameter names, then delegates to
+    ``rlm_api.tool`` — one dispatch path, one trajectory event, no duplicated
+    logic in the sandbox. Keyword arguments pass straight through, and an
+    omitted argument keeps the host-side default.
+    """
+    rows = ",\n".join(
+        f"    {name!r}: {tuple(names)!r}" for name, names in parameters.items()
+    )
+
+    return "\n".join(
+        [
+            # Imported under its real name: the docs and AGENTS.md tell the model to
+            # call `rlm_api.emit()/sub_call()/budget()`, and an alias meant
+            # `NameError: name 'rlm_api' is not defined` (M9 smoke, LOG-115).
+            "import rlm_api",
+            "TOOL_PARAMETERS = {",
+            rows,
+            "}",
+            "",
+            "def _bind_tool(_name):",
+            "    _keys = TOOL_PARAMETERS[_name]",
+            "",
+            "    def _call(*args, **kwargs):",
+            "        if len(args) > len(_keys):",
+            "            raise TypeError(",
+            "                f\"{_name} accepts at most {len(_keys)} positional argument(s)\"",
+            "            )",
+            "        kwargs.update(zip(_keys, args))",
+            "        return rlm_api.tool(_name, **kwargs)",
+            "",
+            "    _call.__name__ = _name",
+            "    _call.__doc__ = f\"Host tool {_name}({', '.join(_keys)}).\"",
+            "    return _call",
+            "",
+            "for _name in TOOL_PARAMETERS:",
+            "    globals()[_name] = _bind_tool(_name)",
+        ]
+    )
 
 
 def write_context_files(

@@ -97,6 +97,16 @@ class FormatQueryTest(unittest.TestCase):
         buckets = {"problem": ["p"], "objective": [], "note": ["n"]}
         self.assertEqual(format_query(buckets), "p n")
 
+    def test_string_value_is_one_clause_not_characters(self) -> None:
+        # The M9 smoke bug: the RLM handed over {"query": "..."} and iterating the
+        # string embedded "s o m e   q u e r y", so the funnel returned unrelated
+        # papers. A string value is one clause.
+        self.assertEqual(format_query({"query": "long context aggregation"}), "long context aggregation")
+
+    def test_nested_and_non_text_values_are_tolerated(self) -> None:
+        buckets = {"a": [["deep", "nested"]], "b": "flat", "c": None, "d": 3}
+        self.assertEqual(format_query(buckets), "deep nested flat")
+
 
 class YearFromArxivIdTest(unittest.TestCase):
     def test_two_digit_prefix(self) -> None:

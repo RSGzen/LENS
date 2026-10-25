@@ -299,6 +299,13 @@ class SandboxSession:
 
         ``input`` feeds stdin, which is how code reaches
         ``exec_client.py``: no shell, no quoting, no argv length limit.
+
+        ``encoding="utf-8"`` is load-bearing, not tidiness: with ``text=True``
+        alone Python encodes stdin with the **locale** encoding (cp1252 here), so
+        an em dash the model wrote arrives as byte ``0x97``, the container decodes
+        it as a lone surrogate, and ``exec()`` dies with ``UnicodeEncodeError`` —
+        a whole turn lost to one non-ASCII character (found by the M9 smoke,
+        LOG-115). UTF-8 on both directions matches what the image uses.
         """
         return subprocess.run(
             ["docker", "compose", "-f", str(self.compose_file), *args],
@@ -307,5 +314,6 @@ class SandboxSession:
             input=input,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
         )

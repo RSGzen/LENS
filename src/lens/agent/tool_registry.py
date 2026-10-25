@@ -151,6 +151,29 @@ class ToolRegistry:
         """
         return list(self._specs.keys())
 
+    def parameters(self) -> dict[str, list[str]]:
+        """Return each tool's positional parameter names, in call order.
+
+        Used to bind the tools as plain namespace functions in the sandbox
+        (``shallow_match(buckets=..., k=100)``) — the form the manifest prints.
+        Without the binding the RLM reads ``shallow_match(buckets)`` in the
+        manifest and calls a name that does not exist: the exact ``NameError`` the
+        M9 smoke hit (LOG-115). Only positional kinds are listed, so a
+        keyword-only parameter must still be passed by name and ``**kwargs`` adds
+        nothing to the mapping.
+        """
+        bound: dict[str, list[str]] = {}
+
+        for name, spec in self._specs.items():
+            bound[name] = [
+                parameter.name
+                for parameter in inspect.signature(spec.func).parameters.values()
+                if parameter.kind
+                in (parameter.POSITIONAL_OR_KEYWORD, parameter.POSITIONAL_ONLY)
+            ]
+
+        return bound
+
     def manifest(self) -> str:
         """Render the manifest as plain text for the system prompt.
 
@@ -214,7 +237,16 @@ class ToolRegistry:
             latency_ms = int((time.perf_counter() - start) * 1000)
 
             result_str = json.dumps(
-                result, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+                result,
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                # A tool may return a DB row: ``date``/``Decimal``/``UUID`` are not
+                # JSON types, and an unserialisable result used to abort the whole
+                # turn (``fetch_papers`` -> "Object of type date is not JSON
+                # serializable", M9 smoke, LOG-115). The blob and the RPC envelope
+                # are JSON boundaries; ``str`` is the honest narrowing.
+                default=str,
             )
             result_ref = trajectory.store_blob(result_str)
             result_summary = self.summarize_result(result)

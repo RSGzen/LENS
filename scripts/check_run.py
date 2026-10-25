@@ -136,6 +136,12 @@ def check_run(run_id: str) -> bool:
     report = resolve_citations(run_id)
     counts = report.counts
 
+    if counts["cited"] == 0:
+        # Not a FAIL: a negative-control query can legitimately cite nothing. The
+        # campaign CSV carries the count, and an answerable query with 0 citations
+        # is exactly what a reader must be able to spot.
+        print("[WARN] no citations in the answer: unsupported unless this query is unanswerable")
+
     results = [
         _check(
             "status finished",

@@ -220,8 +220,15 @@ class ToolServer:
                 return
 
             def _send(self, status: int, body: Mapping[str, Any]) -> None:
-                """Write one JSON response with an exact ``Content-Length``."""
-                data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+                """Write one JSON response with an exact ``Content-Length``.
+
+                ``default=str`` because a tool result may carry a DB type
+                (``date`` / ``Decimal`` / ``UUID``). The registry already narrows
+                the blob with ``str``; the envelope must not be the weaker link, or
+                a serialisation error becomes a 500 the model reads as a transport
+                failure (M9 smoke, LOG-115).
+                """
+                data = json.dumps(body, ensure_ascii=False, default=str).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))

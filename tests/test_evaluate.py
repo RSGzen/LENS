@@ -124,6 +124,29 @@ class EvaluateTierTestCase(unittest.TestCase):
         self.assertEqual(len(client.calls), 1)
         self.assertIn('"chunks"', client.calls[0][0])   # the bounded summary is the state
 
+    def test_noul_answer_is_read_not_ignored(self) -> None:
+        # The real JEV shape for a noul question is {"type": "noul", "noul": 0.03}
+        # — no `answer` key. Reading only `answer`/`value`/`verdict` made every
+        # verdict `uncertain`, and only `fail` rejects, so the final gate accepted
+        # a template answer that cited nothing (LOG-115).
+        low = evaluate_stage(
+            "final",
+            {"score": None, "summary": {"answer": "see above", "citations": []}},
+            client=_FakeJevClient({"gate": {"type": "noul", "noul": 0.03}}),  # type: ignore[arg-type]
+            trace_ctx=self.ctx,
+        )
+        high = evaluate_stage(
+            "final",
+            {"score": None, "summary": {"answer": "cited", "citations": ["c1"]}},
+            client=_FakeJevClient({"gate": {"type": "noul", "noul": 0.96}}),  # type: ignore[arg-type]
+            trace_ctx=self.ctx,
+        )
+
+        assert low is not None and high is not None
+        self.assertEqual(low.verdict, "fail")
+        self.assertEqual(high.verdict, "pass")
+        self.assertAlmostEqual(high.confidence or 0, 0.96)
+
     def test_final_gate_rejects_and_carries_the_criterion(self) -> None:
         client = _FakeJevClient(
             {"gate": {"answer": False, "confidence": 0.91, "failing_criterion": "claim 2 uncited"}}

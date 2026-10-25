@@ -155,6 +155,41 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertIn("The grounded answer", result.answer)
         self.assertTrue(result.answer_path.is_file())
 
+    def test_a_turn_can_run_code_and_answer(self) -> None:
+        # The M9 smoke failure mode: gpt-5-mini ran a block and appended a real
+        # FINAL_ANSWER after the fence on every turn; "code wins" discarded all of
+        # them and the run ended at the iteration cap with an empty answer.md.
+        self.runtime.client = FakeClient(
+            [
+                "```python\nprint('ran')\n```\nFINAL_ANSWER: The grounded answer.",
+            ],
+            self.trajectory,
+        )
+
+        result = self.runtime.run()
+
+        self.assertFalse(result.partial)
+        self.assertIn("The grounded answer", result.answer)
+        # The block still executed: evidence first, then the answer.
+        self.assertIn("print('ran')", self.sandbox.executed)
+
+    def test_a_sentinel_printed_from_code_does_not_end_the_run(self) -> None:
+        self.runtime.client = FakeClient(
+            [
+                "```python\nprint('FINAL_ANSWER: inside the block')\n```",
+                "FINAL_ANSWER: The grounded answer.",
+            ],
+            self.trajectory,
+        )
+
+        result = self.runtime.run()
+
+        self.assertFalse(result.partial)
+        # The answer came from the *second* turn: the sentinel inside the block was
+        # ignored, so the loop asked again instead of stopping on it.
+        self.assertEqual(result.answer.strip(), "The grounded answer.")
+        self.assertTrue(any("inside the block" in code for code in self.sandbox.executed))
+
     def test_workspace_never_exposes_run_artifacts(self) -> None:
         # The RLM can write anywhere in its workspace, so the workspace must be
         # <run_dir>/work — trajectory.jsonl / tasks.json / answer.md stay outside

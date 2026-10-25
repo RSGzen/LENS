@@ -61,6 +61,7 @@ from lens.agent.context import (
     compact_messages,
     extract_final_answer,
     extract_python_block,
+    tool_bindings,
     truncate_observation,
     write_context_files,
 )
@@ -77,6 +78,7 @@ from lens.agent.segmentation import segment_query, write_query_json
 from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.clients import LensClient
 from lens.experiments.arm import arm_fingerprint
+from lens.observability.citations import cited_ids
 from lens.observability.trajectory import TraceCtx, Trajectory
 from lens.tools.evaluate import GATED_STAGES, evaluate_stage
 
@@ -404,6 +406,16 @@ class Runtime:
         self._emits = dict(rebuilt.emits)
         self._replayed = dict(rebuilt.tool_results)
 
+        # query.json is an input: read it, never re-segment (new buckets would
+        # silently change the retrieval the run was built on).
+        query_path = self.workspace / "query.json"
+
+        if query_path.is_file():
+            try:
+                self._query_buckets = json.loads(query_path.read_text(encoding="utf-8"))
+            except ValueError:
+                self._query_buckets = {}
+
         used = (rebuilt.budget or {}).get("used") or {}
 
         for name in (
@@ -516,12 +528,12 @@ class Runtime:
         """
 
         def ledger_create(requirement: str, parent_id: str | None = None) -> dict[str, Any]:
-            """Create one ledger task for a requirement; returns its id."""
+            """Create one ledger task for a requirement; returns {"task_id": "<id>"}."""
             task = self.ledger.create(requirement, parent_id=parent_id)
             return {"task_id": task.task_id}
 
         def ledger_update(task_id: str, status: str) -> dict[str, Any]:
-            """Set a task's status (pending / in_progress / done / failed)."""
+            """Set a task's status (pending / in_progress / done / failed); returns the task."""
             if status not in VALID_STATUSES:
                 raise ValueError(
                     f"invalid status {status!r}; expected one of {sorted(VALID_STATUSES)}"
@@ -605,6 +617,23 @@ class Runtime:
             f"RUN_ID = {self.run_id!r}",
             f"WORKSPACE = {config.SANDBOX_WORKSPACE_PATH!r}",
         ]
+
+        if self._query_buckets:
+            # The segmented buckets as a ready variable: the funnel tools want
+            # exactly this mapping, and a model that has to guess the shape hands
+            # over ``{"query": "..."}`` instead (which the tools now tolerate, but
+            # the real segmentation is better evidence than a re-typed query).
+            lines.append(
+                "buckets = json.loads("
+                + repr(json.dumps(self._query_buckets, ensure_ascii=True))
+                + ")"
+            )
+
+        lines.append(
+            # Bind every host tool as a plain function (the form the manifest
+            # prints) — see context.tool_bindings.
+            tool_bindings(self.registry.parameters())
+        )
         missing: list[str] = []
 
         if self.resume:
@@ -707,31 +736,41 @@ class Runtime:
             self._messages.append({"role": "assistant", "content": completion})
 
             code = extract_python_block(completion)
+            # Fence-aware: the sentinel counts only outside a code block, so a
+            # turn may run one last block *and* answer (LOG-115).
+            final = extract_final_answer(completion)
 
             if code is not None:
                 observation = self._execute_block(code)
                 self._messages.append({"role": "user", "content": observation})
-                self._after_turn()
-                continue
-
-            final = extract_final_answer(completion)
 
             if final is None:
-                self._messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "No ```python block and no FINAL_ANSWER: marker in that turn. "
-                            "Return executable code, or finish with FINAL_ANSWER: <answer>."
-                        ),
-                    }
-                )
+                if code is None:
+                    self._messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "No ```python block and no FINAL_ANSWER: marker in that turn. "
+                                "Return executable code, or finish with FINAL_ANSWER: <answer>."
+                            ),
+                        }
+                    )
+
                 self._after_turn()
                 continue
 
             verdict = self._evaluate(
                 "final",
-                {"score": None, "summary": {"answer": final, "citations": []}},
+                {
+                    "score": None,
+                    "summary": {
+                        "answer": final,
+                        # Real ids: the gate was previously handed a hard-coded
+                        # empty list, so "is every claim supported by the cited
+                        # chunks" was asked about citations it never saw (LOG-115).
+                        "citations": cited_ids(final),
+                    },
+                },
                 trace_ctx=trace_ctx,
             )
 

@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 import lens.observability.trajectory as trajectory_module
-from lens.observability.citations import resolve_citations, write_sources_md
+from lens.observability.citations import cited_ids, resolve_citations, write_sources_md
 from lens.observability.trajectory import TraceCtx, Trajectory
 
 CHUNK = "11111111-1111-5111-8111-111111111111"
@@ -99,6 +99,13 @@ class CitationTestCase(unittest.TestCase):
         self.assertTrue(by_token["2512.24601"].resolved)
         self.assertFalse(by_token["2601.99999"].resolved)
         self.assertEqual(report.unresolved, ["2601.99999"])
+
+    def test_cited_ids_dedupes_and_keeps_order(self) -> None:
+        # The final gate needs the ids the answer actually names (LOG-115).
+        text = f"First {CHUNK}, then 2512.24601, then {CHUNK} and {GHOST}."
+
+        self.assertEqual(cited_ids(text), [CHUNK, "2512.24601", GHOST])
+        self.assertEqual(cited_ids("no ids here"), [])
 
     def test_duplicate_tokens_count_once(self) -> None:
         self._bundle()

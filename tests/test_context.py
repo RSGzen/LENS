@@ -12,6 +12,70 @@ from pathlib import Path
 from lens.agent import context
 
 
+class ToolBindingTestCase(unittest.TestCase):
+    """The tools must be callable as the manifest prints them (LOG-115).
+
+    The M9 smoke failed with ``NameError: shallow_match is not defined`` on every
+    turn: the prompt shows ``shallow_match(buckets: ...)`` but only
+    ``rlm_api.tool()`` existed, so the model reported "retrieval unavailable" and
+    never retrieved anything.
+    """
+
+    def _exec_bindings(self, parameters: dict, calls: list | None = None) -> dict:
+        """Exec the generated block with a stub ``rlm_api``; return its namespace."""
+        import sys
+        import types
+
+        module = types.ModuleType("rlm_api")
+        module.tool = lambda name, **kwargs: (
+            calls.append((name, kwargs)) if calls is not None else None
+        )
+        original = sys.modules.get("rlm_api")
+        sys.modules["rlm_api"] = module
+
+        try:
+            namespace: dict = {}
+            exec(context.tool_bindings(parameters), namespace)
+            return namespace
+        finally:
+            if original is None:
+                sys.modules.pop("rlm_api", None)
+            else:
+                sys.modules["rlm_api"] = original
+
+    def test_bindings_define_a_callable_per_tool(self) -> None:
+        calls: list[tuple[str, dict]] = []
+        namespace = self._exec_bindings({"shallow_match": ["buckets", "k"]}, calls)
+
+        # Both calling styles must reach one dispatch path.
+        self.assertIsNone(namespace["shallow_match"](buckets={"q": 1}, k=50))
+        namespace["shallow_match"]({"q": 2})
+
+        self.assertEqual(
+            calls,
+            [("shallow_match", {"buckets": {"q": 1}, "k": 50}),
+             ("shallow_match", {"buckets": {"q": 2}})],
+        )
+
+    def test_too_many_positionals_is_a_clear_type_error(self) -> None:
+        namespace = self._exec_bindings({"fetch_papers": ["arxiv_ids"]})
+
+        with self.assertRaises(TypeError) as caught:
+            namespace["fetch_papers"]([["a"]], "extra")
+
+        self.assertIn("at most 1 positional", str(caught.exception))
+
+    def test_bindings_are_valid_python_for_no_tools(self) -> None:
+        # An empty registry must still produce an executable block.
+        self.assertEqual(self._exec_bindings({})["TOOL_PARAMETERS"], {})
+
+    def test_prompt_names_both_calling_forms(self) -> None:
+        prompt = context.build_system_prompt("1. shallow_match(buckets)", {}, {})
+
+        self.assertIn("bound as a plain function", prompt)
+        self.assertIn("rlm_api.tool(", prompt)
+
+
 class ContextTestCase(unittest.TestCase):
     def test_extract_python_block(self) -> None:
         text = "Here is the step:\n```python\nprint('hi')\n```\nDone."
@@ -26,6 +90,17 @@ class ContextTestCase(unittest.TestCase):
 
     def test_extract_final_answer_absent(self) -> None:
         self.assertIsNone(context.extract_final_answer("```python\nprint(1)\n```"))
+
+    def test_sentinel_inside_a_fence_is_not_an_answer(self) -> None:
+        # print("FINAL_ANSWER: ...") belongs to the block; it must not end the run.
+        text = "```python\nprint('FINAL_ANSWER: not yet')\n```\nstill working"
+        self.assertIsNone(context.extract_final_answer(text))
+
+    def test_answer_after_the_fence_counts(self) -> None:
+        # The opposite failure: code + a real answer used to be discarded, so the
+        # run looped to the iteration cap with an empty answer.md (LOG-115).
+        text = "```python\nprint('ran')\n```\nFINAL_ANSWER: The answer is [1]."
+        self.assertEqual(context.extract_final_answer(text), "The answer is [1].")
 
     def test_count_tokens_positive(self) -> None:
         self.assertGreater(context.count_tokens("hello world"), 0)

@@ -163,7 +163,9 @@ def build_groundedness_question(answer: str, citations: Sequence[str]) -> Questi
             "Decide whether every factual claim in the answer is supported by the cited "
             f"chunks. Citations given: {citation_list}. Answer false if any claim is "
             "uncited, contradicted by its citation, or supported by a chunk that does "
-            "not contain it — a number, dataset or comparison with no source counts as "
+            "not contain it - a number, dataset or comparison with no source counts as "
+            "unsupported. An answer that cites nothing at all - placeholders such as "
+            "'[see above]' or 'the retrieved evidence' are not citations - is "
             f"unsupported. Answer under review (truncated): {excerpt}"
         ),
         criteria={
@@ -182,6 +184,20 @@ def _read_answer(answer: Mapping[str, Any]) -> tuple[Verdict, float | None, str 
     here would turn a schema drift into a silent "always passes" gate.
     """
     raw = answer.get("answer", answer.get("value", answer.get("verdict")))
+
+    # The JEV ``noul`` primitive answers with ``{"type": "noul", "noul": 0.03}`` -
+    # no ``answer`` key at all. Reading only ``answer``/``value``/``verdict`` made
+    # **every** gate verdict ``uncertain``, and since only ``fail`` rejects, the
+    # final groundedness gate silently accepted a template answer that cited
+    # nothing (M9 smoke, LOG-115). ``noul`` is a probability that the proposition
+    # holds (0.96 on a plainly true example in the JEV contract, 0.03 on that
+    # template answer), so it maps at 0.5.
+    if raw is None and isinstance(answer.get("noul"), (int, float)) and not isinstance(
+        answer.get("noul"), bool
+    ):
+        noul = float(answer["noul"])
+        raw = noul >= 0.5
+        answer = {**answer, "confidence": noul}
     confidence = answer.get("confidence")
 
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
