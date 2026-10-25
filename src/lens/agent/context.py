@@ -63,6 +63,15 @@ Search the variable, not the digest you printed
   Filter it in code — ``hits = [c for c in bundle["chunks"]
   if "term" in c["chunk_text"].lower()]`` — then print ``len(hits)`` and the ids.
   A grep-style miss on a printed digest is not evidence of absence.
+- ``rerank_chunks`` **already returns the chunk text** (``chunk_text`` on every
+  row). Do not call ``fetch_chunks`` for ids you got from it, and when you do need
+  ids from ``deep_match``, pass them as **one list** — ``fetch_chunks(ids)`` takes
+  many ids per call.
+- **Run the funnel once.** ``shallow_match`` -> ``rerank_papers`` -> ``deep_match``
+  -> ``rerank_chunks`` is one retrieval; keep the bundle in a variable and reuse it.
+  Re-running the funnel is a *new* retrieval (seconds of GPU and megabytes of
+  payload), not a refresh — measured: the good `gpt-5` run spent 32 of its 48 tool
+  calls on eight identical funnel passes.
 
 Query buckets (query.json)
 <<QUERY_JSON>>
@@ -82,7 +91,9 @@ Output contract
 4. **A negative finding is a claim too.** If you conclude "no retrieved chunk
    contains X", cite the `chunk_uuid` values you inspected and say how many — the
    counts are the evidence. An uncited "not found" is indistinguishable from not
-   having looked.
+   having looked. **Report the scope you inspected**, never a global absence:
+   "12 chunks of 2511.02817, no match" is checkable; "0 mentions globally" is not,
+   and the final gate is right to reject it.
 5. To finish, output a line beginning with ``FINAL_ANSWER:`` followed by the answer.
    A normal assistant message without code is NOT a final answer.
 6. **Never print ``FINAL_ANSWER:`` inside a ```python block.** Code wins over the
