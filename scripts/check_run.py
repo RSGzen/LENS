@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 
 from pathlib import Path
 from typing import Any
@@ -209,6 +210,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run_id", help="run id (a directory under the runs root)")
     args = parser.parse_args(argv)
+
+    # The arm block and the answer are model/config prose; the console is cp1252.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
     return 0 if check_run(args.run_id) else 1
 

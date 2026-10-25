@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import secrets
+import sys
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
@@ -282,6 +283,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     step, not something this CLI should bake in.
     """
     from lens.agent import runstore      # module, so tests can patch it
+
+    # The answer is model prose and contains whatever Unicode it likes (an arrow,
+    # an em dash, a Greek letter). The Windows console is cp1252, so the final
+    # `print` raised UnicodeEncodeError **after** the run had finished and been
+    # finalized — a completed run reported as a traceback (LOG-115, S4). Keep the
+    # console's encoding, stop crashing on characters it cannot show.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
     args = build_parser().parse_args(argv)
 

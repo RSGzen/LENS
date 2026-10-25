@@ -77,6 +77,13 @@ class Turn:
     observation: str | None = None
     stdout_full: str | None = None
     stderr_full: str | None = None
+    # Gate spend, kept apart from ``cost_usd``: the context-growth chart must show
+    # **chat** tokens only (a JEV call's ~500 input tokens are not the growing
+    # context), while a cost meter must show total spend. Reported separately so
+    # `replay_summary`'s cost can equal `Trajectory.totals()` without distorting
+    # the chart (M9 S5, LOG-116).
+    jev_cost_usd: float | None = None
+    jev_tokens_in: int | None = None
     ok: bool | None = None
     error: dict[str, Any] | None = None
     tools: list[ToolStep] = field(default_factory=list)
@@ -221,6 +228,13 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
             if completion is not None:
                 turn.completion = completion
 
+    elif call_type == "jev":
+        # Gate calls cost money (H3 counts the decision layer) but are not context:
+        # keep them out of ``tokens_in`` so the growth chart stays honest, and sum
+        # them into the summary's cost so it matches ``Trajectory.totals()``.
+        turn.jev_cost_usd = (turn.jev_cost_usd or 0.0) + (event.get("cost_usd") or 0.0)
+        turn.jev_tokens_in = (turn.jev_tokens_in or 0) + (event.get("tokens_in") or 0)
+
     elif call_type == "exec":
         code = _load(trajectory, event.get("code_ref"), turn.missing_refs)
         stdout = _load(trajectory, event.get("stdout_ref"), turn.missing_refs)
@@ -288,11 +302,16 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
 def replay_summary(turns: list[Turn]) -> dict[str, Any]:
     """Return the header numbers a viewer shows above the timeline.
 
-    Contract: ``{"turns", "tokens_in", "tokens_out", "cost_usd", "tool_calls",
-    "emits", "gates_passed", "gates_failed", "missing_refs"}`` — all summed or
-    counted from ``turns``, missing values counted as zero, and the totals
-    matching :meth:`Trajectory.totals` for the same log (both read the same
-    fields; if they disagree, the bug is here).
+    Contract: ``{"turns", "tokens_in", "tokens_out", "jev_tokens_in", "cost_usd",
+    "chat_cost_usd", "tool_calls", "emits", "gates_passed", "gates_failed",
+    "missing_refs"}`` — all summed or counted from ``turns``, missing values
+    counted as zero.
+
+    ``cost_usd`` (chat + gate calls) matches ``Trajectory.totals()["cost_usd"]``
+    for the same log; ``chat_cost_usd`` and ``tokens_in/tokens_out`` stay chat-only
+    because they drive the context-growth chart (a JEV call's input tokens are not
+    the growing context). The two used to be one number, so a viewer's cost meter
+    was short by the whole decision layer (M9 S5, LOG-116).
     """
     gates = [tool.gate for turn in turns for tool in turn.tools if tool.gate]
 
@@ -300,7 +319,14 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
         "turns": len(turns),
         "tokens_in": sum(turn.tokens_in or 0 for turn in turns),
         "tokens_out": sum(turn.tokens_out or 0 for turn in turns),
-        "cost_usd": sum(turn.cost_usd or 0.0 for turn in turns),
+        "jev_tokens_in": sum(turn.jev_tokens_in or 0 for turn in turns),
+        # Total spend = chat + gate calls: the cost meter compares against the cap,
+        # so it must not hide the decision layer. ``tokens_in`` stays chat-only
+        # because it drives the context-growth chart.
+        "cost_usd": sum(
+            (turn.cost_usd or 0.0) + (turn.jev_cost_usd or 0.0) for turn in turns
+        ),
+        "chat_cost_usd": sum(turn.cost_usd or 0.0 for turn in turns),
         "tool_calls": sum(len(turn.tools) for turn in turns),
         "emits": sum(len(turn.emits) for turn in turns),
         "gates_passed": sum(1 for gate in gates if gate.get("verdict") == "pass"),

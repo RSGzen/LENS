@@ -149,6 +149,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=None, help="output directory (default: DATA_ROOT/campaigns)")
     args = parser.parse_args(argv)
 
+    # A campaign prints the queries it is about to run; the console is cp1252.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     campaign = load_campaign(args.campaign)
     jobs = build_jobs(campaign)
     digest = image_digest()

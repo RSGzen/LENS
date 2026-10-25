@@ -9,6 +9,7 @@ Run:  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -61,6 +62,24 @@ class TrajectoryTestCase(unittest.TestCase):
 
     def test_store_blob_distinct_text_distinct_ref(self) -> None:
         self.assertNotEqual(self.traj.store_blob("a"), self.traj.store_blob("b"))
+
+    def test_blob_bytes_hash_to_their_own_name(self) -> None:
+        # The filename **is** the promise: sha256(file bytes) == name. A text-mode
+        # write translated "\n" to "\r\n" on Windows, so the file no longer hashed to
+        # its name and bundle verification rejected real bundles (M9 S5, LOG-116).
+        ref = self.traj.store_blob("line one\nline two\n")
+        blob = self.traj.blobs_dir / ref.split(":", 1)[1]
+
+        self.assertEqual(hashlib.sha256(blob.read_bytes()).hexdigest(), blob.name)
+
+    def test_load_blob_reads_a_legacy_crlf_blob(self) -> None:
+        # Blobs written before the fix hold CRLF; reads must still return the text
+        # that was stored (and not double it up with "\r").
+        ref = self.traj.store_blob("alpha\nbeta")
+        blob = self.traj.blobs_dir / ref.split(":", 1)[1]
+        blob.write_bytes(b"alpha\r\nbeta\r\n")  # simulate the legacy writer
+
+        self.assertEqual(self.traj.load_blob(ref), "alpha\nbeta\n")
 
     # ---------------------------------------------------------------- events
     def test_log_event_appends_one_line_per_call(self) -> None:

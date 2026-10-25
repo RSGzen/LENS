@@ -170,6 +170,26 @@ class ReplayTestCase(unittest.TestCase):
         self.assertIsNotNone(turn.code)
 
     # --------------------------------------------------------------- summary
+    def test_summary_cost_includes_gate_calls_but_tokens_stay_chat_only(self) -> None:
+        # The M10b cost meter compares total spend against the cap, while the
+        # context-growth chart must show chat tokens only. One number for both was
+        # short by the whole decision layer (M9 S5, LOG-116).
+        self._chat(0, "```python\nprint(1)\n```", tokens_in=1000, cost=0.01)
+        self.traj.log_event(
+            trace_ctx=TraceCtx("run-replay", 0, "tool"),
+            call_type="jev",
+            action="jev.gate",
+            tokens_in=500,
+            cost_usd=0.001,
+        )
+
+        summary = replay_summary(replay_turns(self.traj))
+
+        self.assertAlmostEqual(summary["cost_usd"], 0.011)
+        self.assertAlmostEqual(summary["chat_cost_usd"], 0.01)
+        self.assertEqual(summary["tokens_in"], 1000)      # chat only: the chart
+        self.assertEqual(summary["jev_tokens_in"], 500)   # reported separately
+
     def test_summary_matches_trajectory_totals(self) -> None:
         self._chat(0, "```python\nprint(1)\n```")
         self._tool(0, "echo", {"text": "hi"}, {"echo": "hi"})

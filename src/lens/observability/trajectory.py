@@ -125,7 +125,13 @@ class Trajectory:
         blob_path = self.blobs_dir / hexdigest
 
         if not blob_path.exists():
-            blob_path.write_text(text, encoding="utf-8")
+            # **Bytes**, not text: ``write_text`` translates "\n" to "\r\n" on
+            # Windows, so the file on disk would not be the bytes that were hashed.
+            # Content-addressing then silently lies — the filename is not the hash of
+            # the file — which is exactly what bundle verification caught (three
+            # blobs "do not match its name", M9 S5, LOG-116). Byte-exact or not at
+            # all is the only honest option for a content-addressed store.
+            blob_path.write_bytes(text.encode("utf-8"))
 
         return f"sha256:{hexdigest}"
 
@@ -327,11 +333,12 @@ class Trajectory:
 
         if not blob_path.exists():
             raise FileNotFoundError(f"Blob not found at {blob_path}")
-        else:
-            with open(blob_path, 'r', encoding="utf-8") as file:
-                content = file.read()
 
-                return content
+        # Read **bytes** and decode: a text-mode read normalises newlines, which
+        # would hide the fact that older blobs were written with CRLF (see
+        # ``store_blob``). The explicit normalisation keeps those legacy blobs
+        # readable while new ones are byte-exact.
+        return blob_path.read_bytes().decode("utf-8").replace("\r\n", "\n")
 
     def rebuild(self) -> "RebuiltState":
         """Fold ``trajectory.jsonl`` back into the state a resume needs.
