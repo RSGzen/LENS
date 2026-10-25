@@ -185,5 +185,87 @@ class ReplayTestCase(unittest.TestCase):
         self.assertEqual(summary["tool_calls"], 1)
 
 
+class ReplayRegressionTestCase(unittest.TestCase):
+    """Edge cases the nine contracts cannot see (LOG-112)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig = trajectory_module.LENS_RUNS_ROOT_PATH
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._tmp.name
+        self.traj = Trajectory("run-edge")
+        self.addCleanup(self._tmp.cleanup)
+        self.addCleanup(
+            setattr, trajectory_module, "LENS_RUNS_ROOT_PATH", self._orig
+        )
+
+    def _chat(self, step: int, text: str, *, actor: str = "root", tokens: int = 100) -> None:
+        self.traj.log_event(
+            trace_ctx=TraceCtx("run-edge", step, actor),  # type: ignore[arg-type]
+            call_type="chat",
+            action="chat.completion",
+            model="openai/gpt-5" if actor == "root" else "openai/gpt-5-mini",
+            completion_ref=self.traj.store_blob(text),
+            tokens_in=tokens,
+            tokens_out=1,
+            cost_usd=0.001,
+        )
+
+    def test_corrupt_line_is_skipped_not_fatal(self) -> None:
+        self._chat(0, "print(1)")
+        with open(self.traj.trajectory_path, "a", encoding="utf-8") as handle:
+            handle.write("{not json\n")
+
+        turns = replay_turns(self.traj)
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(turns[0].completion, "print(1)")
+
+    def test_step_index_order_is_ascending_not_file_order(self) -> None:
+        self._chat(2, "third")
+        self._chat(0, "first")
+
+        self.assertEqual([t.turn for t in replay_turns(self.traj)], [0, 2])
+
+    def test_sub_call_does_not_clobber_the_root_completion(self) -> None:
+        self._chat(0, "root completion", tokens=100)
+        self._chat(0, "sub completion", actor="sub", tokens=7)
+
+        turn = replay_turns(self.traj)[0]
+        self.assertEqual(turn.completion, "root completion")
+        self.assertEqual(turn.tokens_in, 107)          # accumulated, not overwritten
+        self.assertEqual(turn.model, "openai/gpt-5")   # the root role wins
+
+    def test_invalid_json_blob_is_reported_as_missing(self) -> None:
+        bad_ref = self.traj.store_blob("{not json")
+        self.traj.log_event(
+            trace_ctx=TraceCtx("run-edge", 0, "tool"),
+            call_type="tool",
+            action="tool.dispatch",
+            tool="echo",
+            args_hash="h",
+            args_ref=bad_ref,
+        )
+
+        turn = replay_turns(self.traj)[0]
+        self.assertIsNone(turn.tools[0].args)
+        self.assertIn(bad_ref, turn.missing_refs)
+
+    def test_summary_counts_gate_verdicts(self) -> None:
+        self._chat(0, "code")
+        for step, verdict in ((0, "pass"), (1, "fail")):
+            self.traj.log_event(
+                trace_ctx=TraceCtx("run-edge", step, "tool"),
+                call_type="tool",
+                action="tool.dispatch",
+                tool="gated",
+                result_ref=self.traj.store_blob("{}"),
+                extra={"gate": {"verdict": verdict}},
+            )
+
+        summary = replay_summary(replay_turns(self.traj))
+        self.assertEqual(summary["gates_passed"], 1)
+        self.assertEqual(summary["gates_failed"], 1)
+        self.assertEqual(summary["tool_calls"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
