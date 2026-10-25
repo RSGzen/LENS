@@ -27,9 +27,18 @@ def echo(text: str) -> dict:
 
 
 class FakeClient:
-    def __init__(self, replies: Sequence[str]) -> None:
+    """A transport double that also **logs**, like :class:`lens.clients.LensClient`.
+
+    The real client owns the ``chat.completion`` event and the ``prompt_ref`` blob
+    (that is what :meth:`Trajectory.rebuild` folds), so a fake that only returned a
+    ``CallResult`` would make the fold untestable and would let the orchestrator
+    double-log in production without anything noticing.
+    """
+
+    def __init__(self, replies: Sequence[str], trajectory: Trajectory | None = None) -> None:
         self.replies = list(replies)
         self.chat_calls: list[dict[str, Any]] = []
+        self.trajectory = trajectory
 
     def chat(self, role: str, messages: Sequence[Mapping[str, Any]], **kwargs: Any) -> CallResult:
         self.chat_calls.append({"role": role, "messages": list(messages), **kwargs})
@@ -44,7 +53,8 @@ class FakeClient:
             )
         else:
             text = self.replies.pop(0) if self.replies else "FINAL_ANSWER: fallback"
-        return CallResult(
+
+        result = CallResult(
             text=text,
             message={"role": "assistant", "content": text},
             model="openai/gpt-5",
@@ -55,6 +65,26 @@ class FakeClient:
             latency_ms=1,
             cost_usd=0.001,
         )
+
+        if self.trajectory is not None:
+            trace_ctx = kwargs.get("trace_ctx") or TraceCtx(
+                trace_id="run-test", step_idx=0, actor="root" if role == "root" else "sub"
+            )
+            self.trajectory.log_event(
+                trace_ctx=trace_ctx,
+                call_type="chat",
+                action="chat.completion",
+                model=result.model,
+                provider=result.provider,
+                prompt_ref=self.trajectory.store_blob(json.dumps({"messages": list(messages)})),
+                completion_ref=self.trajectory.store_blob(text),
+                tokens_in=result.tokens_in,
+                tokens_out=result.tokens_out,
+                latency_ms=result.latency_ms,
+                cost_usd=result.cost_usd,
+            )
+
+        return result
 
     def jev(self, state: str, questions: Any, **kwargs: Any) -> JevResult:
         return JevResult(
@@ -97,7 +127,8 @@ class RuntimeTestCase(unittest.TestCase):
             [
                 "```python\nprint('step')\n```",
                 "FINAL_ANSWER: The grounded answer.",
-            ]
+            ],
+            self.trajectory,
         )
         self.runtime = Runtime(
             "test query",
@@ -199,7 +230,10 @@ class RuntimeTestCase(unittest.TestCase):
         actions = [json.loads(line).get("action") for line in
                    self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines() if line]
         self.assertIn("run.resume", actions)
-        self.assertEqual(actions[-1], "chat.completion")
+        # Budget snapshots are bookkeeping and may follow the last chat; what must
+        # not change is that the resume note comes first and new turns follow it.
+        self.assertTrue(all(a not in {"run.resume"} for a in actions[actions.index("run.resume") + 1:]))
+        self.assertIn("chat.completion", actions[actions.index("run.resume"):])
 
     def test_replay_serves_the_recorded_tool_result(self) -> None:
         ref = self.trajectory.store_blob(json.dumps({"echo": "hi"}))
@@ -226,6 +260,108 @@ class RuntimeTestCase(unittest.TestCase):
     def test_handle_rpc_unknown_endpoint(self) -> None:
         response = self.runtime.handle_rpc("/nope", {})
         self.assertFalse(response["ok"])
+
+
+class RuntimeRegressionTestCase(unittest.TestCase):
+    """Behaviour the nine contracts do not pin (LOG-110)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig_root = trajectory_module.LENS_RUNS_ROOT_PATH
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._tmp.name
+        self.trajectory = Trajectory("run-reg")
+        self.sandbox = FakeSandbox(self.trajectory.run_dir / "work")
+        self.registry = ToolRegistry()
+        self.registry.register("echo", echo, description="Echo a string.")
+        self.client = FakeClient(["FINAL_ANSWER: done"], self.trajectory)
+        self.runtime = Runtime(
+            "q",
+            "run-reg",
+            client=self.client,  # type: ignore[arg-type]
+            trajectory=self.trajectory,
+            conn=None,
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=self.sandbox,  # type: ignore[arg-type]
+            registry=self.registry,
+            budget=Budget(),
+        )
+
+    def tearDown(self) -> None:
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._orig_root
+        self._tmp.cleanup()
+
+    def test_manifest_records_model_ids_and_no_fake_commit(self) -> None:
+        self.runtime.run()
+        from lens.agent import runstore
+
+        manifest = runstore.read_manifest(self.trajectory.run_dir)
+        assert manifest is not None
+        # ModelSpec is a dataclass and would break json.dump; ids only.
+        self.assertEqual(manifest.models["root"], "openai/gpt-5")
+        self.assertEqual(manifest.models["jev"], "typesafe/jev-1.13")
+        self.assertIsNone(manifest.created_by["commit"])   # unknown, never 0
+        self.assertTrue(manifest.caps)
+
+    def test_bad_rpc_payload_is_a_structured_error(self) -> None:
+        response = self.runtime.handle_rpc("/tool", {})
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["type"], "BadRequest")
+
+    def test_replay_off_calls_the_tool(self) -> None:
+        runtime = Runtime(
+            "q", "run-reg", client=self.client, trajectory=self.trajectory,
+            conn=None, embedder=None, reranker=None, extractor=None,
+            sandbox=self.sandbox, registry=self.registry, budget=Budget(),
+            replay=False,
+        )
+        response = runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
+        self.assertTrue(response["ok"])
+        self.assertNotIn("replayed", response)
+
+    def test_emit_writes_the_file_and_names_the_variable(self) -> None:
+        response = self.runtime.handle_rpc("/emit", {"value": {"a": 1}, "label": "chunks"})
+        self.assertTrue(response["ok"])
+        emitted = response["result"]
+        self.assertTrue(emitted["path"].startswith("/workspace/emits/"))
+        on_disk = self.runtime.workspace / "emits" / "chunks.json"
+        self.assertEqual(json.loads(on_disk.read_text(encoding="utf-8")), {"a": 1})
+        # The label is the variable name: resume depends on this map.
+        self.assertEqual(self.runtime._emits["chunks"], emitted["ref"])
+
+    def test_checkpoint_writes_the_resume_cache(self) -> None:
+        from lens.agent import runstore
+
+        self.runtime.run()
+        cache = runstore.read_resume_cache(self.trajectory.run_dir)
+        self.assertIsNotNone(cache)
+        assert cache is not None
+        self.assertIn("namespace", cache)
+        self.assertIn("query.json", cache["workspace"])
+
+    def test_finalize_marks_a_crashed_run_failed(self) -> None:
+        from lens.agent import runstore
+
+        self.runtime._open_manifest()
+        self.runtime._finalize("half an answer", partial=True, stop_reason="error")
+        manifest = runstore.read_manifest(self.trajectory.run_dir)
+        assert manifest is not None
+        self.assertEqual(manifest.status, "failed")
+        self.assertTrue((self.trajectory.run_dir / "answer.md").is_file())
+
+    def test_budget_warning_is_appended_last_not_in_the_system_prompt(self) -> None:
+        from lens.agent.context import budget_warning
+
+        self.runtime.budget.cost_usd = self.runtime.budget.limits.max_cost_usd * 0.99
+        warning = budget_warning(self.runtime.budget.snapshot())
+        self.assertTrue(warning)
+
+        messages = self.runtime._build_context()
+        self.assertEqual(messages[0]["role"], "system")
+        # The static prefix must not change, or prefix caching stops hitting.
+        self.assertNotIn(warning, messages[0]["content"])
+        self.assertEqual(messages[-1]["content"], warning)
 
 
 if __name__ == "__main__":

@@ -43,18 +43,51 @@ context files re-read, variables restored from ``emit`` blobs only, and a
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import platform
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from lens import config
 from lens.agent.budget import Budget
-from lens.agent.ledger import TaskLedger
-from lens.agent.runstore import RunManifest, read_manifest, write_manifest
+from lens.agent.context import (
+    budget_warning,
+    build_messages,
+    build_system_prompt,
+    compact_messages,
+    extract_final_answer,
+    extract_python_block,
+    truncate_observation,
+    write_context_files,
+)
+from lens.agent.ledger import VALID_STATUSES, TaskLedger
+from lens.agent.runstore import (
+    RunManifest,
+    read_manifest,
+    update_manifest,
+    write_manifest,
+    write_resume_cache,
+)
 from lens.agent.sandbox_session import SandboxSession
-from lens.agent.tool_registry import ToolRegistry
+from lens.agent.segmentation import segment_query, write_query_json
+from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.clients import LensClient
 from lens.observability.trajectory import TraceCtx, Trajectory
+from lens.tools.evaluate import GATED_STAGES, evaluate_stage
+
+
+def _error_envelope(kind: str, message: str) -> dict[str, Any]:
+    """Return the RPC failure shape the sandbox façade raises on."""
+    return {"ok": False, "error": {"type": kind, "message": message[:300]}}
+
+
+def _sha256_text(text: str) -> str:
+    """Return the hex sha256 of ``text`` (workspace-file fingerprints)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -127,7 +160,9 @@ class Runtime:
         # is deterministic even if the corpus changed. Every replayed envelope
         # carries ``"replayed": True``; nothing is faked silently.
         self.replay = replay
-        self._replayed: dict[str, str] = {}
+        # ``None`` = "not built yet": the index is folded from the log on first
+        # use, and reused afterwards (``_restore_state`` seeds it on resume).
+        self._replayed: dict[str, str] | None = None
         self.run_dir: Path = trajectory.run_dir
         # The mounted, RLM-writable directory. Never ``run_dir`` itself: the
         # artifacts there are the audit trail (see the module invariants).
@@ -143,6 +178,12 @@ class Runtime:
         # ``tools.evaluate.GATED_STAGES``).
         self._gated_stages: set[str] = set()
         self._gate_verdicts: dict[str, dict[str, Any]] = {}
+        # Namespace map (label -> emit ref) and its completeness claim, kept in
+        # memory so ``_save_checkpoint`` does not re-fold the log every turn.
+        self._emits: dict[str, str] = {}
+        self._namespace_complete: bool = True
+        # Where a resume picked up (for the ``run.resume`` note).
+        self._from_seq: int = 0
 
     # ------------------------------------------------------------------- run
     def run(self) -> RunResult:
@@ -165,14 +206,39 @@ class Runtime:
           5. ``_finalize``: ``answer.md`` + manifest status + ``RunResult`` (cost
              from ``trajectory.totals()``), sandbox stopped **even on failure**.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime.run")
+        self._open_manifest()
+
+        if self.resume:
+            # Host-only work: the fold, the budget counters, the query.json guard.
+            # The namespace is restored in ``_seed_workspace`` instead, because it
+            # needs a running container.
+            self._restore_state()
+        else:
+            self._segment_query()
+
+        self._register_runtime_tools()
+
+        answer, partial, stop_reason = "", True, "error"
+
+        try:
+            self.sandbox.start()
+            self._seed_workspace()
+            answer, partial, stop_reason = self._run_loop()
+        except Exception as exc:  # noqa: BLE001 - a crash must still finalize
+            # Label it, never leave the manifest ``running`` and never lose the
+            # partial answer: the run is evidence even when it broke.
+            self._note(f"run failed: {type(exc).__name__}: {exc}")
+            answer = answer or f"Run failed before an answer was produced: {exc}"
+            partial, stop_reason = True, "error"
+
+        return self._finalize(answer, partial=partial, stop_reason=stop_reason)
 
     # ------------------------------------------------------------------ RPC
     def handle_rpc(self, endpoint: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         """Route one sandbox RPC to the host implementation.
 
-        ``endpoint`` is one of ``/tool``, ``/sub_call``, ``/budget``,
-        ``/emit``, ``/note``. Return ``{"ok": True, "result": ...}`` or
+        ``endpoint`` is one of ``/tool``, ``/sub_call``, ``/budget``, ``/emit``,
+        ``/note``. Return ``{"ok": True, "result": ...}`` or
         ``{"ok": False, "error": {...}}``. Never include credentials.
 
         ``/tool`` returns the **full** tool result: that is the point of the
@@ -180,8 +246,60 @@ class Runtime:
         context. Only the code's printed digest becomes an observation. A stage
         gate verdict, when produced, rides along as ``"gate"`` on the same
         envelope; a recorded replay carries ``"replayed": True``.
+
+        This is **not** an HTTP call: ``ToolServer`` already owns the transport and
+        calls this method with a parsed payload. A request from here would call the
+        server that is currently inside ``handle_request``.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime.handle_rpc")
+        trace_ctx = TraceCtx(
+            trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
+        )
+
+        try:
+            if endpoint == "/tool":
+                name = payload.get("name")
+
+                if not isinstance(name, str) or not name:
+                    return _error_envelope("BadRequest", "/tool needs a tool name")
+
+                args = payload.get("args") or {}
+
+                if not isinstance(args, Mapping):
+                    return _error_envelope("BadRequest", "args must be an object")
+
+                return self._dispatch_tool(name, args, trace_ctx=trace_ctx)
+
+            if endpoint == "/sub_call":
+                prompt = payload.get("prompt")
+
+                if not isinstance(prompt, str) or not prompt:
+                    return _error_envelope("BadRequest", "/sub_call needs a prompt")
+
+                return {"ok": True, "result": self._sub_call(prompt, payload.get("context"))}
+
+            if endpoint == "/budget":
+                return {"ok": True, "result": self.budget.snapshot()}
+
+            if endpoint == "/emit":
+                return {
+                    "ok": True,
+                    "result": self._emit(payload.get("value"), payload.get("label")),
+                }
+
+            if endpoint == "/note":
+                text = payload.get("text")
+
+                if not isinstance(text, str):
+                    return _error_envelope("BadRequest", "/note needs text")
+
+                self._note(text)
+                return {"ok": True, "result": None}
+
+        except Exception as exc:  # noqa: BLE001 - the model must read the failure
+            return _error_envelope(type(exc).__name__, str(exc))
+
+        # The HTTP layer 404s unknown paths, so reaching this is a wiring bug.
+        return _error_envelope("NotFound", f"unknown endpoint {endpoint!r}")
 
     # --------------------------------------------------------------- internal
     def _open_manifest(self) -> RunManifest:
@@ -196,7 +314,48 @@ class Runtime:
         The manifest is *identity*, never state: no messages, no counters. Those
         are folded from the log (M8.5, §4n).
         """
-        raise NotImplementedError("M8.5 scaffold: implement Runtime._open_manifest")
+        manifest: RunManifest | None = None
+
+        if (self.run_dir / config.MANIFEST_FILENAME).is_file():
+            manifest = read_manifest(self.run_dir)
+
+        if manifest is None:
+            manifest = RunManifest.new(
+                self.run_id,
+                self.query,
+                parent_run_id=self.parent_run_id,
+                # The registry maps a role to a ModelSpec (a dataclass, so not
+                # JSON-serialisable): the manifest records the **ids** only.
+                # JEV is deliberately outside the registry (LOG-29).
+                models={
+                    role: spec.id for role, spec in config.MODEL_REGISTRY.items()
+                }
+                | {"jev": config.JEV_MODEL_ID},
+                caps=self.budget.snapshot()["limits"],
+                created_by=self._provenance(),
+            )
+        else:
+            # Resume: identity and lineage survive, status does not.
+            manifest.status = "running"
+
+        write_manifest(self.run_dir, manifest)
+        self._manifest = manifest
+
+        return manifest
+
+    def _provenance(self) -> dict[str, Any]:
+        """Return the reproducibility stamp for the manifest (E-04).
+
+        ``commit`` comes from ``LENS_COMMIT`` when the launcher knows it and is
+        ``None`` otherwise — never ``0``: a provenance field that looks like a
+        real short hash but is a placeholder is worse than an explicit null.
+        """
+        return {
+            "commit": os.environ.get("LENS_COMMIT") or None,
+            "image": config.SANDBOX_IMAGE,
+            "python": platform.python_version(),
+            "recorded": self.recorded,
+        }
 
     def _restore_state(self) -> None:
         """Rebuild this run's in-memory state from the log, for ``resume``.
@@ -220,8 +379,41 @@ class Runtime:
           4. Append one ``note`` event (``action="run.resume"``) with
              ``extra={"from_seq": ..., "namespace_complete": ...}``. Never rewrite
              the existing history.
+
+        Steps 2's context files and 3's namespace block are executed by
+        :meth:`_seed_workspace`, which runs **after** the sandbox starts; this
+        method is host-only on purpose (it must be callable before a container
+        exists).
         """
-        raise NotImplementedError("M8.5 scaffold: implement Runtime._restore_state")
+        rebuilt = self.trajectory.rebuild()
+
+        self._messages = rebuilt.messages
+        self._step_idx = rebuilt.last_seq
+        self._from_seq = rebuilt.last_seq
+        self._emits = dict(rebuilt.emits)
+        self._replayed = dict(rebuilt.tool_results)
+
+        used = (rebuilt.budget or {}).get("used") or {}
+
+        for name in (
+            "iterations",
+            "tokens_in",
+            "tokens_out",
+            "cost_usd",
+            "exec_seconds",
+            "backtracks",
+        ):
+            if name in used:
+                setattr(self.budget, name, used[name])
+
+        # ``query.json`` is an input, not a derivation: re-segmenting would spend a
+        # call and could produce different buckets, silently changing retrieval the
+        # run is already built on. A missing file is noted, never re-derived here.
+        if not (self.workspace / "query.json").is_file():
+            self._note(
+                "query.json missing on resume; continuing without buckets "
+                "(re-segmenting would change the retrieval this run was built on)"
+            )
 
     def _save_checkpoint(self) -> None:
         """Persist the small resume cache after a turn (``resume.json``).
@@ -232,7 +424,34 @@ class Runtime:
         is a **cache of the log**, so a failure here must degrade to a rebuild,
         not abort the run.
         """
-        raise NotImplementedError("M8.5 scaffold: implement Runtime._save_checkpoint")
+        workspace_hashes: dict[str, str] = {}
+
+        for path in sorted(self.workspace.rglob("*")):
+            if path.is_file():
+                try:
+                    workspace_hashes[path.relative_to(self.workspace).as_posix()] = _sha256_text(
+                        path.read_text(encoding="utf-8", errors="replace")
+                    )
+                except OSError:
+                    continue
+
+        try:
+            write_resume_cache(
+                self.run_dir,
+                namespace=dict(self._emits),
+                workspace=workspace_hashes,
+                namespace_complete=self._namespace_complete,
+            )
+        except OSError:
+            # The cache is an optimization; the log is the source of truth.
+            return
+
+        update_manifest(
+            self.run_dir,
+            iterations=self.budget.iterations,
+            last_seq=self._step_idx,
+            totals=self.trajectory.totals(),
+        )
 
     def _replay_recorded(self, name: str, args: Mapping[str, Any]) -> dict[str, Any] | None:
         """Return a recorded tool result for ``(name, args_hash)``, or ``None``.
@@ -245,7 +464,24 @@ class Runtime:
         ``"replayed": True``; a missing blob is ``None`` (fall through to a live
         call) rather than an error.
         """
-        raise NotImplementedError("M8.5 scaffold: implement Runtime._replay_recorded")
+        if not self.replay:
+            return None
+
+        if self._replayed is None:
+            self._replayed = dict(self.trajectory.rebuild().tool_results)
+
+        ref = self._replayed.get(f"{name}:{args_hash(args)}")
+
+        if ref is None:
+            return None
+
+        try:
+            result = json.loads(self.trajectory.load_blob(ref))
+        except (OSError, KeyError, ValueError):
+            # A dangling ref is not a failure: fall through to a live call.
+            return None
+
+        return {"ok": True, "result": result, "result_ref": ref, "replayed": True}
 
     def _register_runtime_tools(self) -> None:
         """Register the host-runtime operations the RLM is allowed to call.
@@ -267,7 +503,51 @@ class Runtime:
 
         Without these the ledger stays empty and ``tasks.json`` is decorative.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._register_runtime_tools")
+
+        def ledger_create(requirement: str, parent_id: str | None = None) -> dict[str, Any]:
+            """Create one ledger task for a requirement; returns its id."""
+            task = self.ledger.create(requirement, parent_id=parent_id)
+            return {"task_id": task.task_id}
+
+        def ledger_update(task_id: str, status: str) -> dict[str, Any]:
+            """Set a task's status (pending / in_progress / done / failed)."""
+            if status not in VALID_STATUSES:
+                raise ValueError(
+                    f"invalid status {status!r}; expected one of {sorted(VALID_STATUSES)}"
+                )
+            return self.ledger.update(task_id, status=status).to_dict()
+
+        def ledger_add_evidence(task_id: str, refs: list[str]) -> dict[str, Any]:
+            """Attach evidence refs (chunk_uuid or sha256 refs) to a task."""
+            return self.ledger.add_evidence(task_id, list(refs)).to_dict()
+
+        def backtrack(stage: str, reason: str) -> dict[str, Any]:
+            """Record one backtrack for a stage; refused past MAX_BACKTRACKS."""
+            if self.budget.backtracks >= config.MAX_BACKTRACKS:
+                raise RuntimeError(
+                    f"backtrack budget exhausted ({config.MAX_BACKTRACKS}); "
+                    "answer with what you have and emit FINAL_ANSWER:"
+                )
+
+            self.budget.record_backtrack()
+            # The stage's task, when the model made one, records why it went back.
+            for task in self.ledger.list():
+                if stage in task.requirement and task.status != "done":
+                    self.ledger.update(task.task_id, status="failed", attempts=task.attempts + 1)
+                    self.ledger.add_evidence(task.task_id, [])
+                    break
+
+            self._note(f"backtrack on {stage}: {reason}")
+            return {"backtracks_left": config.MAX_BACKTRACKS - self.budget.backtracks}
+
+        for name, func in (
+            ("ledger_create", ledger_create),
+            ("ledger_update", ledger_update),
+            ("ledger_add_evidence", ledger_add_evidence),
+            ("backtrack", backtrack),
+        ):
+            if name not in self.registry.names():
+                self.registry.register(name, func)
 
     def _segment_query(self) -> dict[str, list[str]]:
         """Segment the query with M6 and write ``<workspace>/query.json``.
@@ -277,7 +557,15 @@ class Runtime:
         format, and the workspace copy **is** the artifact (it sits under
         ``<run_dir>/work``). Do not write a second copy into ``run_dir``.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._segment_query")
+        trace_ctx = TraceCtx(
+            trace_id=self._trace_id, step_idx=self._step_idx, actor="root"
+        )
+        buckets = segment_query(self.client, self.query, trace_ctx=trace_ctx)
+
+        write_query_json(buckets, self.workspace / "query.json")
+        self._query_buckets = buckets
+
+        return buckets
 
     def _seed_workspace(self) -> None:
         """Write context files and seed the sandbox namespace.
@@ -288,8 +576,56 @@ class Runtime:
 
         Then run one block that defines at least ``query``, ``RUN_ID`` and
         ``WORKSPACE`` so later code does not re-read ``query.json`` on every turn.
+
+        On resume the same block also restores the emitted namespace, and the
+        ``run.resume`` note is appended here (after the restore) so it can carry
+        the real ``namespace_complete``.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._seed_workspace")
+        write_context_files(
+            self.workspace,
+            tool_manifest=self.registry.manifest(),
+            budget_snapshot=self.budget.snapshot(),
+            ontology_summary=self._ontology_summary,
+        )
+
+        lines = [
+            "import json",
+            f"query = {self.query!r}",
+            f"RUN_ID = {self.run_id!r}",
+            f"WORKSPACE = {config.SANDBOX_WORKSPACE_PATH!r}",
+        ]
+        missing: list[str] = []
+
+        if self.resume:
+            emit_dir = config.SANDBOX_WORKSPACE_PATH.rstrip("/") + "/emits"
+
+            for label, _ref in sorted(self._emits.items()):
+                if (self.workspace / "emits" / f"{label}.json").is_file():
+                    lines.append(f"{label} = json.load(open({emit_dir}/{label}.json))")
+                else:
+                    missing.append(label)
+
+            lines.append(f"print('namespace restored; missing: {missing}')")
+
+        # Not logged as an exec event: this is setup, not a turn. A logged event
+        # would inject a user message into the folded context before any assistant
+        # turn, which the resume fold reads as a turn that never happened.
+        result = self.sandbox.exec("\n".join(lines))
+
+        if not result.ok:
+            raise RuntimeError(f"seeding the sandbox failed: {result.error}")
+
+        self._namespace_complete = not missing
+
+        if self.resume:
+            self.trajectory.log_event(
+                trace_ctx=TraceCtx(
+                    trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
+                ),
+                call_type="note",
+                action="run.resume",
+                extra={"from_seq": self._from_seq, "namespace_complete": self._namespace_complete},
+            )
 
     def _build_context(self) -> list[dict[str, Any]]:
         """Assemble the root message list, compacting when over the threshold.
@@ -305,7 +641,20 @@ class Runtime:
         With no warning, the prompt stays byte-identical so the static prefix
         remains cacheable.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._build_context")
+        system_prompt = build_system_prompt(
+            self.registry.manifest(), self._query_buckets, self.budget.snapshot()
+        )
+        messages = build_messages(system_prompt=system_prompt, memory=self._messages)
+        messages = compact_messages(messages)
+
+        # Appended as the **last** message, never into the system prompt: editing
+        # the system message would change the cached prefix on every warning.
+        warning = budget_warning(self.budget.snapshot())
+
+        if warning:
+            messages = [*messages, {"role": "user", "content": warning}]
+
+        return messages
 
     def _run_loop(self) -> tuple[str, bool, str | None]:
         """Return ``(answer, partial, stop_reason)``.
@@ -328,7 +677,150 @@ class Runtime:
         return the answer as ``partial`` with ``stop_reason="iterations"`` — a
         labelled partial answer, never a silently accepted fabrication.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._run_loop")
+        answer = ""
+
+        while self.budget.can_continue():
+            trace_ctx = TraceCtx(
+                trace_id=self._trace_id, step_idx=self._step_idx, actor="root"
+            )
+            result = self.client.chat(
+                "root",
+                self._build_context(),
+                trace_ctx=trace_ctx,
+                max_tokens=config.ROOT_MAX_OUTPUT_TOKENS,
+            )
+            self.budget.record_chat(result)
+            self.budget.record_iteration()
+
+            completion = result.text or ""
+            self._messages.append({"role": "assistant", "content": completion})
+
+            code = extract_python_block(completion)
+
+            if code is not None:
+                observation = self._execute_block(code)
+                self._messages.append({"role": "user", "content": observation})
+                self._after_turn()
+                continue
+
+            final = extract_final_answer(completion)
+
+            if final is None:
+                self._messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "No ```python block and no FINAL_ANSWER: marker in that turn. "
+                            "Return executable code, or finish with FINAL_ANSWER: <answer>."
+                        ),
+                    }
+                )
+                self._after_turn()
+                continue
+
+            verdict = self._evaluate(
+                "final",
+                {"score": None, "summary": {"answer": final, "citations": []}},
+                trace_ctx=trace_ctx,
+            )
+
+            answer = final
+
+            if verdict is not None and verdict.verdict == "fail":
+                self._messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"The final gate rejected the answer: "
+                            f"{verdict.failing_criterion or 'unsupported claim'}. "
+                            "Revise it and emit FINAL_ANSWER: again."
+                        ),
+                    }
+                )
+                self._after_turn()
+                continue
+
+            self._after_turn()
+
+            return (answer, False, None)
+
+        # The cap bit: the answer is labelled, never silently accepted.
+        return (answer, True, self.budget.stop_reason() or "iterations")
+
+    def _after_turn(self) -> None:
+        """Advance the step, log the budget snapshot, and persist the cache."""
+        self._step_idx += 1
+        self._log_budget()
+        self._save_checkpoint()
+
+    def _log_budget(self) -> None:
+        """Log one ``budget`` snapshot (the event M11 folds for the cap-binding rate)."""
+        self.trajectory.log_event(
+            trace_ctx=TraceCtx(
+                trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
+            ),
+            call_type="note",
+            action="budget.snapshot",
+            extra={"budget": self.budget.snapshot()},
+        )
+
+    def _execute_block(self, code: str) -> str:
+        """Run one block in the sandbox, log the ``exec`` event, return the digest.
+
+        The returned text is exactly what the model sees **and** what the fold
+        reads back from ``stdout_ref`` — the two must not diverge, or a resumed
+        run would remember a turn differently from the run that produced it.
+        """
+        trace_ctx = TraceCtx(
+            trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
+        )
+        result = self.sandbox.exec(code)
+
+        if result.duration_ms:
+            self.budget.record_exec(result.duration_ms / 1000)
+
+        chunks = [result.stdout or ""]
+
+        if result.stderr and not result.ok:
+            # The runner puts the traceback in stderr: the model needs it to fix
+            # the block, and the fold needs the same text.
+            chunks.append(result.stderr)
+
+        observation = truncate_observation("\n".join(part for part in chunks if part).strip())
+
+        self.trajectory.log_event(
+            trace_ctx=trace_ctx,
+            call_type="exec",
+            action="exec.block",
+            code_ref=self.trajectory.store_blob(code),
+            stdout_ref=self.trajectory.store_blob(observation),
+            error=result.error,
+            extra={"budget": self.budget.snapshot()},
+        )
+
+        return observation
+
+    def _evaluate(
+        self,
+        stage: str,
+        artifact: Mapping[str, Any],
+        *,
+        trace_ctx: TraceCtx,
+    ) -> Any:
+        """Call the stage gate, tolerating an evaluator that is still scaffolded.
+
+        ``tools/evaluate.py`` is not implemented yet; without this the first
+        gated tool (or the first ``FINAL_ANSWER``) would kill every run. A skipped
+        gate is **logged as a note**, so the log never implies a gate passed — that
+        silence is the exact failure mode the gate exists to prevent.
+        """
+        try:
+            return evaluate_stage(
+                stage, artifact, client=self.client, trace_ctx=trace_ctx
+            )
+        except NotImplementedError:
+            self._note(f"gate {stage}: skipped (evaluator not implemented)")
+            return None
 
     def _dispatch_tool(
         self,
@@ -359,7 +851,29 @@ class Runtime:
         ``build_kg``). Earlier tools of the same stage return ids only, so gating
         them would ask JEV whether a list of ``arxiv_id``s is "sufficient".
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._dispatch_tool")
+        recorded = self._replay_recorded(name, args)
+
+        if recorded is not None:
+            return recorded
+
+        result = self.registry.dispatch(
+            name, args, trace_ctx=trace_ctx, trajectory=self.trajectory
+        )
+        envelope = result.to_dict()
+
+        stage = GATED_STAGES.get(name)
+
+        if stage is not None and stage not in self._gated_stages and envelope.get("ok"):
+            self._gated_stages.add(stage)  # one gate per stage per run
+            verdict = self._evaluate(
+                stage, _bounded_artifact(result.result), trace_ctx=trace_ctx
+            )
+
+            if verdict is not None:
+                envelope["gate"] = verdict.to_dict()
+                self._gate_verdicts[stage] = envelope["gate"]
+
+        return envelope
 
     def _sub_call(self, prompt: str, context: str | None = None) -> str:
         """Depth-1 plain GPT-5-mini call. No tools, no REPL, no recursion.
@@ -367,7 +881,20 @@ class Runtime:
         Record it in the budget (:meth:`Budget.record_chat`) — sub-calls are
         cheap but they are not free, and H₃ counts them.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._sub_call")
+        messages: list[dict[str, str]] = []
+
+        if context:
+            messages.append({"role": "system", "content": context})
+
+        messages.append({"role": "user", "content": prompt})
+
+        trace_ctx = TraceCtx(
+            trace_id=self._trace_id, step_idx=self._step_idx, actor="sub"
+        )
+        result = self.client.chat("sub", messages, trace_ctx=trace_ctx)
+        self.budget.record_chat(result)
+
+        return result.text
 
     def _emit(self, value: Any, label: str | None = None) -> dict[str, Any]:
         """Offload a value to ``<workspace>/emits/`` and return its ref + paths.
@@ -388,12 +915,49 @@ class Runtime:
         event with ``result_ref`` and ``extra={"var": label}`` — that event is how
         :meth:`Trajectory.rebuild` recovers the namespace map. An emit without a
         label is still stored, but it cannot be restored by name.
+
+        The file and the blob are the **same bytes** (``json.dumps`` of the value),
+        so the restore block's ``json.load`` reproduces the variable exactly.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._emit")
+        text = json.dumps(value, ensure_ascii=False, default=str)
+        ref = self.trajectory.store_blob(text)
+        name = label or f"emit-{ref.split(':', 1)[1][:12]}"
+
+        emits_dir = self.workspace / "emits"
+        emits_dir.mkdir(parents=True, exist_ok=True)
+        host_path = emits_dir / f"{name}.json"
+        host_path.write_text(text, encoding="utf-8")
+
+        self.trajectory.log_event(
+            trace_ctx=TraceCtx(
+                trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
+            ),
+            call_type="emit",
+            action="emit.value",
+            result_ref=ref,
+            extra={"var": label} if label else None,
+        )
+
+        if label:
+            self._emits[label] = ref
+
+        return {
+            "ref": ref,
+            "path": f"{config.SANDBOX_WORKSPACE_PATH.rstrip('/')}/emits/{name}.json",
+            "host_path": str(host_path),
+            "bytes": len(text.encode("utf-8")),
+        }
 
     def _note(self, text: str) -> None:
         """Append one free-form note event to the trajectory (``call_type="note"``)."""
-        raise NotImplementedError("M8 scaffold: implement Runtime._note")
+        self.trajectory.log_event(
+            trace_ctx=TraceCtx(
+                trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
+            ),
+            call_type="note",
+            action="note",
+            extra={"text": text},
+        )
 
     def _finalize(self, answer: str, *, partial: bool, stop_reason: str | None) -> RunResult:
         """Write ``answer.md``, close the manifest, stop the sandbox, build the result.
@@ -405,4 +969,74 @@ class Runtime:
         left ``running``. Stop the sandbox in a ``finally``-safe path so a crash
         mid-loop does not leave a container behind.
         """
-        raise NotImplementedError("M8 scaffold: implement Runtime._finalize")
+        answer_path = self.run_dir / "answer.md"
+        answer_path.write_text(answer.rstrip() + "\n", encoding="utf-8")
+
+        totals = self.trajectory.totals()
+
+        if stop_reason == "error":
+            status = "failed"
+        else:
+            status = "partial" if partial else "completed"
+
+        artifacts = {
+            "answer": "answer.md",
+            "trajectory": "trajectory.jsonl",
+            "tasks": "tasks.json",
+            "manifest": config.MANIFEST_FILENAME,
+            "resume": "resume.json",
+            "query": "work/query.json",
+        }
+
+        try:
+            update_manifest(
+                self.run_dir,
+                status=status,
+                totals=totals,
+                iterations=self.budget.iterations,
+                last_seq=self._step_idx,
+                artifacts=artifacts,
+            )
+        finally:
+            # Never leave a container behind, even when the manifest write failed.
+            try:
+                self.sandbox.stop()
+            except Exception:  # noqa: BLE001 - cleanup must not mask the outcome
+                pass
+
+        return RunResult(
+            answer=answer,
+            partial=partial,
+            stop_reason=stop_reason,
+            iterations=self.budget.iterations,
+            cost_usd=float(totals.get("cost_usd") or 0.0),
+            trajectory_path=self.trajectory.trajectory_path,
+            tasks_path=Path(getattr(self.ledger, "path", self.run_dir / "tasks.json")),
+            answer_path=answer_path,
+        )
+
+
+def _bounded_artifact(result: Any) -> dict[str, Any]:
+    """Return ``{"score": None, "summary": {...}}`` for a **stage-completing** tool.
+
+    The gate must never receive the raw payload: ``build_kg``'s node-link graph
+    would exceed JEV's 32 K state cap and the call would fail for a reason that
+    has nothing to do with the stage's quality. Counts and short scalars are
+    enough for a sufficiency judgement.
+    """
+    summary: dict[str, Any] = {}
+
+    if isinstance(result, Mapping):
+        for key, value in list(result.items())[:12]:
+            if isinstance(value, (list, tuple, set, Mapping)):
+                summary[key] = len(value)
+            elif isinstance(value, str):
+                summary[key] = value[:80]
+            elif isinstance(value, (int, float, bool)) or value is None:
+                summary[key] = value
+    else:
+        summary["type"] = type(result).__name__
+
+    # ``score`` stays None: no calibrated threshold exists yet, and a made-up score
+    # would make tier 1 decide on a number the thesis cannot defend (LOG-100).
+    return {"score": None, "summary": summary}
