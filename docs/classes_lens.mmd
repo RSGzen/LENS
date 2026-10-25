@@ -1,4 +1,28 @@
 classDiagram
+  class Budget {
+    backtracks : int
+    cost_usd : float
+    exec_seconds : float
+    iterations : int
+    limits
+    tokens_in : int
+    tokens_out : int
+    can_continue() bool
+    record_backtrack() None
+    record_chat(result: CallResult) None
+    record_exec(seconds: float) None
+    record_iteration() None
+    record_jev(result: JevResult) None
+    snapshot() dict
+    stop_reason() str | None
+  }
+  class BudgetLimits {
+    max_backtracks : int
+    max_cost_usd : float
+    max_exec_block_s : float
+    max_iterations : int
+    max_tokens : int
+  }
   class CallResult {
     cost_usd : float
     finish_reason : str | None
@@ -17,11 +41,76 @@ classDiagram
     section_type : str
     token_count : int
   }
+  class Citation {
+    arxiv_id : str | None
+    kind : str
+    resolved : bool
+    section_type : str | None
+    title : str | None
+    token : str
+    turn : int | None
+    to_dict() dict[str, Any]
+  }
+  class CitationReport {
+    answer_chars : int
+    citations : list[Citation]
+    counts : dict[str, int]
+    run_id : str
+    unresolved : list[str]
+    to_dict() dict[str, Any]
+  }
+  class DirectionVerifier {
+    budget : int
+    fingerprint : str
+    high : float
+    jev_call : Callable[[str, Mapping[str, Question]], JevResult]
+    low : float
+    max_state_chars : int
+    verify(triples: Sequence[Triple], chunk_texts: Mapping[str, str]) tuple[list[Triple], VerifyStats]
+  }
   class Embedder {
     dim : int
     model : Any
     model_id : str
     encode_documents(texts: Sequence[str], task_prefix: str, batch_size: int) np.ndarray
+  }
+  class ExecHandler {
+    protocol_version : str
+    server : Any
+    timeout : int
+    do_GET() None
+    do_POST() None
+    log_message(format: str) None
+  }
+  class ExecResult {
+    duration_ms : int | None
+    error : dict[str, Any] | None
+    ok : bool
+    result : Optional[Any]
+    stderr : str
+    stdout : str
+    truncated : bool
+    to_dict() dict[str, Any]
+  }
+  class Executor {
+    namespace : dict[str, Any]
+    stdout_max_chars : int
+    run(code: str) dict[str, Any]
+  }
+  class GlinerExtractor {
+    entity_labels
+    entity_types : tuple
+    fingerprint : str
+    max_tokens : int
+    ner_model : Any
+    ner_model_id : str
+    overlap : int
+    rel_model : Any
+    rel_model_id : str
+    relation_schema : dict
+    threshold : float
+    extract(text: str) list[dict[str, Any]]
+    map_entity_token_indices(token_spans: list[tuple[int, int]], ents_list: list[dict[str, Any]]) list[list[Any]]
   }
   class JevResult {
     answers : dict[str, dict[str, Any]]
@@ -30,6 +119,9 @@ classDiagram
     model : str
     provider : str
     tokens_in : int
+  }
+  class KGExtractor {
+    extract(text: str) list[dict[str, Any]]
   }
   class LensClient {
     api_key : NoneType
@@ -67,13 +159,179 @@ classDiagram
     instructions : str
     type : Literal
   }
+  class RLMError {
+    error : dict
+    status : NoneType
+  }
+  class RebuiltState {
+    budget : dict[str, Any]
+    emits : dict[str, str]
+    last_seq : int
+    messages : list[dict[str, Any]]
+    tool_results : dict[str, str]
+  }
+  class Reranker {
+    model : Any
+    model_id : str
+    score(query: str, texts: Sequence[str], batch_size: int) list[float]
+  }
+  class RunManifest {
+    artifacts : dict[str, str]
+    caps : dict[str, Any]
+    created_at : str
+    created_by : dict[str, Any]
+    extra : dict[str, Any]
+    iterations : int
+    last_seq : int
+    models : dict[str, str]
+    notes : str | None
+    parent_run_id : str | None
+    query : str
+    run_id : str
+    schema_version : int
+    status : Literal
+    totals : dict[str, Any]
+    updated_at : str
+    from_dict(payload: dict[str, Any]) 'RunManifest'
+    new(run_id: str, query: str) 'RunManifest'
+    to_dict() dict[str, Any]
+  }
+  class RunResult {
+    answer : str
+    answer_path : Path
+    cost_usd : float
+    iterations : int
+    partial : bool
+    stop_reason : str | None
+    tasks_path : Path
+    trajectory_path : Path
+  }
+  class Runtime {
+    budget
+    client
+    conn
+    embedder
+    extractor
+    ledger
+    parent_run_id : NoneType
+    query : str
+    recorded
+    registry
+    replay : bool
+    reranker
+    resume : bool
+    run_dir : Path
+    run_id : str
+    sandbox
+    trajectory
+    workspace : Path
+    handle_rpc(endpoint: str, payload: Mapping[str, Any]) dict[str, Any]
+    run() RunResult
+  }
+  class SandboxSession {
+    compose_file : Path
+    exec_timeout_s : float
+    host_rpc_port : int
+    host_rpc_url
+    image : str
+    port : int
+    relay_service : str
+    run_id : str
+    service : str
+    token
+    url : str
+    workspace : Path
+    exec(code: str) ExecResult
+    health() bool
+    start() None
+    stop() None
+    wait_until_healthy(timeout_s: float) bool
+  }
   class Section {
     paragraphs : tuple[str, ...]
     section_type : str
   }
+  class StageVerdict {
+    confidence : float | None
+    failing_criterion : str | None
+    tier : str | None
+    verdict : Literal
+    to_dict() dict[str, Any]
+  }
   class StreamLogger {
+    encoding : str
     flush() None
+    isatty() bool
+    writable() bool
     write(message: str) int
+  }
+  class Task {
+    attempts : int
+    evidence_refs : list[str]
+    parent_id : str | None
+    requirement : str
+    status : Literal
+    task_id : str
+    tokens : int
+    wall_clock_s : float
+    from_dict(payload: dict[str, Any]) 'Task'
+    to_dict() dict[str, Any]
+  }
+  class TaskLedger {
+    path : Path
+    tasks : dict[str, Task]
+    add_evidence(task_id: str, refs: list[str]) Task
+    create(requirement: str) Task
+    list() list[Task]
+    load() list[Task]
+    save() None
+    snapshot() list[dict[str, Any]]
+    update(task_id: str) Task
+  }
+  class ToolCallResult {
+    duration_ms : int | None
+    error : dict[str, Any] | None
+    ok : bool
+    result : Optional[Any]
+    result_ref : str | None
+    result_summary : str | None
+    to_dict() dict[str, Any]
+  }
+  class ToolRegistry {
+    dispatch(name: str, args: Mapping[str, Any]) ToolCallResult
+    get(name: str) ToolSpec
+    manifest() str
+    names() list[str]
+    parameters() dict[str, list[str]]
+    register(name: str, func: Callable[..., Any]) None
+    summarize_result(result: Any) str
+  }
+  class ToolServer {
+    host : str
+    port : int
+    runtime : Any
+    token
+    url : str
+    handle_request(method: str, path: str, payload: Mapping[str, Any] | None) tuple[int, dict[str, Any]]
+    start() None
+    stop() None
+  }
+  class ToolSpec {
+    description : str
+    func : Callable[..., Any]
+    name : str
+    signature : str
+  }
+  class ToolStep {
+    args : dict[str, Any] | None
+    args_hash : str | None
+    error : dict[str, Any] | None
+    gate : dict[str, Any] | None
+    latency_ms : int | None
+    name : str
+    replayed : bool
+    result_ref : str | None
+    result_summary : str | None
   }
   class TraceCtx {
     actor : Literal
@@ -86,7 +344,68 @@ classDiagram
     run_id : str
     runs_root : Path
     trajectory_path
+    load_blob(ref: str) str
     log_event() None
+    rebuild() 'RebuiltState'
     store_blob(text: str) str
+    totals() dict[str, Any]
   }
+  class Turn {
+    budget : dict[str, Any] | None
+    code : str | None
+    completion : str | None
+    cost_usd : float | None
+    emits : list[str]
+    error : dict[str, Any] | None
+    gate : dict[str, Any] | None
+    jev_cost_usd : float | None
+    jev_tokens_in : int | None
+    latency_ms : int | None
+    missing_refs : list[str]
+    model : str | None
+    observation : str | None
+    ok : bool | None
+    provider : str | None
+    stderr_full : str | None
+    stdout_full : str | None
+    tokens_in : int | None
+    tokens_out : int | None
+    tools : list[ToolStep]
+    turn : int
+  }
+  class VerifyStats {
+    ambiguous : int
+    budget : int
+    cost_usd : float
+    dropped : int
+    flipped : int
+    kept : int
+    tokens_in : int
+    verified : int
+    as_dict() dict[str, Any]
+  }
+  class _ExecTimeout {
+  }
+  class _Handler {
+    handle() None
+  }
+  class _RPCHandler {
+    protocol_version : str
+    timeout : int
+    do_DELETE() None
+    do_GET() None
+    do_PATCH() None
+    do_POST() None
+    do_PUT() None
+    log_message(format: str) None
+  }
+  class _Server {
+    allow_reuse_address : bool
+    daemon_threads : bool
+  }
+  Runtime --> Budget : budget
+  Budget --> BudgetLimits : limits
+  TaskLedger --> Task : tasks
+  Runtime --> TaskLedger : ledger
+  JevResult --o DirectionVerifier : jev_call
   Trajectory --o LensClient : trajectory

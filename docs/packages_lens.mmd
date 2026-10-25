@@ -1,6 +1,26 @@
 classDiagram
   class lens {
   }
+  class agent {
+  }
+  class budget {
+  }
+  class context {
+  }
+  class ledger {
+  }
+  class runstore {
+  }
+  class runtime {
+  }
+  class sandbox_session {
+  }
+  class segmentation {
+  }
+  class tool_registry {
+  }
+  class tool_server {
+  }
   class chunking {
   }
   class clients {
@@ -23,14 +43,90 @@ classDiagram
   }
   class embeddings {
   }
+  class experiments {
+  }
+  class arm {
+  }
+  class campaign {
+  }
+  class kg_extract {
+  }
+  class kg_gold {
+  }
+  class kg_postprocess {
+  }
+  class kg_query {
+  }
+  class kg_verify {
+  }
   class models {
   }
   class observability {
+  }
+  class citations {
+  }
+  class replay {
   }
   class run_logging {
   }
   class trajectory {
   }
+  class reranking {
+  }
+  class run {
+  }
+  class sandbox {
+  }
+  class exec_client {
+  }
+  class relay {
+  }
+  class rlm_api {
+  }
+  class runner {
+  }
+  class tools {
+  }
+  class evaluate {
+  }
+  class kg {
+  }
+  class retrieval {
+  }
+  class sql {
+  }
+  agent --> segmentation
+  budget --> lens
+  budget --> config
+  budget --> models
+  context --> lens
+  context --> config
+  runstore --> lens
+  runstore --> config
+  runtime --> lens
+  runtime --> budget
+  runtime --> context
+  runtime --> ledger
+  runtime --> runstore
+  runtime --> sandbox_session
+  runtime --> segmentation
+  runtime --> tool_registry
+  runtime --> clients
+  runtime --> config
+  runtime --> arm
+  runtime --> citations
+  runtime --> trajectory
+  runtime --> evaluate
+  runtime --> retrieval
+  sandbox_session --> lens
+  sandbox_session --> config
+  segmentation --> clients
+  segmentation --> trajectory
+  tool_registry --> lens
+  tool_registry --> config
+  tool_registry --> trajectory
+  tool_server --> lens
+  tool_server --> config
   clients --> lens
   clients --> config
   clients --> models
@@ -55,7 +151,66 @@ classDiagram
   schema --> config
   embeddings --> lens
   embeddings --> config
+  arm --> lens
+  arm --> config
+  kg_extract --> lens
+  kg_extract --> config
+  kg_gold --> kg_postprocess
+  kg_gold --> kg
+  kg_postprocess --> lens
+  kg_postprocess --> config
+  kg_postprocess --> kg_extract
+  kg_verify --> lens
+  kg_verify --> config
+  kg_verify --> models
   observability --> trajectory
+  citations --> lens
+  citations --> config
+  citations --> replay
+  citations --> trajectory
+  replay --> lens
+  replay --> context
+  replay --> config
+  replay --> trajectory
   run_logging --> lens
   run_logging --> config
   trajectory --> config
+  reranking --> lens
+  reranking --> config
+  run --> lens
+  run --> agent
+  run --> runstore
+  run --> runtime
+  run --> sandbox_session
+  run --> tool_registry
+  run --> tool_server
+  run --> clients
+  run --> config
+  run --> connect
+  run --> embeddings
+  run --> kg_extract
+  run --> trajectory
+  run --> reranking
+  run --> kg
+  run --> retrieval
+  run --> sql
+  runner --> rlm_api
+  tools --> retrieval
+  evaluate --> lens
+  evaluate --> clients
+  evaluate --> config
+  evaluate --> models
+  evaluate --> trajectory
+  kg --> lens
+  kg --> config
+  kg --> kg_extract
+  kg --> kg_postprocess
+  kg --> kg_query
+  kg --> kg_verify
+  kg --> retrieval
+  retrieval --> lens
+  retrieval --> config
+  retrieval --> embeddings
+  retrieval --> reranking
+  sql --> lens
+  sql --> config
