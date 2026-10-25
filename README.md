@@ -3,21 +3,20 @@
 Literature Evidence & Narrative Synthesis — an agentic systematic-literature-review
 harness over a GROBID-structured arXiv cs.AI corpus.
 
-> **Status (20 Oct 2026):** M0-M7 logic built; **M8 harness scaffolded and
-> reworked** (LOG-91/LOG-92), **M8.5 session persistence** and **M8.5+ demo
-> playback + portable bundle** scaffolded (LOG-93/LOG-95). All harness logic
-> bodies are student-owned (scaffold-and-fill, LOG-33). Suite: **333 tests — 253
-> pass, 80 contract tests fail with `NotImplementedError`** until filled.
-> Fill progress: **`budget` + `ledger` + `trajectory` + `context` done**
-> (4/15, LOG-96/97/98/99). Gate wiring corrected (LOG-100).
+> **Status (26 Oct 2026):** M0–M9 built (M9 = harness E2E, 5-query smoke, Tier-1
+> anchor, portable bundles). **M10 UI scaffolded** (LOG-121): `ui/data.py` is
+> filled and tested offline; `ui/app.py` is in fill units **U1–U9** (student-owned,
+> scaffold-and-fill LOG-33). Suite: **475 tests — 474 pass, 1 skip**.
 
 > **M8 invariants that are easy to break:** the sandbox workspace is
 > `<run_dir>/work` (the run artifacts — `trajectory.jsonl`, `tasks.json`,
 > `manifest.json`, `resume.json`, `answer.md` — live one level up and are *never*
 > mounted); the caps are **derived and ordered** (8 iterations · 40k context ·
-> 300k tokens · $0.50, with an 80 % wrap-up nudge); a reported `$/query` comes
-> from `Trajectory.totals()`, not from `Budget`; `emit()` returns a **container**
-> path; the KG traversal helpers ship into the image as `kg_query`.
+> 300k tokens · **$1.00**, raised from $0.50 on 26 Oct 2026 — LOG-120, and M9
+> recordings still carry $0.50 in their manifest, with an 80 % wrap-up nudge); a
+> reported `$/query` comes from `Trajectory.totals()`, not from `Budget`;
+> `emit()` returns a **container** path; the KG traversal helpers ship into the
+> image as `kg_query`.
 >
 > **M8.5 invariants:** **the log is the session** — root messages, budget
 > counters and the emit map are folded from `trajectory.jsonl`
@@ -45,6 +44,7 @@ src/lens/
   tools/          retrieval · kg · evaluate · sql
   agent/          segmentation (M6) · runtime/context/budget/ledger/tool_* (M8)
   sandbox/        runner · rlm_api · Dockerfile · requirements.txt (M8)
+  ui/             data (read-only) · app (Streamlit) (M10)
   run.py          CLI entry (M8/M9)
 tests/            no-key unit/contract tests
 tests/DESTRUCTIVE_db_tests/   WIPES papers/chunks — run only on purpose
@@ -110,3 +110,26 @@ python -m lens.run "<query>"       # one live query (M8/M9 verify)
 
 Full host/sandbox contracts: `docs/ARCHITECTURE.md` and
 `G:\My Drive\SyncOpenCode\AURA\Thesis Drafts\Tech Stack (Draft).md` §4a/§4m.
+
+## UI (M10)
+
+Two pages over the same artifacts (`Tech Stack (Draft).md` §4p):
+
+- **Runs** — read-only recorded playback: run list → turn timeline → meters →
+  answer + resolved citations. Needs **no GPU, no DB, no key**: it is mode A
+  (scrubbed playback of a recording), and the page says so.
+- **Run** — the live path: shells out to `python -m lens.run` and streams stdout.
+  Needs the workstation stack (GPU, DB, Docker, key).
+
+```powershell
+uv sync --extra ui
+streamlit run src/lens/ui/app.py
+
+# demo laptop: point at an imported bundle instead
+$env:LENS_RUNS_ROOT='D:\lens-data\runs-import'; streamlit run src/lens/ui/app.py
+```
+
+`src/lens/ui/data.py` is the read-only data layer (no Streamlit import, tested by
+`tests.test_ui_data`); `src/lens/ui/app.py` is the page, filled in units U1–U9 in
+the roadmap's order. The UI adds **no pipeline logic** (T-06): every number comes
+from `manifest.json`, `trajectory.jsonl`, `answer.md` and the blobs.
