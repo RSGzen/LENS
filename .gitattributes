@@ -1,0 +1,13 @@
+# Every text file is LF in the repo and in the working tree.
+#
+# Why: this project runs on Windows, and without a rule git warns on every commit
+# ("LF will be replaced by CRLF") and silently rewrites files between checkouts.
+# That noise hid a real defect once - a blob store that hashed LF but wrote CRLF,
+# so content addresses did not match their files (LOG-116). One rule, one encoding.
+* text=auto eol=lf
+
+# Binary assets must not be normalised.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.tei.xml binary

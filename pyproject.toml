@@ -1,7 +1,7 @@
 [project]
 name = "lens"
 version = "0.1.0"
-description = "Add your description here"
+description = "LENS - Literature Evidence & Narrative Synthesis: an agentic systematic-literature-review harness over a GROBID-structured arXiv cs.AI corpus."
 readme = "README.md"
 authors = [
     { name = "Ge Rui Sen", email = "greyson.rg@gmail.com" }
@@ -44,3 +44,30 @@ torch = { index = "pytorch-cu128" }
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
+
+# ---------------------------------------------------------------- code hygiene
+# Two buckets, deliberately (Roadmap §12): this config runs now, the *reformat*
+# waits until the commit before the M11 freeze so the frozen hash is the clean one.
+#
+# A (now): pyflakes only. E/W/I are declared in `select` but the rules that fire on
+# existing code are ignored until B, so "lint is clean" always means something.
+# B (freeze): `ruff format` + drop the ignores + `--fix --select I` (import order),
+# committed in batches of <= 6 files to keep review tractable.
+[dependency-groups]
+dev = [
+    "ruff>=0.14",
+]
+
+[tool.ruff]
+line-length = 100          # the code is already mostly <= 100 (67 lines exceed it; 351 exceed 88)
+target-version = "py312"
+extend-exclude = ["tests/DESTRUCTIVE_db_tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+# Deferred to bucket B (see above). E501 is 67 lines, I001 is nearly every file.
+ignore = ["E501", "W291", "W293", "I001"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["lens"]
+
