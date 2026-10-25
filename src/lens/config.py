@@ -321,7 +321,18 @@ MAX_RETRIES = 3
 MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "8"))
 MAX_EXEC_BLOCK_S = float(os.environ.get("LENS_MAX_EXEC_BLOCK_S", "120"))
 MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
-MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "0.50"))
+# Per-query COST cap. Raised 0.50 -> 1.00 on 26 Oct 2026 (LOG-120) because the
+# measured Tier-1 anchor spent **$0.436 in 8 iterations = 87 % of $0.50**: at that
+# ceiling the cap was one turn from becoming the *reason* a `gpt-5` run ended, so a
+# model-quality result would have been reported as an artefact of a number we
+# picked. $1.00 is the maximum that means anything at the current token cap
+# (300k tokens x ~$3.1/M blended ~= $0.93), so the binding cap is now
+# **iterations** or **tokens** - both of which are defensible results. Do not raise
+# tokens or iterations to "use" the extra headroom: each turn grows the context and
+# that is what costs money. M9 artifacts were recorded at $0.50; state that
+# difference when reporting (the cap changes the stop-reason distribution, not the
+# pipeline).
+MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "1.00"))
 
 # Context assembly. Compaction triggers when the estimated root context exceeds
 # ``CONTEXT_COMPACT_RATIO * CONTEXT_TOKEN_LIMIT`` (= 30,000 tokens by default).
