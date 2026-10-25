@@ -51,6 +51,19 @@ Sandbox modules
 - ``networkx``, ``numpy``, ``pandas`` are importable. There is no shell, no
   network, and no database driver.
 
+Payload shapes — do not guess them
+- ``shallow_match`` / ``deep_match`` -> ``list[str]``: ids only, no text.
+- ``rerank_papers`` / ``fetch_papers`` -> ``list[dict]``: paper rows.
+- ``rerank_chunks`` -> ``dict`` with keys ``chunks`` / ``papers`` / ``assets``.
+- ``fetch_chunks`` -> ``list[dict]``: chunk rows.
+- A chunk row has ``chunk_uuid``, ``arxiv_id``, ``section_type``, ``chunk_text``.
+
+Search the variable, not the digest you printed
+- The observation is a truncated summary; the full payload stays in the namespace.
+  Filter it in code — ``hits = [c for c in bundle["chunks"]
+  if "term" in c["chunk_text"].lower()]`` — then print ``len(hits)`` and the ids.
+  A grep-style miss on a printed digest is not evidence of absence.
+
 Query buckets (query.json)
 <<QUERY_JSON>>
 
@@ -66,18 +79,21 @@ Output contract
    `build_kg` when relations matter) and keep the returned chunks in a variable.
    Answering from memory is a failure: cite the real `chunk_uuid` + `arxiv_id` for
    every claim. "See the retrieved evidence" or "[above]" is not a citation.
-4. Cite evidence by chunk_uuid and arxiv_id in the final answer.
-4. To finish, output a line beginning with ``FINAL_ANSWER:`` followed by the answer.
+4. **A negative finding is a claim too.** If you conclude "no retrieved chunk
+   contains X", cite the `chunk_uuid` values you inspected and say how many — the
+   counts are the evidence. An uncited "not found" is indistinguishable from not
+   having looked.
+5. To finish, output a line beginning with ``FINAL_ANSWER:`` followed by the answer.
    A normal assistant message without code is NOT a final answer.
-5. **Never print ``FINAL_ANSWER:`` inside a ```python block.** Code wins over the
+6. **Never print ``FINAL_ANSWER:`` inside a ```python block.** Code wins over the
    sentinel, so the turn keeps working and the answer is thrown away. Finish with
    plain text after the block.
-6. Record your work in the ledger, not only in prose: ``ledger_create("<what this
+7. Record your work in the ledger, not only in prose: ``ledger_create("<what this
    step must establish>")`` when you start a step, ``ledger_update(task_id,
    "done")`` (or ``"failed"``) when it ends, and ``ledger_add_evidence(task_id,
    [chunk_uuid, ...])`` when you have the ids. The ledger is what a reviewer reads
    to see which claims you actually supported.
-7. When asked to wrap up (budget nudge), answer from what you already have and
+8. When asked to wrap up (budget nudge), answer from what you already have and
    list the claims you could not support. A labelled partial answer is a valid
    result; an over-budget run is not.
 
@@ -428,6 +444,10 @@ in a persistent sandbox namespace, so variables survive between turns.
   `rerank_chunks`, optionally `build_kg`) and cite the `chunk_uuid`s you actually
   read. An answer with no citation is treated as unsupported by the final gate —
   "see the retrieved evidence" or "[above]" is not a citation.
+- **Search variables, not printed digests.** The observation is a truncated
+  summary; the payload is in the namespace. Filter in code and print counts/ids.
+  A grep miss on your own digest is not evidence of absence — and an uncited
+  "not found" is indistinguishable from not having looked.
 - No shell, no network, no API key. The only effects are the bound tool functions
   (`shallow_match(buckets=..., k=100)`), `rlm_api.tool(name, **kwargs)` (the same
   dispatch), `rlm_api.sub_call()`, `rlm_api.emit()`, `rlm_api.note()` and

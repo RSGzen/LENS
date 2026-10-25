@@ -759,6 +759,7 @@ class Runtime:
                 self._after_turn()
                 continue
 
+            citations = cited_ids(final)
             verdict = self._evaluate(
                 "final",
                 {
@@ -768,7 +769,12 @@ class Runtime:
                         # Real ids: the gate was previously handed a hard-coded
                         # empty list, so "is every claim supported by the cited
                         # chunks" was asked about citations it never saw (LOG-115).
-                        "citations": cited_ids(final),
+                        "citations": citations,
+                        # And the *text* of those chunks: an id alone cannot be
+                        # verified, so every gate call came back "unsupported" and a
+                        # correct answer was rejected until the iteration cap
+                        # (LOG-117).
+                        "evidence": self._citation_evidence(citations),
                     },
                 },
                 trace_ctx=trace_ctx,
@@ -945,6 +951,33 @@ class Runtime:
         self.budget.record_chat(result)
 
         return result.text
+
+    def _citation_evidence(self, citations: list[str]) -> dict[str, str]:
+        """Return ``chunk_uuid -> chunk_text`` for the cited ids (bounded).
+
+        The final gate is asked whether the citations support the claims; without
+        the text it can only guess, and it guessed "unsupported" on a correct answer
+        until the iteration cap (LOG-117). Host-side and read-only: no model call,
+        no tool event — the root context stays untouched (this text never becomes an
+        observation).
+        """
+        ids = [citation for citation in citations if "-" in citation][:5]
+
+        if not ids or self.conn is None:
+            return {}
+
+        from lens.tools.retrieval import fetch_chunks
+
+        try:
+            rows = fetch_chunks(self.conn, ids)
+        except Exception:  # noqa: BLE001 - a gate with no evidence still runs
+            return {}
+
+        return {
+            str(row.get("chunk_uuid")): str(row.get("chunk_text") or "")[:600]
+            for row in rows
+            if isinstance(row, dict) and row.get("chunk_uuid")
+        }
 
     def _emit(self, value: Any, label: str | None = None) -> dict[str, Any]:
         """Offload a value to ``<workspace>/emits/`` and return its ref + paths.

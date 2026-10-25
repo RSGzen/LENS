@@ -140,22 +140,36 @@ def build_sufficiency_question(stage: str, artifact: Mapping[str, Any]) -> Quest
     )
 
 
-def build_groundedness_question(answer: str, citations: Sequence[str]) -> Question:
+def build_groundedness_question(
+    answer: str,
+    citations: Sequence[str],
+    evidence: Sequence[str] | Mapping[str, str] = (),
+) -> Question:
     """Build the JEV ``noul`` question used by the **final** gate.
 
     "Is every claim in the answer supported by the cited chunks?" — ``citations``
-    are the ``chunk_uuid`` values the answer relies on. This is the guardrail row
-    of §3.x.3 ("final guardrail / hallucination check"), so a ``false`` verdict
-    means "do not accept this answer yet", not "the run failed".
+    are the ``chunk_uuid`` values the answer relies on, and ``evidence`` carries a
+    **bounded** excerpt of the cited chunk text (``chunk_uuid -> text``, or bare
+    excerpts). This is the guardrail row of §3.x.3 ("final guardrail /
+    hallucination check"), so a ``false`` verdict means "do not accept this answer
+    yet", not "the run failed".
 
-    Same ``criteria == {"true", "false"}`` contract; keep the state to the answer
-    plus the citation ids (the chunk text is already in the sandbox).
+    **The excerpt is not optional in practice.** Without it the gate sees ids and
+    nothing else, so it can only judge plausibility — measured on the first `gpt-5`
+    run: nine gate calls returned ``noul`` 0.03-0.35 and rejected a *cited, correct*
+    answer until the iteration cap, because "is claim X supported by chunk
+    ``33384c38``" is unanswerable from the id alone. The polarity was verified
+    separately (true statement 0.92, false 0.03, grounded 0.89, ungrounded 0.01),
+    so the rejections were substantive, not a parsing artefact. Keep the total
+    bounded (``EVIDENCE_MAX_CHARS``) — JEV is input-priced and capped at 32 K.
     """
     citation_list = ", ".join(str(citation) for citation in citations) or "(none cited)"
     excerpt = (answer or "").strip()
 
     if len(excerpt) > 2000:
         excerpt = excerpt[:2000] + " …"
+
+    evidence_text = _format_evidence(evidence)
 
     return Question(
         type="noul",
@@ -166,13 +180,46 @@ def build_groundedness_question(answer: str, citations: Sequence[str]) -> Questi
             "not contain it - a number, dataset or comparison with no source counts as "
             "unsupported. An answer that cites nothing at all - placeholders such as "
             "'[see above]' or 'the retrieved evidence' are not citations - is "
-            f"unsupported. Answer under review (truncated): {excerpt}"
+            "unsupported. A claim that something is **absent** from the evidence is "
+            "supported when the excerpt shows the inspection (a count of what was "
+            "searched) rather than a hunch. "
+            f"Cited evidence (truncated): {evidence_text} "
+            f"Answer under review (truncated): {excerpt}"
         ),
         criteria={
             "true": "every factual claim is supported by the cited chunks",
             "false": "at least one claim is uncited, contradicted, or unsupported",
         },
     )
+
+
+#: Total characters of cited chunk text handed to the final gate. Enough for a few
+#: chunks, small enough to stay incidental against JEV's input price and 32 K cap.
+EVIDENCE_MAX_CHARS = 2000
+
+
+def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:
+    """Render cited excerpts as ``id: text`` lines within ``EVIDENCE_MAX_CHARS``."""
+    items = evidence.items() if isinstance(evidence, Mapping) else enumerate(evidence)
+    parts: list[str] = []
+    used = 0
+
+    for key, text in items:
+        body = " ".join(str(text or "").split())
+
+        if not body:
+            continue
+
+        line = f"[{key}] {body}"
+        remaining = EVIDENCE_MAX_CHARS - used
+
+        if remaining <= 0:
+            break
+
+        parts.append(line[:remaining])
+        used += len(parts[-1])
+
+    return " | ".join(parts) or "(no chunk text available - judge from the citations)"
 
 
 def _read_answer(answer: Mapping[str, Any]) -> tuple[Verdict, float | None, str | None]:
@@ -309,7 +356,9 @@ def evaluate_stage(
 
     if stage == "final":
         question = build_groundedness_question(
-            str(summary.get("answer") or ""), list(summary.get("citations") or [])
+            str(summary.get("answer") or ""),
+            list(summary.get("citations") or []),
+            summary.get("evidence") or (),
         )
     else:
         question = build_sufficiency_question(stage, artifact)

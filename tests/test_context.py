@@ -75,6 +75,18 @@ class ToolBindingTestCase(unittest.TestCase):
         self.assertIn("bound as a plain function", prompt)
         self.assertIn("rlm_api.tool(", prompt)
 
+    def test_prompt_states_payload_shapes_and_variable_search(self) -> None:
+        # The S6 smoke: gpt-5 lost turns to `TypeError: string indices must be
+        # integers` (guessing return shapes) and then concluded "no chunk contains
+        # OOLONG" while 88 retrieved chunks did — it had searched its printed digest
+        # instead of the namespace variable (LOG-117).
+        prompt = context.build_system_prompt("1. shallow_match(buckets)", {}, {})
+
+        self.assertIn("Payload shapes", prompt)
+        self.assertIn("list[str]", prompt)
+        self.assertIn("Search the variable, not the digest", prompt)
+        self.assertIn("negative finding is a claim", prompt)
+
 
 class ContextTestCase(unittest.TestCase):
     def test_extract_python_block(self) -> None:

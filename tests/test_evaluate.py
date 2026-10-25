@@ -15,6 +15,7 @@ from lens import config
 from lens.models import Question
 from lens.observability.trajectory import TraceCtx
 from lens.tools.evaluate import (
+    EVIDENCE_MAX_CHARS,
     GATED_STAGES,
     StageVerdict,
     build_groundedness_question,
@@ -39,6 +40,19 @@ class EvaluateTestCase(unittest.TestCase):
         question = build_groundedness_question("A claim [c1].", ["c1"])
         self.assertEqual(question.type, "noul")
         self.assertEqual(set(question.criteria), {"true", "false"})
+
+    def test_groundedness_question_carries_bounded_evidence(self) -> None:
+        # An id alone cannot be verified: without the chunk text the gate rejected
+        # a correct, cited answer on every call until the iteration cap (LOG-117).
+        question = build_groundedness_question(
+            "The sky is blue [chunk-a].", ["chunk-a"], {"chunk-a": "x" * 5000}
+        )
+
+        self.assertIn("The sky is blue", question.instructions)
+        self.assertIn("[chunk-a]", question.instructions)
+        # Bounded: the excerpt is cut at EVIDENCE_MAX_CHARS, not carried whole.
+        self.assertLess(question.instructions.count("x"), EVIDENCE_MAX_CHARS + 1)
+        self.assertLessEqual(len(question.instructions), EVIDENCE_MAX_CHARS + 2000 + 900)
 
     def test_gated_stages_map_only_stage_completing_tools(self) -> None:
         # shallow_match / rerank_papers return ids only: gating them asked JEV
