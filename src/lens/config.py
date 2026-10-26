@@ -43,8 +43,8 @@ os.environ.setdefault("TQDM_DISABLE", "1")
 # The local developer keeps the old layout by putting `LENS_DATA_ROOT=D:\lens-data`
 # in the gitignored `.env` (see `.env.example`) — the default never has to be a
 # particular machine's path.
-PACKAGE_DIR = Path(__file__).resolve().parent          # .../src/lens
-REPO_ROOT = PACKAGE_DIR.parents[1]                     # .../lens (the git checkout)
+PACKAGE_DIR = Path(__file__).resolve().parent  # .../src/lens
+REPO_ROOT = PACKAGE_DIR.parents[1]  # .../lens (the git checkout)
 
 
 def _data_root() -> Path:
@@ -88,9 +88,7 @@ PAPER_YEAR_RANGE = {"15", "16", "17", "18", "19", "20", "21", "22", "23", "24", 
 PAPER_START_YEAR = 2015
 PAPER_END_YEAR = 2026
 
-LENS_MANIFESTS_ROOT_PATH = Path(
-    os.environ.get("LENS_MANIFESTS_ROOT") or DATA_ROOT / "manifests"
-)
+LENS_MANIFESTS_ROOT_PATH = Path(os.environ.get("LENS_MANIFESTS_ROOT") or DATA_ROOT / "manifests")
 # **Corpus inputs: no default on purpose.** They are machine-specific, huge, and
 # cannot be shipped; the harness itself runs without them, so only the M1/M3/M4
 # loaders resolve them — via :func:`require_path`, which fails early with the env
@@ -120,6 +118,7 @@ def require_path(env_name: str, value: str | None) -> Path:
         raise SystemExit(f"{env_name} does not exist: {path}")
 
     return path
+
 
 # ------------------------------------------------------------------ database (M2)
 # Local pgvector container (MVP Roadmap §2.1/§3). These are DEV defaults only;
@@ -162,9 +161,7 @@ EMBEDDING_INDEX_OPS = os.environ.get("LENS_EMBEDDING_INDEX_OPS", "halfvec_cosine
 # nomic-embed-text-v1.5, Matryoshka-truncated 768 -> 512, stored halfvec
 # (Tech Stack §2 stage 7). EMBEDDING_VERSION is copied into every row so a
 # re-index is detectable (T-08); bump it on any model/width/precision/prefix change.
-EMBEDDING_MODEL_ID = os.environ.get(
-    "LENS_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5"
-)
+EMBEDDING_MODEL_ID = os.environ.get("LENS_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5")
 EMBEDDING_VERSION = os.environ.get("LENS_EMBEDDING_VERSION", "nomic-embed-text-v1.5@512-halfvec")
 # nomic is prefix-conditioned: documents and queries use different task tokens.
 # A missing prefix does not error — it silently degrades matching, so it lives here.
@@ -205,10 +202,10 @@ RESUME = os.environ.get("LENS_RESUME", "1").strip().lower() not in {"0", "false"
 #   deep_match    C chunk candidates (filtered) -> Stage-B rerank -> c chunks
 # `k`/`C` are the candidate-recall knobs; the cross-encoder cost is linear in
 # them (one pass per candidate). These are the guardrail caps (Roadmap §7).
-RETRIEVAL_K = int(os.environ.get("LENS_RETRIEVAL_K", "100"))         # Stage A candidates
-RETRIEVAL_N = int(os.environ.get("LENS_RETRIEVAL_N", "20"))          # papers after Stage A
-RETRIEVAL_C = int(os.environ.get("LENS_RETRIEVAL_C", "100"))         # Stage B candidates
-RETRIEVAL_C_TOP = int(os.environ.get("LENS_RETRIEVAL_C_TOP", "100")) # chunks after Stage B
+RETRIEVAL_K = int(os.environ.get("LENS_RETRIEVAL_K", "100"))  # Stage A candidates
+RETRIEVAL_N = int(os.environ.get("LENS_RETRIEVAL_N", "20"))  # papers after Stage A
+RETRIEVAL_C = int(os.environ.get("LENS_RETRIEVAL_C", "100"))  # Stage B candidates
+RETRIEVAL_C_TOP = int(os.environ.get("LENS_RETRIEVAL_C_TOP", "100"))  # chunks after Stage B
 # The KG scope is the deep-match candidate set (C); the answer context is top-c.
 # Keep C >= C_TOP so the reranked context is a subset of the KG's chunk set.
 if RETRIEVAL_C < RETRIEVAL_C_TOP:
@@ -262,9 +259,7 @@ KG_GAZETTEER_PATH = Path(
 )
 # Only trust gazetteer entries above this confidence (count-based: 0.7=<5,
 # 0.8=5-9, 0.9>=10). Prevents low-count false positives (e.g. "spaCy").
-KG_GAZETTEER_MIN_CONFIDENCE = float(
-    os.environ.get("LENS_KG_GAZETTEER_MIN_CONF", "0.9")
-)
+KG_GAZETTEER_MIN_CONFIDENCE = float(os.environ.get("LENS_KG_GAZETTEER_MIN_CONF", "0.9"))
 KG_DIRECTIONALITY_ENABLED = os.environ.get("LENS_KG_DIRECTIONALITY", "1").strip() != "0"
 KG_CYCLE_BREAK = os.environ.get("LENS_KG_CYCLE_BREAK", "1").strip() != "0"
 
@@ -472,6 +467,7 @@ def _parse_stage_thresholds(raw: str) -> dict[str, float]:
 STAGE_THRESHOLDS: dict[str, float] = _parse_stage_thresholds(
     os.environ.get("LENS_STAGE_THRESHOLDS", "")
 )
+
 
 # ------------------------------------------------------------------ model registry
 @dataclass(frozen=True)

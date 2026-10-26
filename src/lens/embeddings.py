@@ -37,10 +37,10 @@ def _matryoshka(full_vec: np.ndarray, dim: int) -> np.ndarray:
     vec = np.asarray(full_vec, dtype=np.float32)
     mean = vec.mean(axis=-1, keepdims=True)
     var = vec.var(axis=-1, keepdims=True)
-    vec = (vec - mean) / np.sqrt(var + 1e-5)   # F.layer_norm, no affine
-    vec = vec[..., :dim]                        # Matryoshka truncation
+    vec = (vec - mean) / np.sqrt(var + 1e-5)  # F.layer_norm, no affine
+    vec = vec[..., :dim]  # Matryoshka truncation
     norms = np.linalg.norm(vec, axis=-1, keepdims=True)
-    return vec / np.clip(norms, 1e-12, None)    # F.normalize (p=2)
+    return vec / np.clip(norms, 1e-12, None)  # F.normalize (p=2)
 
 
 class Embedder:
@@ -89,12 +89,13 @@ class Embedder:
         from sentence_transformers import SentenceTransformer
 
         # Load Nomic embed model
-        model = SentenceTransformer(model_name_or_path=self.model_id,
-                                    trust_remote_code=True)
-    
+        model = SentenceTransformer(model_name_or_path=self.model_id, trust_remote_code=True)
+
         return model
 
-    def encode_documents(self, texts: Sequence[str], task_prefix: str, batch_size: int) -> np.ndarray:
+    def encode_documents(
+        self, texts: Sequence[str], task_prefix: str, batch_size: int
+    ) -> np.ndarray:
         """Embed ``texts`` -> ``np.ndarray`` of shape ``(len(texts), dim)``.
 
         Each text is prefixed with ``task_prefix`` (nomic is prefix-conditioned:

@@ -43,11 +43,10 @@ variant remains a K-05 probe arm. The losing family is removed after the probe.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Protocol
 
 from lens import config
-
-import re
 
 # Re-export the version here so callers key everything off one value.
 ONTOLOGY_VERSION = config.KG_ONTOLOGY_VERSION
@@ -195,8 +194,7 @@ class GlinerExtractor:
         # type's own casing so a mis-cased label still resolves.
         self._canonical_types = {t.casefold(): t for t in entity_types}
         self._label_to_type = {
-            label.casefold(): canonical
-            for canonical, label in self.entity_labels.items()
+            label.casefold(): canonical for canonical, label in self.entity_labels.items()
         }
 
     @property
@@ -251,8 +249,8 @@ class GlinerExtractor:
         Call ``_from_pretrained`` with the required kwargs ourselves and wrap
         glirel's module-level ``hf_hub_download`` so the removed kwargs are dropped.
         """
-        import torch
         import glirel.model as glirel_model
+        import torch
         from glirel import GLiREL
 
         if not getattr(glirel_model.hf_hub_download, "_lens_compat", False):
@@ -298,13 +296,13 @@ class GlinerExtractor:
             start_tok: int | None = None
             end_tok: int | None = None
             for i, (ts, te) in enumerate(token_spans):
-                if te <= cs:            # token ends before the entity starts
+                if te <= cs:  # token ends before the entity starts
                     continue
-                if ts >= ce:            # token starts after the entity ends
+                if ts >= ce:  # token starts after the entity ends
                     break
                 if start_tok is None:
                     start_tok = i
-                end_tok = i             # keep the last overlapping token
+                end_tok = i  # keep the last overlapping token
 
             if start_tok is None:
                 continue
@@ -316,7 +314,6 @@ class GlinerExtractor:
             mapping.append([start_tok, end_tok, canonical, ent["text"]])
 
         return mapping
-                    
 
     # ------------------------------------------------------------ windowing
     def _tokenizer(self) -> Any:

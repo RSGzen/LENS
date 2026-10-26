@@ -165,12 +165,11 @@ class LensClient:
 
         start_timer = time.perf_counter()
 
-        response_json = self._post(endpoint=self.chat_endpoint,
-                                   payload=payload,
-                                   trace_ctx=trace_ctx,
-                                   call_type="chat")
+        response_json = self._post(
+            endpoint=self.chat_endpoint, payload=payload, trace_ctx=trace_ctx, call_type="chat"
+        )
 
-        answer_text = response_json['choices'][0]['message']['content']
+        answer_text = response_json["choices"][0]["message"]["content"]
 
         tokens_in, tokens_out, cost = self._usage(response_json)
 
@@ -178,28 +177,32 @@ class LensClient:
 
         completion_ref = self.trajectory.store_blob(answer_text)
 
-        self.trajectory.log_event(trace_ctx=trace_ctx,
-                                  call_type="chat",
-                                  action="chat.completion",
-                                  model=model_spec.id,
-                                  provider=response_json.get('provider', 'unknown'),
-                                  model_snapshot=response_json.get('model'),
-                                  prompt_ref=prompt_ref,
-                                  completion_ref=completion_ref,
-                                  tokens_in=tokens_in,
-                                  tokens_out=tokens_out,
-                                  latency_ms=latency_ms,
-                                  cost_usd=cost)
+        self.trajectory.log_event(
+            trace_ctx=trace_ctx,
+            call_type="chat",
+            action="chat.completion",
+            model=model_spec.id,
+            provider=response_json.get("provider", "unknown"),
+            model_snapshot=response_json.get("model"),
+            prompt_ref=prompt_ref,
+            completion_ref=completion_ref,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            latency_ms=latency_ms,
+            cost_usd=cost,
+        )
 
-        call_result = CallResult(text=answer_text,
-                                 message=response_json['choices'][0]['message'],
-                                 model=model_spec.id,
-                                 provider=response_json.get('provider', 'unknown'),
-                                 model_snapshot=response_json.get('model'),
-                                 tokens_in=tokens_in,
-                                 tokens_out=tokens_out,
-                                 latency_ms=latency_ms,
-                                 cost_usd=cost)
+        call_result = CallResult(
+            text=answer_text,
+            message=response_json["choices"][0]["message"],
+            model=model_spec.id,
+            provider=response_json.get("provider", "unknown"),
+            model_snapshot=response_json.get("model"),
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            latency_ms=latency_ms,
+            cost_usd=cost,
+        )
 
         return call_result
 
@@ -241,10 +244,9 @@ class LensClient:
 
         start_timer = time.perf_counter()
 
-        response_json = self._post(endpoint=self.jev_endpoint,
-                                   payload=payload,
-                                   trace_ctx=trace_ctx,
-                                   call_type="jev")
+        response_json = self._post(
+            endpoint=self.jev_endpoint, payload=payload, trace_ctx=trace_ctx, call_type="jev"
+        )
 
         latency_ms = int((time.perf_counter() - start_timer) * 1000)
 
@@ -253,25 +255,29 @@ class LensClient:
 
         completion_ref = self.trajectory.store_blob(json.dumps(response_json))
 
-        self.trajectory.log_event(trace_ctx=trace_ctx,
-                                  call_type="jev",
-                                  action="jev.decisions",
-                                  model=model_slug,
-                                  provider=response_json.get("provider"),
-                                  model_snapshot=response_json.get("model"),
-                                  prompt_ref=prompt_ref,
-                                  completion_ref=completion_ref,
-                                  tokens_in=tokens_in,
-                                  tokens_out=tokens_out,
-                                  latency_ms=latency_ms,
-                                  cost_usd=cost)
+        self.trajectory.log_event(
+            trace_ctx=trace_ctx,
+            call_type="jev",
+            action="jev.decisions",
+            model=model_slug,
+            provider=response_json.get("provider"),
+            model_snapshot=response_json.get("model"),
+            prompt_ref=prompt_ref,
+            completion_ref=completion_ref,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            latency_ms=latency_ms,
+            cost_usd=cost,
+        )
 
-        return JevResult(answers=answers,
-                         model=response_json.get("model", model_slug),
-                         provider=response_json.get("provider", "TypeSafe"),
-                         tokens_in=tokens_in,
-                         cost_usd=cost,
-                         latency_ms=latency_ms)
+        return JevResult(
+            answers=answers,
+            model=response_json.get("model", model_slug),
+            provider=response_json.get("provider", "TypeSafe"),
+            tokens_in=tokens_in,
+            cost_usd=cost,
+            latency_ms=latency_ms,
+        )
 
     # ----------------------------------------------------------------- private
     def _headers(self) -> dict[str, str]:
@@ -283,9 +289,9 @@ class LensClient:
         """
 
         headers = {
-                   "Authorization": f"Bearer {self.api_key}",
-                   "Content-Type": "application/json",
-                  }
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
         return headers
 
@@ -322,15 +328,11 @@ class LensClient:
     ) -> None:
         """Log one failed attempt as a ``{call_type}.retry`` event, then back off."""
 
-        error_dict = {"type": error_type,
-                      "status": status_code,
-                      "attempt": attempt}
+        error_dict = {"type": error_type, "status": status_code, "attempt": attempt}
 
-        self.trajectory.log_event(trace_ctx=trace_ctx,
-                                  call_type=call_type,
-                                  action=f"{call_type}.retry",
-                                  error=error_dict
-                                 )
+        self.trajectory.log_event(
+            trace_ctx=trace_ctx, call_type=call_type, action=f"{call_type}.retry", error=error_dict
+        )
 
         self.sleeper(wait_time)
 
@@ -364,13 +366,18 @@ class LensClient:
         for attempt in range(1, self.max_retries + 2):
             attempts_made = attempt
             try:
-                response = self.session.post(url=endpoint, headers=self._headers(),
-                                            data=json.dumps(payload), timeout=self.timeout)
+                response = self.session.post(
+                    url=endpoint,
+                    headers=self._headers(),
+                    data=json.dumps(payload),
+                    timeout=self.timeout,
+                )
 
             except requests.exceptions.RequestException as e:
                 last_exc, last_status = e, None
-                self._request_error_handling("RequestException", None, attempt, 1.0 * 2 ** attempt,
-                                            trace_ctx, call_type)
+                self._request_error_handling(
+                    "RequestException", None, attempt, 1.0 * 2**attempt, trace_ctx, call_type
+                )
                 continue
 
             if response.status_code == 200:
@@ -380,16 +387,26 @@ class LensClient:
 
             if response.status_code in RETRYABLE_STATUS:
                 retry_after = getattr(response, "headers", {}).get("Retry-After")
-                wait_time = int(retry_after) if retry_after else 2 ** attempt
-                self._request_error_handling("Retryable_Status", response.status_code, attempt,
-                                            wait_time, trace_ctx, call_type)
+                wait_time = int(retry_after) if retry_after else 2**attempt
+                self._request_error_handling(
+                    "Retryable_Status",
+                    response.status_code,
+                    attempt,
+                    wait_time,
+                    trace_ctx,
+                    call_type,
+                )
                 continue
 
-            self._request_error_handling("NonRetryable_Status", response.status_code, attempt,
-                                        0, trace_ctx, call_type)
+            self._request_error_handling(
+                "NonRetryable_Status", response.status_code, attempt, 0, trace_ctx, call_type
+            )
             break
-        raise LensTransportError(f"{call_type} failed after {attempts_made} attempt(s); last={last_status}",
-                                status=last_status, attempts=attempts_made) from last_exc
+        raise LensTransportError(
+            f"{call_type} failed after {attempts_made} attempt(s); last={last_status}",
+            status=last_status,
+            attempts=attempts_made,
+        ) from last_exc
 
     def _usage(self, response: Mapping[str, Any]) -> tuple[int, int, float]:
         """Extract ``(tokens_in, tokens_out, cost_usd)`` from an OpenRouter response.

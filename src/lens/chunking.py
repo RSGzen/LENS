@@ -50,7 +50,6 @@ from __future__ import annotations
 import re
 import string
 import uuid
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -223,7 +222,7 @@ def normalize_head(head: str) -> str:
         return ""
 
     normalized = head.lower()
-    normalized = re.sub(header_pattern, "", normalized)          # leading numbering
+    normalized = re.sub(header_pattern, "", normalized)  # leading numbering
     normalized = re.sub(r"^(chapter|section)\s+", "", normalized)  # leading word
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized.strip(string.punctuation + " ").strip()
@@ -336,7 +335,6 @@ def extract_sections(tei_path: str | Path) -> list[Section]:
 
         paragraphs: list[str] = []
         for paragraph in div.findall(".//tei:p", TEI_NS):
-
             p_iterText = paragraph.itertext()
 
             text = re.sub(r"\s+", " ", "".join(cast(Iterator[str], p_iterText))).strip()
@@ -344,9 +342,7 @@ def extract_sections(tei_path: str | Path) -> list[Section]:
                 paragraphs.append(text)
 
         if paragraphs:
-            section_list.append(
-                Section(section_type=section_type, paragraphs=tuple(paragraphs))
-            )
+            section_list.append(Section(section_type=section_type, paragraphs=tuple(paragraphs)))
 
     return section_list
 
@@ -358,7 +354,9 @@ def extract_sections(tei_path: str | Path) -> list[Section]:
 _SAFE_COUNT_CHARS = 4000
 
 
-def _count_tokens_bounded(text: str, count_tokens: TokenCounter, cap: int = _SAFE_COUNT_CHARS) -> int:
+def _count_tokens_bounded(
+    text: str, count_tokens: TokenCounter, cap: int = _SAFE_COUNT_CHARS
+) -> int:
     """``count_tokens(text)`` without ever tokenising one huge string.
 
     Splits long text by sentence -> whitespace -> fixed-width windows and sums
@@ -373,7 +371,7 @@ def _count_tokens_bounded(text: str, count_tokens: TokenCounter, cap: int = _SAF
         parts = [p for p in re.split(splitter, text) if p]
         if len(parts) > 1:
             return sum(_count_tokens_bounded(p, count_tokens, cap) for p in parts)
-    return sum(count_tokens(text[i:i + cap]) for i in range(0, len(text), cap))
+    return sum(count_tokens(text[i : i + cap]) for i in range(0, len(text), cap))
 
 
 def _split_oversize(text: str, count_tokens: TokenCounter, threshold: int) -> list[str]:
