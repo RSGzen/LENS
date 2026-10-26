@@ -1,4 +1,4 @@
-# LENS local topology (M8).
+# LENS local topology.
 #
 # - lens-pg     : PostgreSQL + pgvector, host port 5433 (native PG17 owns 5432)
 # - lens-repl   : passive Python executor for the RLM, one container per session
@@ -9,9 +9,9 @@
 # One-time migration: stop/remove the old manual lens-pg container, then
 # `docker compose up -d lens-pg`; the named volume lens-pgdata preserves data.
 #
-# `sandbox-net` is internal to block general egress (Tech Stack 4b: "no network"
-# is a thesis claim, not a convenience). Three host-boundary facts are pinned by
-# measurement (25 Oct 2026, LOG-114) rather than by hope:
+# `sandbox-net` is internal because blocking egress is a claim this project
+# makes, not a convenience. Three host-boundary facts are pinned by
+# measurement rather than by hope:
 #   1. Host RPC is reachable ONLY through `lens-relay`. From an internal network
 #      there is no route to the host at all: `host-gateway` maps to the WSL2 VM's
 #      own gateway (ENETUNREACH), the internal network has no DNS (gaierror), and
@@ -26,7 +26,7 @@
 #      `docker compose exec -T lens-repl python /app/exec_client.py` — a process
 #      inside the container dials 127.0.0.1:8080 there. Publishing a port is not
 #      an option: an internal network gets no DNAT rule, so Docker silently drops
-#      the mapping (LOG-107).
+# the mapping.
 # `scripts/verify_sandbox.py` asserts 1 and 2.
 
 name: lens

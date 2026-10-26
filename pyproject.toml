@@ -33,9 +33,9 @@ dependencies = [
 [project.scripts]
 lens = "lens:main"
 
-# M10 UI (T-06). An extra, not a runtime dependency: the core install, the
+# UI. An extra, not a runtime dependency: the core install, the
 # ``lens-repl`` image and the no-key suite must never need Streamlit.
-# ``st.fragment(run_every=)`` (the ``Play`` control, §4p) needs >= 1.37.
+# ``st.fragment(run_every=)`` needs >= 1.37.
 [project.optional-dependencies]
 ui = ["streamlit>=1.37"]
 
