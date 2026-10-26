@@ -9,10 +9,10 @@ content-addressed blobs behind each tool result.
 
 Two pages, deliberately:
 
-- **Runs** — read-only: run list → recorded playback. It has **no live-run
-  button at all**, because mode A is a *recording*, not a run (§4n.1). The banner
+- **Recorded Runs** — read-only: run list → recorded playback. It has **no live
+  control at all**, because mode A is a *recording*, not a run (§4n.1). The banner
   says so on every view.
-- **Run** — the live path: shell out to ``python -m lens.run`` and stream its
+- **Live Query** — the live path: shell out to ``python -m lens.run`` and stream its
   stdout. It needs the workstation stack (GPU, DB, Docker, key); on a laptop it
   fails at the press, which is the honest state rather than a disabled mystery.
 
@@ -67,10 +67,16 @@ REASONING_CHARS = 700
 #: A fenced block inside a model completion: ```lang ... ```
 _FENCE_RE = re.compile(r"```[^\n]*\n.*?(?:```|$)", re.DOTALL)
 
+#: The two pages. Named for what they *are* (a recording vs a live run) rather than
+#: for the same word twice: "Runs" and "Run" read as a typo, not as a distinction.
+PAGE_RECORDED = "Recorded Runs"
+PAGE_LIVE = "Live Query"
+PAGES: list[str] = [PAGE_RECORDED, PAGE_LIVE]
+
 #: ``st.session_state`` contract. Every unit reads and writes these keys and
 #: nothing else, so a page can be filled (or replaced) without touching another.
 STATE: dict[str, Any] = {
-    "page": "Runs",      # "Runs" | "Run"
+    "page": PAGE_RECORDED,   # PAGE_RECORDED | PAGE_LIVE
     "run_id": None,      # the selected run; mirrored in ``st.query_params["run"]``
     "cursor": 0,         # the last turn shown (playback position)
     "playing": False,    # Play is running (drives ``st.fragment(run_every=)``)
@@ -84,6 +90,11 @@ def _init_state() -> None:
     """Seed every state key once, so no unit has to guard for a missing key."""
     for key, value in STATE.items():
         st.session_state.setdefault(key, value)
+
+    # A page name can outlive a rename of the page itself (session state survives a
+    # hot reload), and ``st.radio(index=...)`` raises on a value it does not know.
+    if st.session_state.get("page") not in PAGES:
+        st.session_state["page"] = PAGE_RECORDED
 
     # A run can arrive from a URL (the examiner's bookmark) or from the list.
     linked = st.query_params.get("run")
@@ -130,7 +141,7 @@ def _sidebar() -> None:
         st.title("LENS")
         st.caption("Literature Evidence & Narrative Synthesis")
 
-        pages = ["Runs", "Run"]
+        pages = PAGES
         st.session_state["page"] = st.radio(
             "Page", pages, index=pages.index(st.session_state["page"])
         )
@@ -141,7 +152,7 @@ def _sidebar() -> None:
         counts = Counter(row["status"] for row in data.run_rows())
 
         if counts:
-            st.caption(" · ".join(f"{status} {n}" for status, n in sorted(counts.items())))
+            st.caption(" · ".join(f"{n} {status}" for status, n in sorted(counts.items())))
 
         st.caption(f"runs root: `{runstore.runs_root()}`")
         st.divider()
@@ -167,20 +178,20 @@ def render_recording_banner() -> None:
 
 # ------------------------------------------------------------------- pages
 def main() -> None:
-    """Route between the two pages. One page, one concern: no live button on Runs."""
+    """Route between the two pages. One page, one concern: no live control on the recording."""
     st.set_page_config(page_title="LENS", page_icon="🔎", layout="wide")
     _init_state()
     _sidebar()
 
-    if st.session_state["page"] == "Run":
+    if st.session_state["page"] == PAGE_LIVE:
         page_run()
     else:
         page_runs()
 
 
 def page_runs() -> None:
-    """Runs page (U1): list, select, then recorded playback. No live controls."""
-    st.subheader("Runs")
+    """Recorded Runs page (U1): list, select, then recorded playback. No live controls."""
+    st.subheader(PAGE_RECORDED)
 
     status = st.selectbox("Status", RUN_STATUSES, index=0, key="status_filter")
     rows = data.run_rows(None if status == "all" else status)
@@ -255,7 +266,7 @@ def page_runs() -> None:
 
 def page_run() -> None:
     """Live page (U9): a query box that shells out to the CLI, streaming stdout."""
-    st.subheader("Run a live query")
+    st.subheader(PAGE_LIVE)
     st.caption(
         "Needs the workstation stack: GPU (embeddings, reranker, GLiNER), the "
         "Postgres corpus, Docker and `OPENROUTER_API_KEY`. The **Runs** page needs "
@@ -550,12 +561,16 @@ def render_turn(run_id: str, turn: Turn) -> None:
         if reasoning:
             st.markdown(_clip(reasoning, REASONING_CHARS))
 
+        # Code is the longest block in a turn, and it is also inside the full
+        # message below — so it is collapsed, not forced open. The line count keeps
+        # the closed expander informative.
+        if turn.code:
+            with st.expander(f"Code Written ({len(turn.code.splitlines())} lines)"):
+                st.code(turn.code, language="python")
+
         if turn.completion:
             with st.expander("Full Model Message (Reasoning + Code Written)"):
                 st.markdown(turn.completion)
-
-        if turn.code:
-            st.code(turn.code, language="python")
 
         for slot, tool in enumerate(turn.tools):
             render_tool(run_id, tool, f"{turn.turn}-{slot}")
@@ -830,7 +845,7 @@ def _stream_run(query: str, run_id: str) -> None:
 
     if code == 0 and data.run_dir(run_id) is not None:
         _open(run_id)
-        st.session_state["page"] = "Runs"
+        st.session_state["page"] = PAGE_RECORDED
         st.rerun(scope="app")
 
 

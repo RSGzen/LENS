@@ -169,6 +169,15 @@ class UiAppTestCase(unittest.TestCase):
         self.assertEqual([str(e.value) for e in at.exception], [])
         self.assertTrue(any(button.label == "Download Full Payload" for button in at.download_button))
 
+    def test_page_names_separate_recording_from_live(self) -> None:
+        from lens.ui.app import PAGE_LIVE, PAGE_RECORDED, PAGES
+
+        at = self._app()
+
+        self.assertEqual(PAGES, [PAGE_RECORDED, PAGE_LIVE])
+        self.assertEqual(at.session_state["page"], PAGE_RECORDED)
+        self.assertEqual([option for option in at.radio[0].options], PAGES)
+
     def test_rename_from_the_page(self) -> None:
         at = self._app()
 
@@ -185,8 +194,10 @@ class UiAppTestCase(unittest.TestCase):
         self.assertTrue(any("run-ui" in c.value for c in at.caption))
 
     def test_live_page_needs_no_pipeline_import(self) -> None:
+        from lens.ui.app import PAGE_LIVE
+
         at = self._app()
-        at.session_state["page"] = "Run"
+        at.session_state["page"] = PAGE_LIVE
         at.run()
 
         self.assertEqual([str(e.value) for e in at.exception], [])
