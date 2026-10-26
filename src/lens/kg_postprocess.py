@@ -1,7 +1,4 @@
-r"""M7.1 — modular KG post-process: relation-first typing, gazetteer, directionality.
-
-Spec: ``MVP Build Roadmap.md`` §4 (M7), ``Thesis Drafts/Tech Stack (Draft).md``
-§4l. Decisions: LOG-68 (Phase 1 approved), LOG-69 (fine-tuning held).
+r"""— modular KG post-process: relation-first typing, gazetteer, directionality.
 
 This module is **pure** (no DB, no model) and runs in ``build_kg`` **before**
 ``filter_ontology``. Each stage is independently toggleable and removable:

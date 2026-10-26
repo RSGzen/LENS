@@ -1,8 +1,5 @@
 """Host reranker wrapper — bge-reranker-v2-m3 cross-encoder (Stage A + Stage B).
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §2 (stages 10-11), §3 (M5 tuning),
-§7 (reranker placement); ``MVP Build Roadmap.md`` §4 (M5).
-
 One shared host-side cross-encoder drives **both** funnel stages: Stage A ranks
 the ``k`` candidate paper abstracts down to ``n``, Stage B ranks the ``C``
 candidate chunks down to ``c``. It is deliberately thin — ``sentence-transformers``

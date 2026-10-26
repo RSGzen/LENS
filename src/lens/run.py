@@ -1,6 +1,4 @@
-"""CLI entry point for one LENS query, plus run listing/resume (M8/M8.5).
-
-Spec: ``MVP Build Roadmap.md`` M8/M9/M8.5.
+"""CLI entry point for one LENS query, plus run listing/resume.
 
 Usage::
 
@@ -14,7 +12,7 @@ Usage::
 
 ``--list`` / ``--show`` / ``--export`` / ``--import`` are **read-only** (the last
 two touch only the destination / runs root): they never build a runtime, call a
-model, or start a container. That is what makes the M10 UI and the laptop demo
+model, or start a container. That is what makes the UI and the laptop demo
 cheap.
 """
 
@@ -54,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser."""
     parser = argparse.ArgumentParser(
         prog="python -m lens.run",
-        description="Run one LENS query end-to-end (M8 harness), or inspect saved runs.",
+        description="Run one LENS query end-to-end, or inspect saved runs.",
     )
     # Optional: --list / --show take no query.
     parser.add_argument("query", nargs="?", help="natural-language research query")
@@ -75,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=config.ALLOW_SQL,
         help="allow the gated T3 query(sql) tool (dev only; ignored when recorded)",
     )
-    # --- M8.5 session management (no runtime for --list / --show) -------------
+    # --- session management (no runtime for --list / --show) -------------
     parser.add_argument(
         "--list",
         action="store_true",
@@ -166,7 +164,7 @@ def build_runtime(
          sees that port: it dials the relay, and the relay is retargeted through
          ``LENS_RELAY_TARGET_PORT``. The sandbox is started by ``Runtime.run``.
       6. Pass ``resume`` / ``parent_run_id`` / ``replay`` straight through to
-         ``Runtime`` (M8.5). On resume, the trajectory and manifest already exist;
+         ``Runtime``. On resume, the trajectory and manifest already exist;
          do not truncate or recreate them.
     """
     trajectory = Trajectory(run_id=run_id)
@@ -284,15 +282,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ``server.stop()`` goes in a ``finally``; the sandbox is stopped by
     ``Runtime._finalize``. The printed cost is raw ``usage.cost`` — a *reported*
-    ``$/query`` adds the 5.5 % credit-load fee (R4), which is an M11 reporting
-    step, not something this CLI should bake in.
+    ``$/query`` adds the 5.5 % credit-load fee, which is a reporting step, not
+    something this CLI should bake in.
     """
     from lens.agent import runstore  # module, so tests can patch it
 
     # The answer is model prose and contains whatever Unicode it likes (an arrow,
     # an em dash, a Greek letter). The Windows console is cp1252, so the final
     # `print` raised UnicodeEncodeError **after** the run had finished and been
-    # finalized — a completed run reported as a traceback (LOG-115, S4). Keep the
+    # finalized — a completed run reported as a traceback. Keep the
     # console's encoding, stop crashing on characters it cannot show.
     for stream in (sys.stdout, sys.stderr):
         try:

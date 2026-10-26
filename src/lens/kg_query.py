@@ -1,8 +1,5 @@
 """Pure knowledge-graph query helpers shared by the host and the RLM sandbox.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4l (K-07: the graph travels as
-node-link JSON into a sandbox ``networkx`` variable).
-
 Why this module exists
 ----------------------
 The traversal helpers run **inside the container**, on the graph variable the RLM

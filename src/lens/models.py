@@ -1,8 +1,5 @@
 """Shared data contracts for the LENS harness (transport + decision layer).
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §2a (model routing + JEV question
-types) and §4a (transport responsibilities).
-
 Types
 -----
 - ``Role``        role selector, resolved through ``config.MODEL_REGISTRY``.
@@ -21,7 +18,7 @@ from pydantic import BaseModel, model_validator
 # A model role resolved through config.MODEL_REGISTRY — never a raw model ID.
 Role = Literal["root", "sub", "dev"]
 
-# JEV question kinds (Tech Stack §2a).
+# JEV question kinds.
 QuestionType = Literal["noul", "choice", "score"]
 
 
@@ -30,12 +27,12 @@ class CallResult:
     """Result of one ``chat()`` transport call.
 
     Returned to the orchestrator, which owns message history; the transport
-    itself is stateless (Tech Stack §4a).
+    itself is stateless.
 
     ``text`` is the assistant's visible reply; ``message`` is the raw assistant
     message dict (``{"role": "assistant", "content": ...}``) that the
     orchestrator appends to history. ``model`` is the requested model id, and
-    ``model_snapshot`` is the dated model that actually served the request (E-04).
+    ``model_snapshot`` is the dated model that actually served the request.
     """
 
     text: str
@@ -52,7 +49,7 @@ class CallResult:
 
 @dataclass
 class JevResult:
-    """Result of one ``jev()`` decision call (Tech Stack §2a).
+    """Result of one ``jev()`` decision call.
 
     ``answers`` maps each question name to its typed answer object; ``model`` is
     the dated snapshot returned by the (single-provider) decision layer.

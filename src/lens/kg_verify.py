@@ -1,7 +1,4 @@
-r"""M7.3 / Phase 1.5 — KG quality layer: span filter, heuristic coref, direction verifier.
-
-Spec: ``MVP Build Roadmap.md`` §4 (M7), ``Tech Stack (Draft).md`` §4l. Decisions:
-LOG-78 (Phase 1.5 approved), LOG-79 (lossless preprocessing + KG on/off).
+r"""/ Phase 1.5 — KG quality layer: span filter, heuristic coref, direction verifier.
 
 Stages (all pure except the injected JEV call):
 
@@ -11,7 +8,7 @@ Stages (all pure except the injected JEV call):
 2. **Conservative heuristic coref** — resolve pronominal/demonstrative mentions
    (``it``, ``they``, ``this method``, ``our approach``) to the nearest preceding
    **compatible-type** entity in the same chunk. Unresolved mentions are removed
-   by the span filter. No fastcoref (deliberate, LOG-78).
+   by the span filter. No fastcoref.
 3. **Direction verifier (three tiers)** — cue/SVO check → **budgeted JEV `choice`**
    for ambiguous cases → soft flags. Ambiguity is a **multi-signal** gate
    (small ``direction_margin``, cue disagreement, non-decisive types, negation,
