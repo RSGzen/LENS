@@ -22,12 +22,11 @@ import os
 import signal
 import time
 import traceback
-
-from contextlib import redirect_stdout, redirect_stderr
-from io import StringIO
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any
 from collections.abc import Mapping
+from contextlib import redirect_stderr, redirect_stdout
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from io import StringIO
+from typing import Any
 
 try:  # container: runner.py and rlm_api.py are siblings at /app
     import rlm_api  # noqa: F401 - imported so the RLM's blocks can `import rlm_api`
@@ -57,6 +56,7 @@ class _ExecTimeout(Exception):
 def _on_alarm(signum: int, frame: Any) -> None:
     """Turn the alarm into an exception the interpreter can unwind through."""
     raise _ExecTimeout(f"execution exceeded {MAX_EXEC_BLOCK_S:.0f}s")
+
 
 class Executor:
     """One persistent namespace + one ``exec`` entry point."""
@@ -144,15 +144,16 @@ class Executor:
             "result": None,
             "error": error,
             "duration_ms": duration_ms,
-            "truncated": cut_out or cut_err
+            "truncated": cut_out or cut_err,
         }
 
     def _truncate(self, text: str) -> tuple[str, bool]:
         """Return ``(text, truncated)`` for one captured stream."""
         if len(text) > self.stdout_max_chars:
-            return (text[:self.stdout_max_chars], True)
+            return (text[: self.stdout_max_chars], True)
 
         return (text, False)
+
 
 class ExecHandler(BaseHTTPRequestHandler):
     """HTTP handler bound to one :class:`Executor` (set as ``server.executor``)."""
@@ -162,7 +163,7 @@ class ExecHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     timeout = 300
 
-    def log_message(self, format: str, *args: Any) -> None: # noqa: A002
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         """Keep container logs quiet; the host owns observability."""
         return
 
@@ -201,7 +202,10 @@ class ExecHandler(BaseHTTPRequestHandler):
         if path != "/health":
             self._send(
                 404,
-                {"ok": False, "error": {"type": "NotFound", "message": f"unknown endpoint {path!r}"}},
+                {
+                    "ok": False,
+                    "error": {"type": "NotFound", "message": f"unknown endpoint {path!r}"},
+                },
             )
             return
 
@@ -214,7 +218,10 @@ class ExecHandler(BaseHTTPRequestHandler):
         if path != "/exec":
             self._send(
                 404,
-                {"ok": False, "error": {"type": "NotFound", "message": f"unknown endpoint {path!r}"}},
+                {
+                    "ok": False,
+                    "error": {"type": "NotFound", "message": f"unknown endpoint {path!r}"},
+                },
             )
             return
 
@@ -226,13 +233,14 @@ class ExecHandler(BaseHTTPRequestHandler):
                 400,
                 {
                     "ok": False,
-                    "error": {"type": "BadRequest", "message": "body must be {\"code\": str}"},
+                    "error": {"type": "BadRequest", "message": 'body must be {"code": str}'},
                 },
             )
             return
 
         # The runner is single-threaded, so nothing else runs while this blocks.
         self._send(200, self.server.executor.run(code))
+
 
 def make_server(host: str, port: int, executor: Executor) -> HTTPServer:
     """Build the single-threaded HTTP server with ``executor`` attached.

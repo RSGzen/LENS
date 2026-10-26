@@ -82,7 +82,7 @@ def _post(
     payload: Mapping[str, Any],
     *,
     timeout: float = DEFAULT_TIMEOUT_S,
-) -> dict[str, Any]:    
+) -> dict[str, Any]:
     """POST one JSON payload to the host and return the **parsed envelope**.
 
     Contract:
@@ -138,10 +138,7 @@ def _post(
 
 def tool(name: str, **kwargs: Any) -> Any:
     """Call a registered host tool by name; return its ``result``."""
-    payload = {
-        "name": name,
-        "args": kwargs
-    }
+    payload = {"name": name, "args": kwargs}
 
     return _post("/tool", payload)["result"]
 
@@ -151,10 +148,7 @@ def sub_call(prompt: str, context: str | None = None) -> str:
 
     No tools, no REPL, no recursion. The host performs the call and logs it.
     """
-    payload = {
-        "prompt": prompt,
-        "context": context
-    }
+    payload = {"prompt": prompt, "context": context}
 
     return _post("/sub_call", payload)["result"]
 
@@ -178,20 +172,16 @@ def emit(value: Any, label: str | None = None) -> dict[str, Any]:
 
     Use ``path`` — ``host_path`` is meaningless inside the container.
     """
-    payload = {
-        "value": value,
-        "label": label
-    }
+    payload = {"value": value, "label": label}
 
     return _post("/emit", payload)["result"]
 
 
 def note(text: str) -> None:
     """Append one free-form note to the trajectory."""
-    payload = {
-        "text": text
-    }
+    payload = {"text": text}
 
     return _post("/note", payload)["result"]
+
 
 __all__ = ["RLMError", "budget", "emit", "note", "sub_call", "tool"]
