@@ -1,10 +1,8 @@
-"""Read-only data access for the M10 UI — no Streamlit, no key, no DB, no Docker.
-
-Spec: ``MVP Build Roadmap.md`` §4 M10a/M10b; contract: ``Tech Stack (Draft).md`` §4p.
+"""Read-only data access for the UI — no Streamlit, no key, no DB, no Docker.
 
 Why this module exists
 ----------------------
-The UI adds **no pipeline logic** (T-06). Everything it shows is already on disk
+The UI adds **no pipeline logic**. Everything it shows is already on disk
 in ``runs/<run_id>/``: the manifest (identity + status), ``trajectory.jsonl``
 (folded by :func:`lens.observability.replay.replay_turns`), ``answer.md``, and the
 content-addressed blobs behind every tool result. This module is the one place
@@ -18,8 +16,8 @@ Two rules that are easy to get wrong and expensive to debug:
    ``runs/blobs/``, so a stale URL parameter would silently *create* an empty run.
    :func:`load_run` reads ``manifest.json`` first and answers ``None``.
 2. **The cap comes from the manifest, not from today's ``config``.** Runs
-   recorded before LOG-120 carry ``caps.cost_usd = 0.5`` while the default is now
-   ``1.00``; reading the config would make an M9 run look half spent.
+   recorded before carry ``caps.cost_usd = 0.5`` while the default is now
+   ``1.00``; reading the config would make an run look half spent.
 
 Contract tests: ``tests/test_ui_data.py`` (no streamlit, no key, no DB, no Docker).
 """
@@ -42,9 +40,9 @@ from lens.observability.citations import CitationReport, resolve_citations
 from lens.observability.replay import Turn, replay_summary, replay_turns
 from lens.observability.trajectory import Trajectory
 
-#: The 5.5 % OpenRouter credit-load fee. A *reported* ``$/query`` includes it
-#: (R4); the trajectory's ``cost_usd`` is raw. Shown as a second column, never
-#: folded into the raw number the log holds.
+#: The 5.5 % OpenRouter credit-load fee. A *reported* ``$/query`` includes it;
+#: the trajectory's ``cost_usd`` is raw. Shown as a second column, never folded
+#: into the raw number the log holds.
 CREDIT_FEE = 1.055
 
 #: Tools whose payload hydrates chunks. The same pair ``citations.py`` trusts: an
@@ -76,7 +74,7 @@ def cap_of(manifest: RunManifest) -> float | None:
 
     ``None`` means the manifest predates the cap being recorded: the meter must
     then say "cap not recorded" instead of comparing against today's default,
-    which would be a claim about a budget the run never had (R4).
+    which would claim a budget the run never had.
     """
     recorded = (manifest.caps or {}).get("cost_usd")
 
@@ -118,7 +116,7 @@ class RunView:
 
     @property
     def tokens_in_series(self) -> list[int]:
-        """Prompt tokens per turn — the context-growth chart (§4n.1)."""
+        """Prompt tokens per turn — the context-growth chart."""
         return [turn.tokens_in or 0 for turn in self.turns]
 
     @property
@@ -161,7 +159,7 @@ def aliases_path() -> Path:
     Deliberately **outside** the run directory: a display name is a *viewer's*
     convenience, not run identity, so it never enters ``manifest.json`` (which is
     provenance and is written once), never travels inside a ``.lens`` bundle, and
-    cannot change what the M11 campaign reports.
+    cannot change what the campaign reports.
     """
     return runs_root() / ALIASES_FILENAME
 

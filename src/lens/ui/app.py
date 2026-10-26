@@ -1,8 +1,6 @@
-"""LENS UI (M10) — a thin Streamlit viewer over recorded runs.
+"""LENS UI — a thin Streamlit viewer over recorded runs.
 
-Spec: ``MVP Build Roadmap.md`` §4 (M10a/M10b); contract: ``Tech Stack (Draft).md`` §4p.
-
-The UI adds **no pipeline logic** (T-06). Every number it shows is read from
+The UI adds **no pipeline logic**. Every number it shows is read from
 ``runs/<run_id>/`` through :mod:`lens.ui.data`: the manifest, the trajectory folded
 by :func:`lens.observability.replay.replay_turns`, ``answer.md``, and the
 content-addressed blobs behind each tool result.
@@ -10,13 +8,13 @@ content-addressed blobs behind each tool result.
 Two pages, deliberately:
 
 - **Recorded Runs** — read-only: run list → recorded playback. It has **no live
-  control at all**, because mode A is a *recording*, not a run (§4n.1). The banner
+  control at all**, because mode A is a *recording*, not a run. The banner
   says so on every view.
 - **Live Query** — the live path: shell out to ``python -m lens.run`` and stream its
   stdout. It needs the workstation stack (GPU, DB, Docker, key); on a laptop it
   fails at the press, which is the honest state rather than a disabled mystery.
 
-Units are kept in the roadmap's order (U1 list · U2 header · U3 controls + tick ·
+Units are kept in a fixed order (U1 list · U2 header · U3 controls + tick ·
 U4 timeline · U5 turn card · U6 meters · U7 evidence · U8 answer · U9 live) so each
 one can be reviewed on its own.
 
@@ -50,7 +48,7 @@ from lens.agent import runstore
 from lens.observability.replay import ToolStep, Turn
 from lens.ui import data
 
-#: Playback cadence: one turn per fragment tick (§4n.1). ``st.fragment`` needs
+#: Playback cadence: one turn per fragment tick. ``st.fragment`` needs
 #: Streamlit >= 1.37 — a full-page rerun per tick would make ``Play`` unusable.
 PLAY_SECONDS = 1.5
 
@@ -95,7 +93,7 @@ def _init_state() -> None:
     if st.session_state.get("page") not in PAGES:
         st.session_state["page"] = PAGE_RECORDED
 
-    # A run can arrive from a URL (the examiner's bookmark) or from the list.
+    # A run can arrive from a URL (the or from the list.
     linked = st.query_params.get("run")
 
     if linked and st.session_state["run_id"] is None and data.is_run_id(linked):
@@ -155,15 +153,15 @@ def _sidebar() -> None:
 
         st.caption(f"runs root: `{runstore.runs_root()}`")
         st.divider()
-        st.caption("Read-only view of recorded artifacts. No pipeline logic (T-06).")
+        st.caption("Read-only view of recorded artifacts. No pipeline logic.")
 
 
 def render_recording_banner() -> None:
-    """State, on every recorded view, that this is a **recording** (§4n.1, mode A).
+    """State, on every recorded view, that this is a **recording**.
 
     Claim discipline: "live runs were performed on the GPU workstation; this
     session is replayed from its content-addressed trajectory" is a stronger
-    statement than a video, because the examiner can open the turn, read the
+    statement than a video, because the
     ``chunk_uuid``, and find it in the answer.
     """
     st.caption(
@@ -461,7 +459,7 @@ def render_header(view: data.RunView) -> None:
         "caps": manifest.caps,
     }
 
-    with st.expander("Provenance and caps (E-04)"):
+    with st.expander("Provenance and caps "):
         st.json(json.loads(json.dumps(details, default=str)), expanded=False)
         arm = (manifest.extra or {}).get("arm")
 
@@ -748,7 +746,7 @@ def render_answer(view: data.RunView) -> None:
 
 
 def render_import() -> None:
-    """Install a portable ``<run_id>.lens`` bundle (U1, roadmap M10b.7).
+    """Install a portable ``<run_id>.lens`` bundle (U1).
 
     Path input rather than a file uploader: the bundle is a **directory**, and
     ``verify_bundle`` re-hashes every blob before anything is installed, so a
@@ -761,7 +759,7 @@ def render_import() -> None:
         )
         path = st.text_input(
             "Bundle directory",
-            placeholder=r"D:\lens-data\demo\m9-s3-plumbing-6.lens",
+            placeholder=r"<path to a .lens bundle>",
             key="import_path",
         )
 

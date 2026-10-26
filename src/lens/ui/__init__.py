@@ -1,4 +1,4 @@
-"""M10 thin UI (T-06): a Streamlit viewer over recorded runs.
+"""thin UI : a Streamlit viewer over recorded runs.
 
 ``data`` is the read-only data layer (no Streamlit import, testable offline);
 ``app`` is the Streamlit script itself. Run it with::
