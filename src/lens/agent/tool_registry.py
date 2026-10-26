@@ -1,7 +1,5 @@
 """Host tool registry: manifest, dispatch, and per-call logging.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a/§4i and §5.
-
 The registry is the single source of truth for what the RLM may call. The
 manifest exposes names, signatures, and docstrings only — never source code or a
 function ``repr`` (a repr carries a memory address, which would make the system
@@ -158,7 +156,7 @@ class ToolRegistry:
         (``shallow_match(buckets=..., k=100)``) — the form the manifest prints.
         Without the binding the RLM reads ``shallow_match(buckets)`` in the
         manifest and calls a name that does not exist: the exact ``NameError`` the
-        M9 smoke hit (LOG-115). Only positional kinds are listed, so a
+         smoke hit. Only positional kinds are listed, so a
         keyword-only parameter must still be passed by name and ``**kwargs`` adds
         nothing to the mapping.
         """
@@ -241,7 +239,7 @@ class ToolRegistry:
                 # A tool may return a DB row: ``date``/``Decimal``/``UUID`` are not
                 # JSON types, and an unserialisable result used to abort the whole
                 # turn (``fetch_papers`` -> "Object of type date is not JSON
-                # serializable", M9 smoke, LOG-115). The blob and the RPC envelope
+                # serializable", smoke, ). The blob and the RPC envelope
                 # are JSON boundaries; ``str`` is the honest narrowing.
                 default=str,
             )

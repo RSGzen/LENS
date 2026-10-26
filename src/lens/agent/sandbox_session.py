@@ -1,7 +1,5 @@
 """Host-side lifecycle + exec client for the ``lens-repl`` container.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a/§4b; MVP Roadmap M8.
-
 The runtime starts **one** container per query session, mounts only the run
 workspace (``<run_dir>/work``, never the artifact directory — see
 :mod:`lens.agent.runtime`), passes the per-run RPC token, and talks to the
@@ -23,7 +21,7 @@ from lens import config
 
 #: Runs **inside** the container and posts to the runner there (option C). The
 #: runner is not reachable over TCP while ``sandbox-net`` is ``internal: true``
-#: (LOG-107), so the host reaches it with ``docker compose exec``.
+#:, so the host reaches it with ``docker compose exec``.
 EXEC_CLIENT = "/app/exec_client.py"
 
 
@@ -84,7 +82,7 @@ class SandboxSession:
         self.host_rpc_port = host_rpc_port
         # The URL the *container* uses. It is the relay's address on the internal
         # network, never the host's: from an internal bridge there is no route to
-        # the host at all (LOG-114), so the relay is the only peer.
+        # the host at all, so the relay is the only peer.
         self.host_rpc_url = host_rpc_url or config.SANDBOX_RELAY_URL
 
     @property
@@ -92,7 +90,7 @@ class SandboxSession:
         """Legacy host-side URL, kept readable but no longer the exec path.
 
         The compose file publishes no port any more: an ``internal: true`` network
-        gets no DNAT rule, so Docker silently drops the mapping (LOG-107). The host
+        gets no DNAT rule, so Docker silently drops the mapping. The host
         reaches the runner with ``docker compose exec`` (:meth:`health`,
         :meth:`exec`), and the *container* reaches the host through the relay.
         Nothing calls this; it exists so an operator debugging by hand knows the
@@ -166,7 +164,7 @@ class SandboxSession:
             # False on any failure. The old ``except requests.RequestException`` here
             # referred to a module that stopped being imported when the transport
             # moved to ``docker exec``, so the handler was a latent ``NameError`` on
-            # the one path that was supposed to be defensive (LOG-120, found by ruff).
+            # the one path that was supposed to be defensive.
             if self.health():
                 return True
 
@@ -311,8 +309,8 @@ class SandboxSession:
         alone Python encodes stdin with the **locale** encoding (cp1252 here), so
         an em dash the model wrote arrives as byte ``0x97``, the container decodes
         it as a lone surrogate, and ``exec()`` dies with ``UnicodeEncodeError`` —
-        a whole turn lost to one non-ASCII character (found by the M9 smoke,
-        LOG-115). UTF-8 on both directions matches what the image uses.
+        a whole turn lost to one non-ASCII character (found by the smoke,
+        ). UTF-8 on both directions matches what the image uses.
         """
         return subprocess.run(
             ["docker", "compose", "-f", str(self.compose_file), *args],

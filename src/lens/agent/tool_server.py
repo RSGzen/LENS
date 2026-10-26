@@ -1,7 +1,5 @@
 """Host RPC server the sandbox calls back into.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a/§4b.
-
 Only these endpoints cross the boundary::
 
     GET  /health       liveness (no token)
@@ -226,7 +224,7 @@ class ToolServer:
                 (``date`` / ``Decimal`` / ``UUID``). The registry already narrows
                 the blob with ``str``; the envelope must not be the weaker link, or
                 a serialisation error becomes a 500 the model reads as a transport
-                failure (M9 smoke, LOG-115).
+                failure.
                 """
                 data = json.dumps(body, ensure_ascii=False, default=str).encode("utf-8")
                 self.send_response(status)
