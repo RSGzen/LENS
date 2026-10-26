@@ -27,12 +27,20 @@ def sample_graph() -> nx.MultiDiGraph:
     graph = nx.MultiDiGraph()
     graph.add_node("rlm", display="RLM", type="Method", type_source="model", type_confidence=0.9)
     graph.add_node("rag", display="RAG", type="Method", type_source="model", type_confidence=0.8)
-    graph.add_node("hotpotqa", display="HotpotQA", type="Dataset", type_source="gazetteer", type_confidence=0.9)
+    graph.add_node(
+        "hotpotqa", display="HotpotQA", type="Dataset", type_source="gazetteer", type_confidence=0.9
+    )
     graph.add_edge(
-        "rlm", "hotpotqa", key="e1",
-        relation="evaluated_on", score=0.7,
-        head_type="Method", tail_type="Dataset",
-        chunk_uuid="c1", arxiv_id="2512.24601", section_type="Results",
+        "rlm",
+        "hotpotqa",
+        key="e1",
+        relation="evaluated_on",
+        score=0.7,
+        head_type="Method",
+        tail_type="Dataset",
+        chunk_uuid="c1",
+        arxiv_id="2512.24601",
+        section_type="Results",
     )
     graph.add_edge("rlm", "rag", key="e2", relation="outperforms", score=0.6, chunk_uuid="c2")
     return graph

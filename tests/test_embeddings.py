@@ -70,7 +70,9 @@ class EmbedderTest(unittest.TestCase):
         model = FakeModel(dim=768)
         emb = Embedder(dim=config.EMBEDDING_DIM, model=model)
 
-        out = emb.encode_documents(["alpha", "beta", "gamma"], config.EMBEDDING_DOC_PREFIX, batch_size=2)
+        out = emb.encode_documents(
+            ["alpha", "beta", "gamma"], config.EMBEDDING_DOC_PREFIX, batch_size=2
+        )
 
         self.assertIsInstance(out, np.ndarray)
         self.assertEqual(out.shape, (3, config.EMBEDDING_DIM))

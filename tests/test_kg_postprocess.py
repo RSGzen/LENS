@@ -42,9 +42,7 @@ class RelationTypingTest(unittest.TestCase):
         self.assertEqual(out["tail_type_source"], "relation")
 
     def test_measures_tail_is_metric(self) -> None:
-        out = infer_types_from_relations(
-            [triple("BERT", "Method", "measures", "F1", "Concept")]
-        )[0]
+        out = infer_types_from_relations([triple("BERT", "Method", "measures", "F1", "Concept")])[0]
         self.assertEqual(out["tail_type"], "Metric")
 
     def test_outperforms_forces_method_both_sides(self) -> None:
@@ -55,26 +53,20 @@ class RelationTypingTest(unittest.TestCase):
         self.assertEqual(out["tail_type"], "Method")
 
     def test_ambiguous_uses_tail_keeps_type(self) -> None:
-        out = infer_types_from_relations(
-            [triple("BERT", "Method", "uses", "SQuAD", "Dataset")]
-        )[0]
+        out = infer_types_from_relations([triple("BERT", "Method", "uses", "SQuAD", "Dataset")])[0]
         self.assertEqual(out["tail_type"], "Dataset")
 
 
 class GazetteerTest(unittest.TestCase):
     def test_override(self) -> None:
         gazetteer = {"squad": {"name": "SQuAD", "type": "Dataset"}}
-        out = apply_gazetteer(
-            [triple("BERT", "Method", "uses", "SQuAD", "Method")], gazetteer
-        )[0]
+        out = apply_gazetteer([triple("BERT", "Method", "uses", "SQuAD", "Method")], gazetteer)[0]
         self.assertEqual(out["tail_type"], "Dataset")
         self.assertEqual(out["tail_type_source"], "gazetteer")
 
     def test_low_confidence_is_ignored(self) -> None:
         gazetteer = {"squad": {"name": "SQuAD", "type": "Dataset", "confidence": 0.7}}
-        out = apply_gazetteer(
-            [triple("BERT", "Method", "uses", "SQuAD", "Method")], gazetteer
-        )[0]
+        out = apply_gazetteer([triple("BERT", "Method", "uses", "SQuAD", "Method")], gazetteer)[0]
         self.assertEqual(out["tail_type"], "Method")
         self.assertEqual(out.get("tail_type_source", "model"), "model")
 
@@ -95,9 +87,7 @@ class SuffixHintTest(unittest.TestCase):
 
 class DirectionalityTest(unittest.TestCase):
     def test_drop_self_loop(self) -> None:
-        out = resolve_directionality(
-            [triple("BERT", "Method", "outperforms", "BERT", "Method")]
-        )
+        out = resolve_directionality([triple("BERT", "Method", "outperforms", "BERT", "Method")])
         self.assertEqual(out, [])
 
     def test_same_context_keeps_higher_direction(self) -> None:
@@ -139,23 +129,35 @@ class DirectionalityTest(unittest.TestCase):
             cycle_break=True,
         )
         self.assertEqual(len(out), 2)
-        self.assertNotIn(
-            ("C", "A"), {(t["head"], t["tail"]) for t in out}
-        )
+        self.assertNotIn(("C", "A"), {(t["head"], t["tail"]) for t in out})
 
 
 class BenchmarkSpanTest(unittest.TestCase):
     def test_strict_positives(self) -> None:
         for name in (
-            "WCEP", "BookSum", "QM-Sum", "AcademicEval", "2WikiMultihopQA",
-            "MultiFieldQA", "Long-Bench", "EN.MC", "En.QA", "biomedical QA",
+            "WCEP",
+            "BookSum",
+            "QM-Sum",
+            "AcademicEval",
+            "2WikiMultihopQA",
+            "MultiFieldQA",
+            "Long-Bench",
+            "EN.MC",
+            "En.QA",
+            "biomedical QA",
         ):
             self.assertTrue(is_benchmark_span(name), name)
 
     def test_strict_negatives(self) -> None:
         for name in (
-            "quality-aware retrieval", "retrieval", "checksum", "BERT", "GPT-4o",
-            "ARGUE F1", "Mixtral", "GoR",
+            "quality-aware retrieval",
+            "retrieval",
+            "checksum",
+            "BERT",
+            "GPT-4o",
+            "ARGUE F1",
+            "Mixtral",
+            "GoR",
         ):
             self.assertFalse(is_benchmark_span(name), name)
 
@@ -187,9 +189,7 @@ class RoleFilterTest(unittest.TestCase):
         self.assertEqual(dropped, 0)
 
     def test_drop_benchmark_tail_of_measures(self) -> None:
-        out, dropped = apply_role_filter(
-            [triple("GoR", "Method", "measures", "QASPER", "Dataset")]
-        )
+        out, dropped = apply_role_filter([triple("GoR", "Method", "measures", "QASPER", "Dataset")])
         self.assertEqual(out, [])
         self.assertEqual(dropped, 1)
 

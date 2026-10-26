@@ -50,12 +50,24 @@ class WilsonTest(unittest.TestCase):
 class TripleScoreTest(unittest.TestCase):
     def test_precision(self) -> None:
         rows = [
-            {"relation": "uses", "gold_relation_ok": "y",
-             "gold_head_type_ok": "y", "gold_tail_type_ok": "y"},
-            {"relation": "uses", "gold_relation_ok": "y",
-             "gold_head_type_ok": "n", "gold_tail_type_ok": "y"},
-            {"relation": "uses", "gold_relation_ok": "",  # unlabeled -> ignored
-             "gold_head_type_ok": "", "gold_tail_type_ok": ""},
+            {
+                "relation": "uses",
+                "gold_relation_ok": "y",
+                "gold_head_type_ok": "y",
+                "gold_tail_type_ok": "y",
+            },
+            {
+                "relation": "uses",
+                "gold_relation_ok": "y",
+                "gold_head_type_ok": "n",
+                "gold_tail_type_ok": "y",
+            },
+            {
+                "relation": "uses",
+                "gold_relation_ok": "",  # unlabeled -> ignored
+                "gold_head_type_ok": "",
+                "gold_tail_type_ok": "",
+            },
         ]
         report = score_triples(rows)
         self.assertEqual(report["n"], 2)
@@ -75,7 +87,7 @@ class EntityScoreTest(unittest.TestCase):
         rows = [{"chunk_uuid": "u1", "gold_entities": "QASPER:Dataset; QuALITY:Dataset"}]
         predictions = {
             "u1": [
-                {"entity": "QASPER", "type": "Method"},     # name matched, type wrong
+                {"entity": "QASPER", "type": "Method"},  # name matched, type wrong
                 {"entity": "narrativeqa", "type": "Dataset"},  # not in gold
             ]
         }
@@ -93,13 +105,18 @@ class BenchmarkLenientTest(unittest.TestCase):
         self.assertFalse(is_benchmark_span("BERT"))
 
     def test_lenient_counts_dataset_or_method(self) -> None:
-        rows = [{
-            "relation": "evaluated_on",
-            "head": "QASPER", "head_type": "Method",
-            "tail": "SQuAD", "tail_type": "Dataset",
-            "gold_relation_ok": "y", "gold_head_type_ok": "n",
-            "gold_tail_type_ok": "y",
-        }]
+        rows = [
+            {
+                "relation": "evaluated_on",
+                "head": "QASPER",
+                "head_type": "Method",
+                "tail": "SQuAD",
+                "tail_type": "Dataset",
+                "gold_relation_ok": "y",
+                "gold_head_type_ok": "n",
+                "gold_tail_type_ok": "y",
+            }
+        ]
         strict = score_triples(rows)
         lenient = score_triples(rows, benchmark_lenient=True)
         self.assertEqual(strict["triple_precision"], 0.0)
@@ -114,8 +131,12 @@ class SurfaceTextTest(unittest.TestCase):
 
     def test_format_triple_query(self) -> None:
         row = {
-            "head": "QASPER", "head_type": "Dataset", "relation": "uses",
-            "tail": "GPT-4", "tail_type": "Method", "arxiv_id": "2401.1",
+            "head": "QASPER",
+            "head_type": "Dataset",
+            "relation": "uses",
+            "tail": "GPT-4",
+            "tail_type": "Method",
+            "arxiv_id": "2401.1",
         }
         self.assertEqual(
             format_triple_query(row),

@@ -115,8 +115,11 @@ class EvaluateTierTestCase(unittest.TestCase):
 
     def test_tier1_accepts_on_a_calibrated_score_without_a_client(self) -> None:
         verdict = evaluate_stage(
-            "retrieval", {"score": 0.83, "summary": {}},
-            client=None, trace_ctx=self.ctx, threshold=0.7,  # type: ignore[arg-type]
+            "retrieval",
+            {"score": 0.83, "summary": {}},
+            client=None,
+            trace_ctx=self.ctx,
+            threshold=0.7,  # type: ignore[arg-type]
         )
         assert verdict is not None
         self.assertEqual(verdict.verdict, "pass")
@@ -128,15 +131,18 @@ class EvaluateTierTestCase(unittest.TestCase):
         client = _FakeJevClient({"gate": {"answer": True, "confidence": 0.66}})
 
         verdict = evaluate_stage(
-            "retrieval", {"score": 0.10, "summary": {"chunks": 20}},
-            client=client, trace_ctx=self.ctx, threshold=0.7,  # type: ignore[arg-type]
+            "retrieval",
+            {"score": 0.10, "summary": {"chunks": 20}},
+            client=client,
+            trace_ctx=self.ctx,
+            threshold=0.7,  # type: ignore[arg-type]
         )
 
         assert verdict is not None
         self.assertEqual(verdict.tier, "jev")
         self.assertEqual(verdict.verdict, "pass")
         self.assertEqual(len(client.calls), 1)
-        self.assertIn('"chunks"', client.calls[0][0])   # the bounded summary is the state
+        self.assertIn('"chunks"', client.calls[0][0])  # the bounded summary is the state
 
     def test_noul_answer_is_read_not_ignored(self) -> None:
         # The real JEV shape for a noul question is {"type": "noul", "noul": 0.03}
@@ -169,7 +175,8 @@ class EvaluateTierTestCase(unittest.TestCase):
         verdict = evaluate_stage(
             "final",
             {"score": None, "summary": {"answer": "A claim [c1].", "citations": ["c1"]}},
-            client=client, trace_ctx=self.ctx,  # type: ignore[arg-type]
+            client=client,
+            trace_ctx=self.ctx,  # type: ignore[arg-type]
         )
 
         assert verdict is not None
@@ -180,8 +187,10 @@ class EvaluateTierTestCase(unittest.TestCase):
         client = _FakeJevClient({"gate": {"probability": 0.4}})
 
         verdict = evaluate_stage(
-            "kg", {"score": None, "summary": {}},
-            client=client, trace_ctx=self.ctx,  # type: ignore[arg-type]
+            "kg",
+            {"score": None, "summary": {}},
+            client=client,
+            trace_ctx=self.ctx,  # type: ignore[arg-type]
         )
 
         assert verdict is not None
@@ -191,8 +200,10 @@ class EvaluateTierTestCase(unittest.TestCase):
         client = _FakeJevClient(exc=RuntimeError("timeout"))
 
         verdict = evaluate_stage(
-            "kg", {"score": None, "summary": {}},
-            client=client, trace_ctx=self.ctx,  # type: ignore[arg-type]
+            "kg",
+            {"score": None, "summary": {}},
+            client=client,
+            trace_ctx=self.ctx,  # type: ignore[arg-type]
         )
 
         assert verdict is not None
@@ -204,8 +215,11 @@ class EvaluateTierTestCase(unittest.TestCase):
         client = _FakeJevClient({"gate": {"answer": True, "confidence": 0.9}})
 
         evaluate_stage(
-            "retrieval", {"score": None, "summary": {}},
-            client=client, trace_ctx=self.ctx, budget=budget,  # type: ignore[arg-type]
+            "retrieval",
+            {"score": None, "summary": {}},
+            client=client,
+            trace_ctx=self.ctx,
+            budget=budget,  # type: ignore[arg-type]
         )
 
         self.assertEqual(budget.jev_calls, 1)

@@ -14,8 +14,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from lens import config
-from lens import kg_extract
+from lens import config, kg_extract
 from lens.kg_extract import (
     ENTITY_LABEL_SETS,
     ENTITY_TYPES,
@@ -149,12 +148,36 @@ class FilterOntologyTest(unittest.TestCase):
 class GraphTest(unittest.TestCase):
     def _graph(self):
         triples = [
-            triple("BERT", "Method", "evaluated_on", "SQuAD", "Dataset",
-                   chunk_uuid="u1", arxiv_id="2101.1", section_type="Experiment"),
-            triple("BERT", "Method", "outperforms", "GPT", "Method",
-                   chunk_uuid="u1", arxiv_id="2101.1", section_type="Experiment"),
-            triple("GPT", "Method", "uses", "SQuAD", "Dataset",
-                   chunk_uuid="u2", arxiv_id="2102.2", section_type="Methodology"),
+            triple(
+                "BERT",
+                "Method",
+                "evaluated_on",
+                "SQuAD",
+                "Dataset",
+                chunk_uuid="u1",
+                arxiv_id="2101.1",
+                section_type="Experiment",
+            ),
+            triple(
+                "BERT",
+                "Method",
+                "outperforms",
+                "GPT",
+                "Method",
+                chunk_uuid="u1",
+                arxiv_id="2101.1",
+                section_type="Experiment",
+            ),
+            triple(
+                "GPT",
+                "Method",
+                "uses",
+                "SQuAD",
+                "Dataset",
+                chunk_uuid="u2",
+                arxiv_id="2102.2",
+                section_type="Methodology",
+            ),
         ]
         return build_graph(triples)
 
@@ -164,10 +187,12 @@ class GraphTest(unittest.TestCase):
         self.assertEqual(g.number_of_edges(), 3)
 
     def test_casefold_merge(self) -> None:
-        g = build_graph([
-            triple("BERT", "Method", "extends", "GPT", "Method"),
-            triple("bert", "Method", "extends", "gpt", "Method"),
-        ])
+        g = build_graph(
+            [
+                triple("BERT", "Method", "extends", "GPT", "Method"),
+                triple("bert", "Method", "extends", "gpt", "Method"),
+            ]
+        )
         self.assertEqual(g.number_of_nodes(), 2)
 
     def test_nodelink_roundtrip(self) -> None:
@@ -197,7 +222,7 @@ class GraphTest(unittest.TestCase):
 
     def test_neighbors_out_and_both(self) -> None:
         g = self._graph()
-        out = kg_neighbors(g, "bert", direction="out")   # case-insensitive
+        out = kg_neighbors(g, "bert", direction="out")  # case-insensitive
         self.assertEqual(len(out), 2)
         both = kg_neighbors(g, "SQuAD", direction="both")
         self.assertEqual(len(both), 2)
@@ -218,10 +243,22 @@ class GraphTest(unittest.TestCase):
 class BuildKgTest(unittest.TestCase):
     def _rows(self):
         return [
-            {"chunk_uuid": "u1", "arxiv_id": "2101.1", "section_type": "Experiment",
-             "section_order": 0, "chunk_text": "text-one", "token_count": 5},
-            {"chunk_uuid": "u2", "arxiv_id": "2102.2", "section_type": "Methodology",
-             "section_order": 1, "chunk_text": "text-two", "token_count": 5},
+            {
+                "chunk_uuid": "u1",
+                "arxiv_id": "2101.1",
+                "section_type": "Experiment",
+                "section_order": 0,
+                "chunk_text": "text-one",
+                "token_count": 5,
+            },
+            {
+                "chunk_uuid": "u2",
+                "arxiv_id": "2102.2",
+                "section_type": "Methodology",
+                "section_order": 1,
+                "chunk_text": "text-two",
+                "token_count": 5,
+            },
         ]
 
     def test_empty_chunks_is_empty(self) -> None:
@@ -241,8 +278,11 @@ class BuildKgTest(unittest.TestCase):
         }
         with mock.patch("lens.tools.kg.fetch_chunks", return_value=self._rows()):
             out = build_kg(
-                None, ["u1", "u2"], FakeExtractor(by_text),
-                use_cache=False, postprocess=False,
+                None,
+                ["u1", "u2"],
+                FakeExtractor(by_text),
+                use_cache=False,
+                postprocess=False,
             )
 
         self.assertEqual(out["stats"]["triples_raw"], 2)
@@ -262,8 +302,11 @@ class BuildKgTest(unittest.TestCase):
         }
         with mock.patch("lens.tools.kg.fetch_chunks", return_value=self._rows()[:1]):
             out = build_kg(
-                None, ["u1"], FakeExtractor(by_text),
-                use_cache=False, role_filter=True,
+                None,
+                ["u1"],
+                FakeExtractor(by_text),
+                use_cache=False,
+                role_filter=True,
             )
 
         self.assertTrue(out["stats"]["role_filter"])
@@ -278,8 +321,11 @@ class BuildKgTest(unittest.TestCase):
         }
         with mock.patch("lens.tools.kg.fetch_chunks", return_value=self._rows()[:1]):
             out = build_kg(
-                None, ["u1"], FakeExtractor(by_text),
-                use_cache=False, role_filter=False,
+                None,
+                ["u1"],
+                FakeExtractor(by_text),
+                use_cache=False,
+                role_filter=False,
             )
 
         self.assertEqual(out["stats"]["role_dropped"], 0)
@@ -289,10 +335,22 @@ class BuildKgTest(unittest.TestCase):
 class BuildKgCacheTest(unittest.TestCase):
     def _rows(self):
         return [
-            {"chunk_uuid": "u1", "arxiv_id": "2101.1", "section_type": "Experiment",
-             "section_order": 0, "chunk_text": "text-one", "token_count": 5},
-            {"chunk_uuid": "u2", "arxiv_id": "2102.2", "section_type": "Methodology",
-             "section_order": 1, "chunk_text": "text-two", "token_count": 5},
+            {
+                "chunk_uuid": "u1",
+                "arxiv_id": "2101.1",
+                "section_type": "Experiment",
+                "section_order": 0,
+                "chunk_text": "text-one",
+                "token_count": 5,
+            },
+            {
+                "chunk_uuid": "u2",
+                "arxiv_id": "2102.2",
+                "section_type": "Methodology",
+                "section_order": 1,
+                "chunk_text": "text-two",
+                "token_count": 5,
+            },
         ]
 
     def test_cache_hit_replays_full_payload(self) -> None:
@@ -300,8 +358,9 @@ class BuildKgCacheTest(unittest.TestCase):
             "text-one": [triple("BERT", "Method", "evaluated_on", "SQuAD", "Dataset")],
             "text-two": [triple("BERT", "Method", "outperforms", "GPT", "Method")],
         }
-        with tempfile.TemporaryDirectory() as cache_dir, mock.patch(
-            "lens.tools.kg.fetch_chunks", return_value=self._rows()
+        with (
+            tempfile.TemporaryDirectory() as cache_dir,
+            mock.patch("lens.tools.kg.fetch_chunks", return_value=self._rows()),
         ):
             first = build_kg(None, ["u1", "u2"], FakeExtractor(by_text), cache_dir=cache_dir)
             second = build_kg(None, ["u1", "u2"], FakeExtractor(by_text), cache_dir=cache_dir)
@@ -386,16 +445,21 @@ class ExtractPipelineTest(unittest.TestCase):
             {"start": 21, "end": 26, "text": "SQuAD", "label": "dataset", "score": 0.9},
         ]
         # head_pos/tail_pos are end-EXCLUSIVE (GLiREL adds +1).
-        rels = [{
-            "head_pos": [0, 1], "tail_pos": [4, 5],
-            "head_text": ["BERT"], "tail_text": ["SQuAD"],
-            "label": "evaluated_on", "score": 0.88,
-        }]
+        rels = [
+            {
+                "head_pos": [0, 1],
+                "tail_pos": [4, 5],
+                "head_text": ["BERT"],
+                "tail_text": ["SQuAD"],
+                "label": "evaluated_on",
+                "score": 0.88,
+            }
+        ]
         ex = self._extractor(ents, rels)
         out = ex.extract(text)
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["head"], "BERT")
-        self.assertEqual(out[0]["head_type"], "Method")   # canonicalised from "method"
+        self.assertEqual(out[0]["head_type"], "Method")  # canonicalised from "method"
         self.assertEqual(out[0]["relation"], "evaluated_on")
         self.assertEqual(out[0]["tail"], "SQuAD")
         self.assertEqual(out[0]["tail_type"], "Dataset")
@@ -404,16 +468,31 @@ class ExtractPipelineTest(unittest.TestCase):
     def test_descriptive_labels_map_to_canonical(self) -> None:
         text = "BERT is evaluated on SQuAD."
         ents = [
-            {"start": 0, "end": 4, "text": "BERT",
-             "label": "machine learning method, model, or algorithm", "score": 0.9},
-            {"start": 21, "end": 26, "text": "SQuAD",
-             "label": "dataset, corpus, or benchmark", "score": 0.9},
+            {
+                "start": 0,
+                "end": 4,
+                "text": "BERT",
+                "label": "machine learning method, model, or algorithm",
+                "score": 0.9,
+            },
+            {
+                "start": 21,
+                "end": 26,
+                "text": "SQuAD",
+                "label": "dataset, corpus, or benchmark",
+                "score": 0.9,
+            },
         ]
-        rels = [{
-            "head_pos": [0, 1], "tail_pos": [4, 5],
-            "head_text": ["BERT"], "tail_text": ["SQuAD"],
-            "label": "evaluated_on", "score": 0.88,
-        }]
+        rels = [
+            {
+                "head_pos": [0, 1],
+                "tail_pos": [4, 5],
+                "head_text": ["BERT"],
+                "tail_text": ["SQuAD"],
+                "label": "evaluated_on",
+                "score": 0.88,
+            }
+        ]
         ex = GlinerExtractor(
             ner_model=FakeNerModel(ents),
             rel_model=FakeRelModel(rels),
@@ -430,9 +509,7 @@ class ExtractPipelineTest(unittest.TestCase):
             max_tokens=5,
             overlap=2,
         )
-        windows = ex._text_windows(
-            "one two three four five six seven eight nine ten"
-        )
+        windows = ex._text_windows("one two three four five six seven eight nine ten")
         self.assertGreaterEqual(len(windows), 2)
         for window in windows:
             self.assertLessEqual(len(window.split()), 5)
@@ -464,11 +541,16 @@ class ExtractPipelineTest(unittest.TestCase):
             {"start": 0, "end": 7, "text": "GPT-3.5", "label": "method", "score": 0.9},
             {"start": 24, "end": 29, "text": "SQuAD", "label": "dataset", "score": 0.9},
         ]
-        rels = [{
-            "head_pos": [0, 3], "tail_pos": [6, 7],
-            "head_text": ["GPT-3", ".", "5"], "tail_text": ["SQuAD"],
-            "label": "evaluated_on", "score": 0.9,
-        }]
+        rels = [
+            {
+                "head_pos": [0, 3],
+                "tail_pos": [6, 7],
+                "head_text": ["GPT-3", ".", "5"],
+                "tail_text": ["SQuAD"],
+                "label": "evaluated_on",
+                "score": 0.9,
+            }
+        ]
         out = self._extractor(ents, rels).extract(text)
         self.assertEqual(out[0]["head"], "GPT-3.5")
         self.assertEqual(out[0]["tail"], "SQuAD")
