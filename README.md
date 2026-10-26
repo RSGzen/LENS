@@ -264,14 +264,38 @@ the run recorded.
 
 ## Screenshots
 
-| View | File |
-|---|---|
-| Recorded Runs: run list, recorded-playback caption, run header | `docs/images/01-recorded-runs.png` |
-| One turn: reasoning, collapsed code, tool call with latency and gate | `docs/images/02-turn.png` |
-| Full payload of a `rerank_chunks` call, with the chunk ids the answer cites | `docs/images/03-payload.png` |
-| Answer with the resolved-citation table | `docs/images/04-answer.png` |
-| Context and cost meters next to the growing evidence panel | `docs/images/05-meters.png` |
-| Live Query: the CLI streamed into the page | `docs/images/06-live-query.png` |
+Screenshots come from one recorded run (`m9-s3-plumbing-6`, imported as a bundle),
+so the pages show a recording rather than a live run.
+
+**The Recorded Runs page: the run list, the recorded-playback caption, and the run
+header with its cost against the cap the run was created with.**
+
+![Recorded Runs page](docs/images/recorded-runs.png)
+
+**One turn of the trajectory: the model's reasoning, the code it wrote in a
+collapsed expander, and the tool calls with their latency.**
+
+![A turn in the timeline](docs/images/turn.png)
+
+**The full payload of a `rerank_chunks` call, opened on demand, showing the chunk
+ids the answer cites.**
+
+![Full tool payload](docs/images/payload.png)
+
+**The answer, followed by the citation table. Every cited chunk that a recorded
+payload explains is marked `OK`; unresolved ids would be listed here too.**
+
+![Answer and citations](docs/images/answer.png)
+
+**Playback controls and the meters: prompt tokens per turn, cost against the
+recorded cap, and the budget counters for the selected turn.**
+
+![Controls and meters](docs/images/meters.png)
+
+**The Live Query page. It runs the pipeline for real and streams the CLI output
+into the page.**
+
+![Live Query page](docs/images/live-query.png)
 
 ## Project layout
 

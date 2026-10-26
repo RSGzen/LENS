@@ -153,7 +153,10 @@ def _sidebar() -> None:
 
         st.caption(f"runs root: `{runstore.runs_root()}`")
         st.divider()
-        st.caption("Read-only view of recorded artifacts. No pipeline logic.")
+        st.caption(
+            "Recorded runs are read-only. The live page shells out to the CLI and "
+            "adds no pipeline logic."
+        )
 
 
 def render_recording_banner() -> None:
@@ -206,7 +209,7 @@ def page_runs() -> None:
                 "updated": _when(row["updated_at"]),
                 "query": row["query"],
                 "cost $": row["cost_usd"],
-                "turns": row["iterations"],
+                "iterations": row["iterations"],
             }
             for row in rows
         ],
@@ -262,8 +265,8 @@ def page_run() -> None:
     st.subheader(PAGE_LIVE)
     st.caption(
         "Needs the workstation stack: GPU (embeddings, reranker, GLiNER), the "
-        "Postgres corpus, Docker and `OPENROUTER_API_KEY`. The **Runs** page needs "
-        "none of these. One run at a time — the app blocks while the CLI works "
+        "Postgres corpus, Docker and `OPENROUTER_API_KEY`. The **Recorded Runs** page "
+        "needs none of these. One run at a time — the app blocks while the CLI works "
         "(the terminal's Ctrl-C ends the app and leaves the run `interrupted`, "
         "which is resumable with `--resume`)."
     )
