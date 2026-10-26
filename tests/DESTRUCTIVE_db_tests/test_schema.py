@@ -1,6 +1,6 @@
 r"""!!! DESTRUCTIVE DB TEST - WIPES ITS DATABASE. DO NOT POINT AT ``lens``. !!!
 
-Contract tests for the M2 pgvector schema (no API key, zero cost).
+Contract tests for the pgvector schema (no API key, zero cost).
 
 WHY THIS FILE LIVES IN ``tests/DESTRUCTIVE_db_tests/``
 ------------------------------------------------------
@@ -34,9 +34,8 @@ from lens.db.schema import apply_schema, drop_schema, tables_exist
 # Throwaway DB this destructive suite is confined to (NEVER the live ``lens``).
 _TEST_DB = f"{config.LENS_DB_NAME}_test"
 
-
 class SchemaLiveTest(unittest.TestCase):
-    """M2 verify clause: papers/chunks exist; lens_ro reads but cannot write."""
+    """ verify clause: papers/chunks exist; lens_ro reads but cannot write."""
 
     admin: psycopg.Connection
 
@@ -112,7 +111,6 @@ class SchemaLiveTest(unittest.TestCase):
             with self.assertRaises(psycopg.Error):
                 ro.execute("INSERT INTO papers (arxiv_id, title) VALUES ('x', 'y')")
             ro.rollback()
-
 
 if __name__ == "__main__":
     unittest.main()

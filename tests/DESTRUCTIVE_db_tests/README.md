@@ -27,9 +27,9 @@ If a run reports *"no throwaway lens_test database reachable"*, create it as
 above (or start the container).
 
 ## Files
-- `test_schema.py` - M2 pgvector schema (`papers` / `chunks`, HNSW, `lens_ro`).
-- `test_papers.py` - M3 abstract-embedding loader.
-- `test_chunks.py` - M4 chunk loader + `chunk_uuid`.
+- `test_schema.py` - pgvector schema (`papers` / `chunks`, HNSW, `lens_ro`).
+- `test_papers.py` - abstract-embedding loader.
+- `test_chunks.py` - chunk loader + `chunk_uuid`.
 
 All three now connect to `lens_test`; the destructive `drop_schema` runs there,
 never on `lens`.

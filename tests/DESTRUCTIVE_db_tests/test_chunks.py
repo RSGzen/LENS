@@ -1,6 +1,6 @@
 r"""!!! DESTRUCTIVE DB TEST - WIPES ITS DATABASE. DO NOT POINT AT ``lens``. !!!
 
-Contract tests for M4 chunk loading (no key, zero cost).
+Contract tests for chunk loading (no key, zero cost).
 
 WHY THIS FILE LIVES IN ``tests/DESTRUCTIVE_db_tests/``
 ------------------------------------------------------
@@ -46,9 +46,8 @@ TEI_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 </TEI>
 """
 
-
 def paper_entry(arxiv_id: str) -> dict:
-    """A minimal manifest entry carrying the fields the M3/M4 loaders read."""
+    """A minimal manifest entry carrying the fields the / loaders read."""
     return {
         "arxiv_id": arxiv_id,
         "version": "v1",
@@ -62,7 +61,6 @@ def paper_entry(arxiv_id: str) -> dict:
         "abstract": f"abstract for {arxiv_id}",
     }
 
-
 class FakeEmbedder:
     """Deterministic stand-in: one distinct vector of ``config.EMBEDDING_DIM`` per text."""
 
@@ -75,7 +73,6 @@ class FakeEmbedder:
         self.seen.append(texts)
         return np.arange(len(texts) * self.dim, dtype=np.float32).reshape(len(texts), self.dim)
 
-
 class ChunkUuidTest(unittest.TestCase):
     def test_deterministic_and_distinct(self) -> None:
         a = chunk_uuid("1501.00601", "Methodology", 3)
@@ -84,9 +81,8 @@ class ChunkUuidTest(unittest.TestCase):
         self.assertNotEqual(a, chunk_uuid("1501.00602", "Methodology", 3))
         self.assertIsInstance(a, uuid.UUID)
 
-
 class LoadChunksLiveTest(unittest.TestCase):
-    """M4 verify clause: sane chunk counts; no NULL embeddings; idempotent upsert."""
+    """ verify clause: sane chunk counts; no NULL embeddings; idempotent upsert."""
 
     admin: psycopg.Connection
 
@@ -174,7 +170,6 @@ class LoadChunksLiveTest(unittest.TestCase):
 
         total, _ = self._chunk_counts()
         self.assertEqual(total, 2 * len(self.entries))
-
 
 if __name__ == "__main__":
     unittest.main()

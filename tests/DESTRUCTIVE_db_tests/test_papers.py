@@ -1,6 +1,6 @@
 r"""!!! DESTRUCTIVE DB TEST - WIPES ITS DATABASE. DO NOT POINT AT ``lens``. !!!
 
-Contract tests for M3 paper loading (no key, zero cost).
+Contract tests for paper loading (no key, zero cost).
 
 WHY THIS FILE LIVES IN ``tests/DESTRUCTIVE_db_tests/``
 ------------------------------------------------------
@@ -31,7 +31,6 @@ from lens.db.schema import apply_schema, drop_schema
 # Throwaway DB this destructive suite is confined to (NEVER the live ``lens``).
 _TEST_DB = f"{config.LENS_DB_NAME}_test"
 
-
 def entry(arxiv_id: str, title: str = "t") -> dict:
     """A minimal manifest entry carrying the fields :func:`load_papers` reads."""
     return {
@@ -47,7 +46,6 @@ def entry(arxiv_id: str, title: str = "t") -> dict:
         "abstract": f"abstract for {arxiv_id}",
     }
 
-
 class FakeEmbedder:
     """Deterministic stand-in: one distinct vector of ``config.EMBEDDING_DIM`` per text."""
 
@@ -60,9 +58,8 @@ class FakeEmbedder:
         self.seen.append(texts)
         return np.arange(len(texts) * self.dim, dtype=np.float32).reshape(len(texts), self.dim)
 
-
 class LoadPapersLiveTest(unittest.TestCase):
-    """M3 verify clause: rows == entry count; no NULL embeddings; idempotent."""
+    """ verify clause: rows == entry count; no NULL embeddings; idempotent."""
 
     admin: psycopg.Connection
 
@@ -136,7 +133,6 @@ class LoadPapersLiveTest(unittest.TestCase):
 
         total, _ = self._paper_counts()
         self.assertEqual(total, len(self.entries))
-
 
 if __name__ == "__main__":
     unittest.main()
