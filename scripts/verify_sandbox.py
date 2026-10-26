@@ -1,20 +1,19 @@
-"""M8 live sandbox verification (requires Docker Desktop).
+"""live sandbox verification (requires Docker Desktop).
 
-Checks, in dependency order - the first two are what the thesis claims, so they
+Checks, in dependency order - the first two are what the claims, so they
 run before anything convenient. The transport is the real one (``exec_client``
 inside the container), so a pass here means the path ``Runtime`` uses works, not
 a parallel debug path:
 
   0. **host RPC reachable from inside the container** - a block reads
-     ``$LENS_HOST_RPC_URL/health``. If this fails on ``sandbox-net: internal:
-     true``, apply the compose fallback (fixed subnet + bridge-gateway URL), do
-     **not** drop ``internal``: no-egress is a claim (Tech Stack 4b).
+     ``$LENS_HOST_RPC_URL/health``. If this fails, fix the relay, never the
+     network policy: no egress is a claim this project makes, not a convenience.
   1. **general egress blocked** - a connect to ``1.1.1.1:443`` must fail. Record
      the failure: absence of egress is evidence, not an assumption.
   2. build/start ``lens-repl`` **and** ``lens-relay`` via compose; health answers
      from **inside** the container. There is no published port to try: an
-     ``internal`` network gets no DNAT rule, so Docker silently drops the mapping
-     (LOG-107/114).
+     ``internal`` network gets no DNAT rule, so Docker drops the mapping
+     silently.
   3. namespace persistence (``x = 41`` then ``print(x + 1)`` -> ``42``);
   4. a timeout returns a structured error without killing the runner;
   5. the workspace mount is writable **and** the run artifacts are not visible

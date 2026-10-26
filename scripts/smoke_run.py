@@ -1,4 +1,4 @@
-"""M0 live smoke test — four real OpenRouter calls, each cost-logged.
+"""live smoke test — four real OpenRouter calls, each cost-logged.
 
 This exercises the real transport (no fakes) end-to-end on the host:
 
@@ -131,7 +131,7 @@ def main() -> int:
         for name, answer in jev.answers.items():
             print(f"         answers[{name!r}] = {answer}")
 
-    fee = total_cost * 0.055  # OpenRouter credit-load fee (LOG-29 / R4)
+    fee = total_cost * 0.055  # OpenRouter credit-load fee
     print("-" * 88)
     print(f"calls       : {len(CHAT_CALLS) + 1}  (failures: {failures})")
     print(f"usage.cost  : ${total_cost:.6f}")

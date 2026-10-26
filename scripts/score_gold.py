@@ -1,10 +1,10 @@
-r"""M7.2 — score an annotated gold-sample worksheet.
+r""" — score an annotated gold-sample worksheet.
 
-Triples (K-04):
+Triples :
   .\.venv\Scripts\python.exe scripts\score_gold.py \
       --mode triples --csv gold_triples.csv --out gold_triples_report.json
 
-Entities (K-05):
+Entities :
   .\.venv\Scripts\python.exe scripts\score_gold.py \
       --mode entities --csv gold_entities.csv \
       --predictions gold_entities_predictions.json --out gold_entities_report.json

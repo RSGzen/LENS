@@ -1,18 +1,18 @@
-r"""M5 runner — one sample query through the full funnel (``k -> n -> C -> c``).
+r"""runner — one sample query through the full funnel (``k -> n -> C -> c``).
 
 Wiring only: connect **read-only** (``lens_ro``), build the nomic ``Embedder`` +
 bge ``Reranker``, then run
 ``shallow_match -> rerank_papers -> deep_match -> rerank_chunks`` and print each
 stage's latency plus the hydrated result. Stdout is mirrored to a timestamped log
-under ``config.LENS_LOGS_ROOT_PATH`` (Roadmap §4 M5 verify clause).
+under ``config.LENS_LOGS_ROOT_PATH``.
 
-E-04: HNSW ``m`` / ``ef_construction`` are build-time (``scripts/build_indexes.py``,
+: HNSW ``m`` / ``ef_construction`` are build-time (``scripts/build_indexes.py``,
 defaults 16 / 64) and read back from the index; ``ef_search`` is query-time and is
 raised to ``max(config.HNSW_EF_SEARCH, limit)`` per stage because an unfiltered HNSW
 scan returns at most ``ef_search`` rows (pgvector default 40). Both models are
 pre-warmed before the timed funnel, so the stage latencies are warm, not cold.
 
-Prereqs: ``lens-pg`` running with M3+M4 loaded and the HNSW indexes built.
+Prereqs: ``lens-pg`` running with + loaded and the HNSW indexes built.
 
 Run:  .\\.venv\\Scripts\\python.exe scripts\\sample_query.py "your query here"
 """
@@ -42,7 +42,7 @@ HNSW_INDEX_NAMES = ("papers_abstract_embedding_hnsw", "chunks_chunk_embedding_hn
 
 
 def _report_hnsw(conn) -> None:
-    """Print the HNSW build params (``m`` / ``ef_construction``) read from the index (E-04)."""
+    """Print the HNSW build params (``m`` / ``ef_construction``) read from the index."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT relname, reloptions FROM pg_class WHERE relname = ANY(%s) ORDER BY relname",
@@ -55,7 +55,7 @@ def _report_hnsw(conn) -> None:
 def main() -> None:
     setup_file_logging("lens.sample_query", "sample_query")
 
-    # A raw string is a valid query input; the funnel also accepts the M6
+    # A raw string is a valid query input; the funnel also accepts the
     # segmentation dict, e.g. {"objectives": ["..."], "problems": ["..."]}.
     query = " ".join(sys.argv[1:]).strip() or DEFAULT_QUERY
     print(f"query: {query!r}")
@@ -72,7 +72,7 @@ def main() -> None:
     reranker = Reranker()
 
     # Pre-load / download both models so the timed funnel reflects query work,
-    # not the one-time model load (E-04: cold vs warm).
+    # not the one-time model load.
     print("warming up models (first load / download is one-time)...")
     t_warm = time.perf_counter()
     embedder.encode_documents(

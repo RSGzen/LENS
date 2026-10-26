@@ -1,10 +1,10 @@
-r"""M6 runner -- one real segmentation call (query -> 4 buckets -> ``query.json``).
+r"""runner -- one real segmentation call (query -> 4 buckets -> ``query.json``).
 
 Wiring only: build the trajectory sink + transport, run
 ``segment_query`` (one real ``gpt-5-mini`` structured-JSON call), write the
 buckets to ``query.json`` in the run workspace, and print the ``usage.cost`` +
-dated ``model`` snapshot read back from the trajectory (the M6 verify clause,
-E-04). Stdout is mirrored to a timestamped log under ``config.LENS_LOGS_ROOT_PATH``.
+dated ``model`` snapshot read back from the trajectory (the verify clause,
+). Stdout is mirrored to a timestamped log under ``config.LENS_LOGS_ROOT_PATH``.
 
 !!! SPENDS REAL CREDITS !!!  Not run automatically. Requires
 ``OPENROUTER_API_KEY`` in the environment or a gitignored ``.env``.
@@ -88,7 +88,7 @@ def main() -> int:
             f"cost=${event.get('cost_usd', 0.0):.6f}"
         )
 
-    fee = total_cost * 0.055  # OpenRouter credit-load fee (LOG-29 / R4)
+    fee = total_cost * 0.055  # OpenRouter credit-load fee
     print("-" * 88)
     print(f"usage.cost : ${total_cost:.6f}")
     print(f"+5.5% fee  : ${fee:.6f}")
