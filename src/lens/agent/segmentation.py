@@ -90,11 +90,9 @@ def build_segmentation_messages(query: str) -> list[dict[str, str]]:
     {"role": "user", "content": query}]``. The user content is the raw query --
     no rewriting (LOG-48).
     """
-    system_query_payload = {"role": "system",
-                            "content": SEGMENTATION_SYSTEM_PROMPT}
+    system_query_payload = {"role": "system", "content": SEGMENTATION_SYSTEM_PROMPT}
 
-    user_query_payload = {"role": "user",
-                          "content": query}
+    user_query_payload = {"role": "user", "content": query}
 
     return [system_query_payload, user_query_payload]
 
@@ -110,14 +108,14 @@ def parse_segmentation_json(text: str) -> dict[str, Any]:
     """
     # Extract the JSON object: from the first "{" to the last "}" (greedy, so a
     # surrounding ```json fence or stray text is ignored).
-    match = re.search(r'(\{.*\})', text, re.DOTALL)
+    match = re.search(r"(\{.*\})", text, re.DOTALL)
 
     try:
         if match:
             json_str = match.group(0)
             data = json.loads(json_str)
             return data
-        
+
         raise ValueError("No JSON body is found from segmentation LLM response.")
 
     except Exception as e:
@@ -194,10 +192,12 @@ def segment_query(
 
     messages = build_segmentation_messages(query)
 
-    result = client.chat(role="sub",
-                         messages=messages,
-                         trace_ctx=trace_ctx,
-                         response_format=SEGMENTATION_RESPONSE_FORMAT)
+    result = client.chat(
+        role="sub",
+        messages=messages,
+        trace_ctx=trace_ctx,
+        response_format=SEGMENTATION_RESPONSE_FORMAT,
+    )
 
     result_json = parse_segmentation_json(result.text)
 
@@ -218,4 +218,3 @@ def write_query_json(buckets: Mapping[str, Any], path: str | Path) -> Path:
         json.dump(buckets, f, ensure_ascii=False, indent=2)
 
     return Path(path)
-

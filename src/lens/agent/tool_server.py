@@ -154,9 +154,7 @@ class ToolServer:
 
         # compare_digest on bytes: a non-ASCII token must be a 401, not a
         # TypeError from the str-only overload.
-        if not token or not hmac.compare_digest(
-            token.encode("utf-8"), self.token.encode("utf-8")
-        ):
+        if not token or not hmac.compare_digest(token.encode("utf-8"), self.token.encode("utf-8")):
             return 401, {
                 "ok": False,
                 "error": {"type": "Unauthorized", "message": "bad or missing token"},

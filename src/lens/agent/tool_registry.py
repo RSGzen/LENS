@@ -168,8 +168,7 @@ class ToolRegistry:
             bound[name] = [
                 parameter.name
                 for parameter in inspect.signature(spec.func).parameters.values()
-                if parameter.kind
-                in (parameter.POSITIONAL_OR_KEYWORD, parameter.POSITIONAL_ONLY)
+                if parameter.kind in (parameter.POSITIONAL_OR_KEYWORD, parameter.POSITIONAL_ONLY)
             ]
 
         return bound
@@ -228,9 +227,7 @@ class ToolRegistry:
 
         try:
             spec = self.get(name)
-            args_str = json.dumps(
-                args, sort_keys=True, ensure_ascii=False, separators=(",", ":")
-            )
+            args_str = json.dumps(args, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
             args_fingerprint = args_hash(args)
 
             result = spec.func(**args)
