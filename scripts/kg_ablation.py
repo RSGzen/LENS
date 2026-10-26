@@ -1,8 +1,8 @@
-r"""M7.3 KG-level ablation: ``off`` / ``raw`` / ``postprocess`` / ``verified``.
+r""" KG-level ablation: ``off`` / ``raw`` / ``postprocess`` / ``verified``.
 
 This measures the **KG arms** — triples, type/relation composition, cost, latency.
-The RLM answer-quality ablation is part of the **M11 evaluation campaign** (it
-requires the M8 harness); this is the KG-side companion and the evidence for
+The RLM answer-quality ablation is part of the ** evaluation campaign** (it
+requires the harness); this is the KG-side companion and the evidence for
 whether the KG earns its place.
 
 Arms:
@@ -55,7 +55,7 @@ def _reset_peak_vram() -> None:
 def main() -> None:
     setup_file_logging("lens.kg_ablation", "kg_ablation")
 
-    parser = argparse.ArgumentParser(description="M7.3 KG-level ablation")
+    parser = argparse.ArgumentParser
     parser.add_argument("--chunks", required=True, help="saved chunk-id JSON")
     parser.add_argument("--labels", choices=tuple(ENTITY_LABEL_SETS), default="descriptive")
     parser.add_argument("--min-score", type=float, default=0.5)

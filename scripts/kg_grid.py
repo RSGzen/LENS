@@ -1,4 +1,4 @@
-r"""M7 experiment grid (b)/(c) — extractor labels/threshold/models x chunk sets.
+r""" experiment grid (b)/(c) — extractor labels/threshold/models x chunk sets.
 
 Does no sampling itself: pass one or more saved chunk-id JSON files produced by
 ``kg_probe.py --save-chunks`` (e.g. the ``C=100`` and ``C=200`` query sets). For each
@@ -51,7 +51,7 @@ def _reset_peak_vram() -> None:
 def main() -> None:
     setup_file_logging("lens.kg_grid", "kg_grid")
 
-    parser = argparse.ArgumentParser(description="M7 extractor/retrieval grid")
+    parser = argparse.ArgumentParser
     parser.add_argument(
         "--chunks",
         nargs="+",
@@ -67,7 +67,7 @@ def main() -> None:
     parser.add_argument(
         "--no-postprocess",
         action="store_true",
-        help="disable the M7.1 post-process (pre/post comparison)",
+        help="disable the post-process (pre/post comparison)",
     )
     parser.add_argument(
         "--verify",

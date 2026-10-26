@@ -1,4 +1,4 @@
-r"""M3/M5 runner — (re)build the pgvector HNSW indexes after a bulk load.
+r"""/ runner — (re)build the pgvector HNSW indexes after a bulk load.
 
 Wiring only. pgvector recommends creating HNSW indexes **after** loading the
 data: it keeps row inserts fast during the load and the one-shot build is
@@ -16,10 +16,10 @@ safe. 4 GB holds the graph for ~5 M x 512-d halfvec nodes without spilling.
 Windows bind mount (``-v D:\lens-data\postgres:/var/lib/postgresql/data``) is
 served over the WSL2 host-filesystem boundary and is ~100x slower than a Docker
 **named volume** (native ext4). On a bind mount a 4.7 M-row build can run for days;
-on a named volume it is minutes-to-~1 h. See `Task Update Logs/Log_11_10_2026.md`.
+on a named volume it is minutes-to-~1 h. See `Task Update Logs/.
 
 Stdout (including the wall-clock line) is mirrored to a timestamped log under
-``config.LENS_LOGS_ROOT_PATH`` for thesis evidence.
+``config.LENS_LOGS_ROOT_PATH`` for evidence.
 
 Prereqs: the ``lens-pg`` container is running and the load has completed.
 

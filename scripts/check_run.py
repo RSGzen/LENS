@@ -1,11 +1,7 @@
-"""Assert the M9 gate on one recorded run (read-only: no key, no DB, no model call).
+"""Assert the gate on one recorded run (read-only: no key, no DB, no model call).
 
 Docker is *optional*: the "sandbox stopped" check is skipped when ``docker`` is not
 available, so the same command works on an imported bundle.
-
-Spec: ``MVP Build Roadmap.md`` M9 verify clause ("reproducible command; cost
-reported") and §6 hard gate ("within caps, >= 4 event types, ``tasks.json``
-non-empty, ``answer.md`` written, ``cost_usd == trajectory.totals()``").
 
 Usage::
 
@@ -14,7 +10,7 @@ Usage::
 
 The runs root comes from ``config`` (``LENS_RUNS_ROOT``), so the same command
 works on an imported bundle. Exit code 0 = every check passed. This is the same
-assertion set M11 needs per run, which is why it is a command and not a paragraph
+assertion set needs per run, which is why it is a command and not a paragraph
 in a log: a gate that is not executable drifts.
 
 The container check is tolerant: Docker may not be installed on the machine that
@@ -114,7 +110,7 @@ def _containers_running() -> bool | None:
 
 
 def check_run(run_id: str) -> bool:
-    """Run every M9 assertion; return True when the run passes the gate."""
+    """Run every assertion; return True when the run passes the gate."""
     run_dir = runstore.runs_root() / run_id
 
     print(f"run      {run_id}")
@@ -183,7 +179,7 @@ def check_run(run_id: str) -> bool:
         ),
     ]
 
-    # The numbers the log and the thesis report need (R4: metric + source row).
+    # The numbers a report needs: the metric, and where it came from.
     turn_tokens = [e.get("tokens_in") or 0 for e in events if e.get("call_type") == "chat"]
     budgets = [
         (e.get("extra") or {}).get("budget") for e in events if isinstance(e.get("extra"), dict)
@@ -208,7 +204,7 @@ def check_run(run_id: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and return an exit code (0 = the M9 gate passes)."""
+    """Parse args and return an exit code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run_id", help="run id (a directory under the runs root)")
     args = parser.parse_args(argv)

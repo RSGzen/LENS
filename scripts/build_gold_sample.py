@@ -1,10 +1,10 @@
-r"""M7.2 — build a small gold-sample worksheet (K-04 triples or K-05 entities).
+r""" — build a small gold-sample worksheet.
 
-Triples (K-04):
+Triples :
   .\.venv\Scripts\python.exe scripts\build_gold_sample.py \
       --kg D:\lens-data\logs\kg_grid_....json --mode triples --n 100 --out gold_triples.csv
 
-Entities (K-05):
+Entities :
   .\.venv\Scripts\python.exe scripts\build_gold_sample.py \
       --kg D:\lens-data\logs\kg_grid_....json --mode entities --n 20 \
       --chunks D:\lens-data\cache\kg\chunks_C200.json \
@@ -51,7 +51,7 @@ def _entity_rows(chunk_ids: list[str]) -> list[dict]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build a K-04/K-05 gold worksheet")
+    parser = argparse.ArgumentParser
     parser.add_argument("--kg", required=True, help="saved KG JSON (probe/grid/cache)")
     parser.add_argument("--mode", choices=("triples", "entities"), default="triples")
     parser.add_argument("--n", type=int, default=100)

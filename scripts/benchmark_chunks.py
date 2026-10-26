@@ -1,17 +1,17 @@
-r"""M4 pre-run benchmark — measure real chunks/s before the full-corpus load.
+r"""pre-run benchmark — measure real chunks/s before the full-corpus load.
 
-Why this exists: the M3 full run settled at ~23 papers/s vs a 114.8/s short
-benchmark (≈ 5x gap; GPU saturated at 100%). The full M4 load could range from
+Why this exists: the full run settled at ~23 papers/s vs a 114.8/s short
+benchmark (≈ 5x gap; GPU saturated at 100%). The full load could range from
 ~10 h to ~3 days depending on throughput, so measure on a sample first and use
-the projection to decide whether to optimise the embed path (Roadmap §4 M3/M4,
-§10; M3 evidence row 29).
+the projection to decide whether the embed path needs optimising before the
+full load is attempted.
 
 Wiring only. Measures, over ``SAMPLE_SIZE`` manifest papers:
   * parse + tokenize + chunk  -> papers/s, chunks/s;
   * embed the produced chunks -> chunks/s, tokens/s (nomic path);
 and extrapolates to the full manifest (chunk volume measured, not assumed).
 
-Prereqs: the M1 manifest exists; M3 deps installed. No DB writes.
+Prereqs: the manifest exists; deps installed. No DB writes.
 
 Run:  .\\.venv\\Scripts\\python.exe scripts\\benchmark_chunks.py
 """
