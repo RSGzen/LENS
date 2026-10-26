@@ -1,6 +1,4 @@
-"""Campaign matrix: validate an arm file and expand it into launch jobs (M9).
-
-Spec: ``MVP Build Roadmap.md`` M9 item 3 (the campaign itself runs at M11).
+"""Campaign matrix: validate an arm file and expand it into launch jobs.
 
 Pure functions only - no subprocess, no Docker, no files written - so the matrix
 can be validated for free (``--dry-run``) and tested without a key. The runner in
@@ -64,7 +62,7 @@ def load_campaign(path: str | Path) -> dict[str, Any]:
 def build_jobs(campaign: dict[str, Any]) -> list[dict[str, Any]]:
     """Return one job per (arm, query, repeat) - the launch matrix.
 
-    ``repeats`` defaults to 1: n >= 3 belongs to the M11 arms, not to a smoke that
+    ``repeats`` defaults to 1: n >= 3 belongs to the arms, not to a smoke that
     only proves the plumbing. Run ids are deterministic, so re-running a campaign
     fails loudly on an existing directory instead of silently mixing two runs.
     """

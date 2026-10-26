@@ -1,7 +1,4 @@
-"""Arm fingerprint: the config knobs that define one experimental condition (M9).
-
-Spec: ``MVP Build Roadmap.md`` M9 item 3 ("experiment-runner scaffolding - arm
-config, scoring hooks") and M11 item 1 ("freeze the system", E-04).
+"""Arm fingerprint: the config knobs that define one experimental condition.
 
 Why a *fingerprint* and not an ``apply_arm()``
 ---------------------------------------------
