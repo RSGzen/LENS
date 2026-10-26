@@ -115,9 +115,7 @@ def load_gazetteer(path: str | Path) -> dict[str, dict[str, Any]]:
     return result
 
 
-def apply_gazetteer(
-    triples: list[Triple], gazetteer: dict[str, dict[str, Any]]
-) -> list[Triple]:
+def apply_gazetteer(triples: list[Triple], gazetteer: dict[str, dict[str, Any]]) -> list[Triple]:
     """Override entity types with a corpus-built prior where the name is known."""
     if not gazetteer:
         return triples
@@ -134,13 +132,27 @@ def apply_gazetteer(
 
 # ------------------------------------------------------------------ suffix hints
 SUFFIX_TYPES = {
-    "dataset": "Dataset", "datasets": "Dataset", "corpus": "Dataset",
-    "corpora": "Dataset", "benchmark": "Dataset", "benchmarks": "Dataset",
-    "test set": "Dataset", "testbed": "Dataset",
-    "metric": "Metric", "metrics": "Metric", "score": "Metric", "scores": "Metric",
-    "task": "Task", "tasks": "Task",
-    "method": "Method", "methods": "Method", "model": "Method", "models": "Method",
-    "algorithm": "Method", "algorithms": "Method", "framework": "Method",
+    "dataset": "Dataset",
+    "datasets": "Dataset",
+    "corpus": "Dataset",
+    "corpora": "Dataset",
+    "benchmark": "Dataset",
+    "benchmarks": "Dataset",
+    "test set": "Dataset",
+    "testbed": "Dataset",
+    "metric": "Metric",
+    "metrics": "Metric",
+    "score": "Metric",
+    "scores": "Metric",
+    "task": "Task",
+    "tasks": "Task",
+    "method": "Method",
+    "methods": "Method",
+    "model": "Method",
+    "models": "Method",
+    "algorithm": "Method",
+    "algorithms": "Method",
+    "framework": "Method",
     "frameworks": "Method",
 }
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9\-\.]*")
@@ -171,21 +183,44 @@ def suffix_type_hint(triples: list[Triple]) -> list[Triple]:
 # Strict matching (exact/compact or suffix) is deliberate: the broad substring
 # matcher used for benchmark-lenient *scoring* would read "quality-aware" as the
 # QuALITY benchmark and could drop valid method heads.
-_BENCH_SUFFIX = re.compile(
-    r"(?:qa|bench|benchmark|mc|multihop)$", re.IGNORECASE
+_BENCH_SUFFIX = re.compile(r"(?:qa|bench|benchmark|mc|multihop)$", re.IGNORECASE)
+_BENCHMARK_NAMES = frozenset(
+    {
+        "qasper",
+        "quality",
+        "narrativeqa",
+        "squad",
+        "hotpotqa",
+        "musique",
+        "2wikimultihopqa",
+        "wcep",
+        "booksum",
+        "academiceval",
+        "qmsum",
+        "longbench",
+        "multifieldqa",
+    }
 )
-_BENCHMARK_NAMES = frozenset({
-    "qasper", "quality", "narrativeqa", "squad", "hotpotqa", "musique",
-    "2wikimultihopqa", "wcep", "booksum", "academiceval", "qmsum", "longbench",
-    "multifieldqa",
-})
-_ROLE_METHOD_HEAD_RELATIONS = frozenset({
-    "evaluated_on", "outperforms", "extends", "compares_to", "uses",
-    "addresses", "explores",
-})
-_ROLE_METHOD_TAIL_RELATIONS = frozenset({
-    "measures", "outperforms", "extends", "compares_to", "addresses",
-})
+_ROLE_METHOD_HEAD_RELATIONS = frozenset(
+    {
+        "evaluated_on",
+        "outperforms",
+        "extends",
+        "compares_to",
+        "uses",
+        "addresses",
+        "explores",
+    }
+)
+_ROLE_METHOD_TAIL_RELATIONS = frozenset(
+    {
+        "measures",
+        "outperforms",
+        "extends",
+        "compares_to",
+        "addresses",
+    }
+)
 
 
 def is_benchmark_span(text: str, *, broad: bool = False) -> bool:
@@ -344,9 +379,7 @@ def _break_cycles(triples: list[Triple], context_key: str) -> list[Triple]:
 
     for relation, ctx in scopes:
         group = [
-            t
-            for t in triples
-            if t.get("relation") == relation and _context(t, context_key) == ctx
+            t for t in triples if t.get("relation") == relation and _context(t, context_key) == ctx
         ]
         while True:
             graph = nx.DiGraph()

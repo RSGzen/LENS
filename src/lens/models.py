@@ -91,20 +91,27 @@ class Question(BaseModel):
             if isinstance(self.criteria, dict):
                 raise ValueError("Criteria for Score type questions should be a list.")
             if len(self.criteria) < 2:
-                raise ValueError("Criteria list for Score type questions should at least contain 2 labels.")
+                raise ValueError(
+                    "Criteria list for Score type questions should at least contain 2 labels."
+                )
 
         # Choice must be a dict[str, str] with >= 2 options.
         elif self.type == "choice":
             if isinstance(self.criteria, list):
                 raise ValueError("Criteria for Choice type questions should be a dictionary.")
             if len(self.criteria) < 2:
-                raise ValueError("Criteria dictionary for Choice type questions must have 2 key-value pairs or more.")
+                raise ValueError(
+                    "Criteria dictionary for Choice type questions must have 2"
+                    " key-value pairs or more."
+                )
 
         # Noul must be a dict whose keys are exactly {"true", "false"}.
         else:
             if isinstance(self.criteria, list):
                 raise ValueError("Criteria for Noul type questions should be a dictionary.")
             if set(self.criteria) != {"true", "false"}:
-                raise ValueError("Criteria dictionary for Noul type questions must have keys 'true' and 'false'.")
+                raise ValueError(
+                    "Criteria dictionary for Noul type questions must have keys 'true' and 'false'."
+                )
 
         return self

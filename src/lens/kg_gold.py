@@ -35,12 +35,28 @@ from lens.kg_postprocess import is_benchmark_span as _is_benchmark_span
 Triple = dict[str, Any]
 
 TRIPLE_COLUMNS = [
-    "id", "head", "head_type", "relation", "tail", "tail_type", "score",
-    "chunk_uuid", "arxiv_id", "section_type",
-    "gold_relation_ok", "gold_head_type_ok", "gold_tail_type_ok", "notes",
+    "id",
+    "head",
+    "head_type",
+    "relation",
+    "tail",
+    "tail_type",
+    "score",
+    "chunk_uuid",
+    "arxiv_id",
+    "section_type",
+    "gold_relation_ok",
+    "gold_head_type_ok",
+    "gold_tail_type_ok",
+    "notes",
 ]
 ENTITY_COLUMNS = [
-    "chunk_uuid", "arxiv_id", "section_type", "chunk_text", "gold_entities", "notes",
+    "chunk_uuid",
+    "arxiv_id",
+    "section_type",
+    "chunk_text",
+    "gold_entities",
+    "notes",
 ]
 
 
@@ -183,9 +199,17 @@ def _type_flags(row: dict, benchmark_lenient: bool) -> tuple[bool, bool]:
     tail_ok = _ok(row["gold_tail_type_ok"])
     if benchmark_lenient:
         # A benchmark can be a Dataset or a Method; accept either for benchmark-like spans.
-        if not head_ok and is_benchmark_span(row.get("head", "")) and row.get("head_type") in {"Dataset", "Method"}:
+        if (
+            not head_ok
+            and is_benchmark_span(row.get("head", ""))
+            and row.get("head_type") in {"Dataset", "Method"}
+        ):
             head_ok = True
-        if not tail_ok and is_benchmark_span(row.get("tail", "")) and row.get("tail_type") in {"Dataset", "Method"}:
+        if (
+            not tail_ok
+            and is_benchmark_span(row.get("tail", ""))
+            and row.get("tail_type") in {"Dataset", "Method"}
+        ):
             tail_ok = True
     return head_ok, tail_ok
 
@@ -202,14 +226,12 @@ def score_triples(rows: Sequence[dict], *, benchmark_lenient: bool = False) -> d
     head = sum(head_ok for _r, head_ok, _t in strict)
     tail = sum(tail_ok for _r, _h, tail_ok in strict)
     triple = sum(
-        _ok(r["gold_relation_ok"]) and head_ok and tail_ok
-        for r, head_ok, tail_ok in strict
+        _ok(r["gold_relation_ok"]) and head_ok and tail_ok for r, head_ok, tail_ok in strict
     )
     head_lenient = sum(head_ok for _r, head_ok, _t in lenient)
     tail_lenient = sum(tail_ok for _r, _h, tail_ok in lenient)
     triple_lenient = sum(
-        _ok(r["gold_relation_ok"]) and head_ok and tail_ok
-        for r, head_ok, tail_ok in lenient
+        _ok(r["gold_relation_ok"]) and head_ok and tail_ok for r, head_ok, tail_ok in lenient
     )
 
     by_relation: dict[str, list[int]] = defaultdict(lambda: [0, 0])
@@ -263,7 +285,10 @@ def score_entities(rows: Sequence[dict], predictions: dict[str, list[dict]]) -> 
     by_type: dict[str, list[int]] = defaultdict(lambda: [0, 0])
 
     for row in rows:
-        gold = {name.casefold(): (name, kind) for name, kind in parse_gold_entities(row.get("gold_entities"))}
+        gold = {
+            name.casefold(): (name, kind)
+            for name, kind in parse_gold_entities(row.get("gold_entities"))
+        }
         pred = {
             item["entity"].casefold(): item
             for item in predictions.get(row["chunk_uuid"], [])

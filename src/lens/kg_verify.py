@@ -34,36 +34,145 @@ from lens.models import JevResult, Question
 Triple = dict[str, Any]
 
 # ------------------------------------------------------------------ lexicons
-PRONOUNS = frozenset({
-    "it", "its", "they", "them", "their", "theirs", "he", "him", "his",
-    "she", "her", "hers", "we", "us", "our", "ours", "i", "me", "my", "you",
-    "your", "yours", "this", "that", "these", "those", "which", "who", "whom",
-    "what", "such", "same", "other", "another", "some", "any", "all", "both",
-    "each", "either", "neither", "none", "one", "ones",
-})
+PRONOUNS = frozenset(
+    {
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "theirs",
+        "he",
+        "him",
+        "his",
+        "she",
+        "her",
+        "hers",
+        "we",
+        "us",
+        "our",
+        "ours",
+        "i",
+        "me",
+        "my",
+        "you",
+        "your",
+        "yours",
+        "this",
+        "that",
+        "these",
+        "those",
+        "which",
+        "who",
+        "whom",
+        "what",
+        "such",
+        "same",
+        "other",
+        "another",
+        "some",
+        "any",
+        "all",
+        "both",
+        "each",
+        "either",
+        "neither",
+        "none",
+        "one",
+        "ones",
+    }
+)
 DETERMINERS = frozenset({"the", "a", "an", "this", "that", "these", "those"})
-GENERIC_ADJECTIVES = frozenset({
-    "novel", "novels", "new", "proposed", "existing", "current", "previous",
-    "baseline", "baselines", "state-of-the-art", "sota", "long-text",
-    "academic", "exact", "target", "generic", "various", "different",
-    "significant", "better", "worse", "best", "worst", "full", "entire",
-    "whole", "same", "similar", "multiple", "several",
-})
-GENERIC_NOUNS = frozenset({
-    "scenario", "scenarios", "term", "terms", "name", "names", "value",
-    "values", "information", "setting", "settings", "performance", "result",
-    "results", "score", "scores", "approach", "approaches", "method", "methods",
-    "model", "models", "technique", "techniques", "framework", "frameworks",
-    "system", "systems", "algorithm", "algorithms", "task", "tasks", "benchmark",
-    "benchmarks", "dataset", "datasets", "corpus", "corpora", "data",
-})
+GENERIC_ADJECTIVES = frozenset(
+    {
+        "novel",
+        "novels",
+        "new",
+        "proposed",
+        "existing",
+        "current",
+        "previous",
+        "baseline",
+        "baselines",
+        "state-of-the-art",
+        "sota",
+        "long-text",
+        "academic",
+        "exact",
+        "target",
+        "generic",
+        "various",
+        "different",
+        "significant",
+        "better",
+        "worse",
+        "best",
+        "worst",
+        "full",
+        "entire",
+        "whole",
+        "same",
+        "similar",
+        "multiple",
+        "several",
+    }
+)
+GENERIC_NOUNS = frozenset(
+    {
+        "scenario",
+        "scenarios",
+        "term",
+        "terms",
+        "name",
+        "names",
+        "value",
+        "values",
+        "information",
+        "setting",
+        "settings",
+        "performance",
+        "result",
+        "results",
+        "score",
+        "scores",
+        "approach",
+        "approaches",
+        "method",
+        "methods",
+        "model",
+        "models",
+        "technique",
+        "techniques",
+        "framework",
+        "frameworks",
+        "system",
+        "systems",
+        "algorithm",
+        "algorithms",
+        "task",
+        "tasks",
+        "benchmark",
+        "benchmarks",
+        "dataset",
+        "datasets",
+        "corpus",
+        "corpora",
+        "data",
+    }
+)
 GENERIC_SPANS = PRONOUNS | DETERMINERS | GENERIC_ADJECTIVES | GENERIC_NOUNS
 
 # Cue phrases per asymmetric relation (used for the first tier).
 RELATION_CUES = {
-    "outperforms": r"outperform\w*|better than|surpass\w*|exceed\w*|improve\w* over|beats?\b|outclass\w*",
+    "outperforms": (
+        r"outperform\w*|better than|surpass\w*|exceed\w*|improve\w* over"
+        r"|beats?\b|outclass\w*"
+    ),
     "extends": r"extend\w*|build(?:s|ing)? (?:up)?on|improve\w* upon|based on|follow\w* up",
-    "evaluated_on": r"evaluat\w* (?:on|with|using)|test\w* (?:on|with)|benchmark\w* (?:on|with)|experiment\w* on",
+    "evaluated_on": (
+        r"evaluat\w* (?:on|with|using)|test\w* (?:on|with)"
+        r"|benchmark\w* (?:on|with)|experiment\w* on"
+    ),
     "measures": r"measur\w*|report\w*|evaluat\w* (?:with|using|by)|score\w*",
     "uses": r"\buse[sd]?\b|using|employ\w*|leverag\w*|adopt\w*|utiliz\w*",
     "addresses": r"address\w*|tackl\w*|solv\w*|target\w*|focus\w* on",
@@ -131,9 +240,7 @@ def filter_spans(triples: Sequence[Triple]) -> list[Triple]:
 
 
 # ------------------------------------------------------------------ coref
-def resolve_coref(
-    triples: Sequence[Triple], chunk_texts: Mapping[str, str]
-) -> list[Triple]:
+def resolve_coref(triples: Sequence[Triple], chunk_texts: Mapping[str, str]) -> list[Triple]:
     """Resolve pronominal mentions to the nearest preceding compatible entity.
 
     Heuristic only: same chunk, earlier position, same entity type. Unresolved
@@ -239,10 +346,7 @@ def ambiguity(triple: Triple, sentence: str) -> tuple[bool, list[str]]:
     if margin < config.KG_VERIFY_MARGIN:
         reasons.append("small_margin")
 
-    if (
-        triple.get("head_type") == triple.get("tail_type") == "Method"
-        and cue == "unknown"
-    ):
+    if triple.get("head_type") == triple.get("tail_type") == "Method" and cue == "unknown":
         reasons.append("non_decisive_types")
 
     # If the cue explicitly agrees and there is no negation, trust it.

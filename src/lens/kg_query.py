@@ -48,16 +48,12 @@ def normalize_entity(text: str) -> str:
     """
     normalized = unicodedata.normalize("NFC", text)
     normalized = " ".join(normalized.split())
-    normalized = "".join(
-        ch for ch in normalized if not unicodedata.category(ch).startswith("C")
-    )
+    normalized = "".join(ch for ch in normalized if not unicodedata.category(ch).startswith("C"))
 
     return normalized
 
 
-def create_triple_instance(
-    graph: nx.MultiDiGraph, u: str, v: str, data: dict[str, Any]
-) -> Triple:
+def create_triple_instance(graph: nx.MultiDiGraph, u: str, v: str, data: dict[str, Any]) -> Triple:
     """Rebuild one triple dict from an edge, using **display** names (not keys)."""
     triple: Triple = {
         "head": graph.nodes[u].get("display", u),

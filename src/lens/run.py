@@ -28,21 +28,27 @@ from datetime import datetime, timezone
 from typing import Any
 
 from lens import config
-from lens.reranking import Reranker
-from lens.embeddings import Embedder
-from lens.kg_extract import GlinerExtractor
-
-from lens.observability.trajectory import Trajectory
-from lens.clients import LensClient
-from lens.db.connect import connect
-from lens.tools.retrieval import shallow_match, rerank_papers, deep_match, rerank_chunks, fetch_papers, fetch_chunks
-from lens.tools.kg import build_kg
-from lens.tools.sql import sql_is_allowed, query_sql
-
-from lens.agent.tool_registry import ToolRegistry
 from lens.agent.runtime import Runtime
 from lens.agent.sandbox_session import SandboxSession
+from lens.agent.tool_registry import ToolRegistry
 from lens.agent.tool_server import ToolServer
+from lens.clients import LensClient
+from lens.db.connect import connect
+from lens.embeddings import Embedder
+from lens.kg_extract import GlinerExtractor
+from lens.observability.trajectory import Trajectory
+from lens.reranking import Reranker
+from lens.tools.kg import build_kg
+from lens.tools.retrieval import (
+    deep_match,
+    fetch_chunks,
+    fetch_papers,
+    rerank_chunks,
+    rerank_papers,
+    shallow_match,
+)
+from lens.tools.sql import query_sql, sql_is_allowed
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser."""
@@ -220,27 +226,26 @@ def build_runtime(
 
     token = secrets.token_urlsafe(32)
 
-    sandbox = SandboxSession(run_id=run_id,
-                             workspace=workspace,
-                             token=token)
+    sandbox = SandboxSession(run_id=run_id, workspace=workspace, token=token)
 
-    runtime = Runtime(query=query,
-                      run_id=run_id,
-                      client=client,
-                      trajectory=trajectory,
-                      conn=conn,
-                      embedder=embedder,
-                      reranker=reranker,
-                      extractor=extractor,
-                      sandbox=sandbox,
-                      registry=registry,
-                      recorded=recorded,
-                      resume=resume,
-                      parent_run_id=parent_run_id,
-                      replay=replay)
+    runtime = Runtime(
+        query=query,
+        run_id=run_id,
+        client=client,
+        trajectory=trajectory,
+        conn=conn,
+        embedder=embedder,
+        reranker=reranker,
+        extractor=extractor,
+        sandbox=sandbox,
+        registry=registry,
+        recorded=recorded,
+        resume=resume,
+        parent_run_id=parent_run_id,
+        replay=replay,
+    )
 
-    server = ToolServer(runtime=runtime,
-                        token=token)
+    server = ToolServer(runtime=runtime, token=token)
     server.start()
 
     # The relay forwards to the port the server actually bound; the container's
@@ -282,7 +287,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ``$/query`` adds the 5.5 % credit-load fee (R4), which is an M11 reporting
     step, not something this CLI should bake in.
     """
-    from lens.agent import runstore      # module, so tests can patch it
+    from lens.agent import runstore  # module, so tests can patch it
 
     # The answer is model prose and contains whatever Unicode it likes (an arrow,
     # an em dash, a Greek letter). The Windows console is cp1252, so the final
@@ -299,7 +304,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # ---------------------------------------------------------- read-only paths
     if args.list:
-        runstore.sweep_interrupted()          # running -> interrupted, once
+        runstore.sweep_interrupted()  # running -> interrupted, once
         for manifest in runstore.list_runs():
             cost = (manifest.totals or {}).get("cost_usd") or 0.0
             print(
@@ -406,9 +411,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"run {run_id}: ${result.cost_usd:.4f}, {result.iterations} iterations, "
         f"partial={result.partial}, stop_reason={result.stop_reason}"
     )
-    print(
-        f"artifacts: {result.answer_path} | {result.trajectory_path} | {result.tasks_path}"
-    )
+    print(f"artifacts: {result.answer_path} | {result.trajectory_path} | {result.tasks_path}")
 
     return 0
 
