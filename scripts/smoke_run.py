@@ -29,7 +29,7 @@ import sys
 from lens import config
 from lens.clients import LensClient, LensTransportError
 from lens.models import Question, Role
-from lens.observability.trajectory import TraceCtx, Trajectory, Actor
+from lens.observability.trajectory import Actor, TraceCtx, Trajectory
 
 SYSTEM_PROMPT = "You are a terse assistant."
 SHORT_USER_PROMPT = "Reply with the single word: ok."
@@ -49,9 +49,13 @@ CHAT_CALLS: list[tuple[Role, Actor, list[dict[str, str]]]] = [
 ]
 
 
-def _print_chat(label: str, tokens_in: int, tokens_out: int, model: str, latency_ms: int, cost: float) -> None:
-    print(f"[ok]   {label:9s} model={model:32s} tokens={tokens_in}/{tokens_out} "
-          f"latency={latency_ms}ms cost=${cost:.6f}")
+def _print_chat(
+    label: str, tokens_in: int, tokens_out: int, model: str, latency_ms: int, cost: float
+) -> None:
+    print(
+        f"[ok]   {label:9s} model={model:32s} tokens={tokens_in}/{tokens_out} "
+        f"latency={latency_ms}ms cost=${cost:.6f}"
+    )
 
 
 def main() -> int:
@@ -81,8 +85,14 @@ def main() -> int:
             print(f"[FAIL] {role:9s} {exc} (status={exc.status}, attempts={exc.attempts})")
             continue
         total_cost += result.cost_usd
-        _print_chat(f"chat/{role}", result.tokens_in, result.tokens_out,
-                    result.model_snapshot or result.model, result.latency_ms, result.cost_usd)
+        _print_chat(
+            f"chat/{role}",
+            result.tokens_in,
+            result.tokens_out,
+            result.model_snapshot or result.model,
+            result.latency_ms,
+            result.cost_usd,
+        )
 
     # JEV probe: two questions in one request (noul + choice).
     jev_ctx = TraceCtx(trace_id=run_id, step_idx=len(CHAT_CALLS), actor="tool")
@@ -114,8 +124,10 @@ def main() -> int:
         print(f"[FAIL] jev       {exc} (status={exc.status}, attempts={exc.attempts})")
     else:
         total_cost += jev.cost_usd
-        print(f"[ok]   {'jev':9s} model={jev.model:32s} tokens={jev.tokens_in} "
-              f"latency={jev.latency_ms}ms cost=${jev.cost_usd:.6f}")
+        print(
+            f"[ok]   {'jev':9s} model={jev.model:32s} tokens={jev.tokens_in} "
+            f"latency={jev.latency_ms}ms cost=${jev.cost_usd:.6f}"
+        )
         for name, answer in jev.answers.items():
             print(f"         answers[{name!r}] = {answer}")
 

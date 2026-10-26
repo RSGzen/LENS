@@ -80,11 +80,13 @@ def main() -> int:
     total_cost = 0.0
     for event in events:
         total_cost += event.get("cost_usd", 0.0)
-        print(f"[log] model={event.get('model_snapshot')} "
-              f"provider={event.get('provider')} "
-              f"tokens={event.get('tokens_in')}/{event.get('tokens_out')} "
-              f"latency={event.get('latency_ms')}ms "
-              f"cost=${event.get('cost_usd', 0.0):.6f}")
+        print(
+            f"[log] model={event.get('model_snapshot')} "
+            f"provider={event.get('provider')} "
+            f"tokens={event.get('tokens_in')}/{event.get('tokens_out')} "
+            f"latency={event.get('latency_ms')}ms "
+            f"cost=${event.get('cost_usd', 0.0):.6f}"
+        )
 
     fee = total_cost * 0.055  # OpenRouter credit-load fee (LOG-29 / R4)
     print("-" * 88)

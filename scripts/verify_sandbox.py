@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import tempfile
-
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -95,8 +94,11 @@ def main(argv: list[str] | None = None) -> int:
                 "print(u.urlopen(os.environ['LENS_HOST_RPC_URL'] + '/health', timeout=10).status)"
             )
             results.append(
-                _check("host RPC from container", reach.ok and "200" in reach.stdout,
-                       f"stdout={reach.stdout.strip()!r} error={reach.error}")
+                _check(
+                    "host RPC from container",
+                    reach.ok and "200" in reach.stdout,
+                    f"stdout={reach.stdout.strip()!r} error={reach.error}",
+                )
             )
 
             # Absence of egress is evidence: a successful connect is the failure.
@@ -105,23 +107,34 @@ def main(argv: list[str] | None = None) -> int:
                 "print('CONNECTED')"
             )
             results.append(
-                _check("egress blocked", not egress.ok or "CONNECTED" not in egress.stdout,
-                       f"ok={egress.ok} error={(egress.error or {}).get('type')}")
+                _check(
+                    "egress blocked",
+                    not egress.ok or "CONNECTED" not in egress.stdout,
+                    f"ok={egress.ok} error={(egress.error or {}).get('type')}",
+                )
             )
 
-            results.append(_check("/health via exec_client", sandbox.health(), "in-container health"))
+            results.append(
+                _check("/health via exec_client", sandbox.health(), "in-container health")
+            )
 
             sandbox.exec("x = 41")
             persist = sandbox.exec("print(x + 1)")
             results.append(
-                _check("namespace persistence", persist.stdout.strip() == "42",
-                       f"stdout={persist.stdout.strip()!r}")
+                _check(
+                    "namespace persistence",
+                    persist.stdout.strip() == "42",
+                    f"stdout={persist.stdout.strip()!r}",
+                )
             )
 
             slow = sandbox.exec(f"import time; time.sleep({args.exec_cap * 4})")
             results.append(
-                _check("timeout is structured", not slow.ok and "imeout" in str(slow.error),
-                       f"ok={slow.ok} error={(slow.error or {}).get('type')}")
+                _check(
+                    "timeout is structured",
+                    not slow.ok and "imeout" in str(slow.error),
+                    f"ok={slow.ok} error={(slow.error or {}).get('type')}",
+                )
             )
 
             write = sandbox.exec(
@@ -133,7 +146,9 @@ def main(argv: list[str] | None = None) -> int:
             results.append(
                 _check(
                     "workspace writable, artifacts hidden",
-                    write.ok and (workspace / "probe.txt").is_file() and write.stdout.strip() == "[]",
+                    write.ok
+                    and (workspace / "probe.txt").is_file()
+                    and write.stdout.strip() == "[]",
                     f"leaked={write.stdout.strip()} error={write.error}",
                 )
             )
@@ -145,17 +160,22 @@ def main(argv: list[str] | None = None) -> int:
                 "print(bad)"
             )
             results.append(
-                _check("no secrets in the container", secrets.stdout.strip() == "[]",
-                       f"stdout={secrets.stdout.strip()!r}")
+                _check(
+                    "no secrets in the container",
+                    secrets.stdout.strip() == "[]",
+                    f"stdout={secrets.stdout.strip()!r}",
+                )
             )
 
             modules = sandbox.exec(
-                "import kg_query, rlm_api, runner\n"
-                "print(sorted(__import__('os').listdir('/app')))"
+                "import kg_query, rlm_api, runner\nprint(sorted(__import__('os').listdir('/app')))"
             )
             results.append(
-                _check("image modules", modules.ok and "kg_query" in modules.stdout,
-                       f"stdout={modules.stdout.strip()[:140]} error={modules.error}")
+                _check(
+                    "image modules",
+                    modules.ok and "kg_query" in modules.stdout,
+                    f"stdout={modules.stdout.strip()[:140]} error={modules.error}",
+                )
             )
         finally:
             sandbox.stop()

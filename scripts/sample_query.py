@@ -35,8 +35,7 @@ from lens.tools.retrieval import (
 )
 
 DEFAULT_QUERY = (
-    "How do retrieval-augmented language models aggregate evidence "
-    "across a long context?"
+    "How do retrieval-augmented language models aggregate evidence across a long context?"
 )
 
 HNSW_INDEX_NAMES = ("papers_abstract_embedding_hnsw", "chunks_chunk_embedding_hnsw")
@@ -46,15 +45,11 @@ def _report_hnsw(conn) -> None:
     """Print the HNSW build params (``m`` / ``ef_construction``) read from the index (E-04)."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT relname, reloptions FROM pg_class WHERE relname = ANY(%s) "
-            "ORDER BY relname",
+            "SELECT relname, reloptions FROM pg_class WHERE relname = ANY(%s) ORDER BY relname",
             (list(HNSW_INDEX_NAMES),),
         )
         for name, reloptions in cur.fetchall():
-            print(
-                f"hnsw index {name}: "
-                f"{reloptions or 'defaults (m=16, ef_construction=64)'}"
-            )
+            print(f"hnsw index {name}: {reloptions or 'defaults (m=16, ef_construction=64)'}")
 
 
 def main() -> None:
@@ -80,9 +75,9 @@ def main() -> None:
     # not the one-time model load (E-04: cold vs warm).
     print("warming up models (first load / download is one-time)...")
     t_warm = time.perf_counter()
-    embedder.encode_documents(texts=["warmup"],
-                              task_prefix=config.EMBEDDING_QUERY_PREFIX,
-                              batch_size=1)
+    embedder.encode_documents(
+        texts=["warmup"], task_prefix=config.EMBEDDING_QUERY_PREFIX, batch_size=1
+    )
     reranker.score("warmup", ["warmup"])
     print(f"warm-up done in {time.perf_counter() - t_warm:.1f}s")
 
@@ -110,8 +105,10 @@ def main() -> None:
         f"stage latencies (s): shallow={t_shallow:.3f} rerank_papers={t_rerank_papers:.3f} "
         f"deep={t_deep:.3f} rerank_chunks={t_rerank_chunks:.3f}"
     )
-    print(f"funnel counts: k={len(paper_ids)} n={len(n_ids)} "
-          f"C={len(chunk_ids)} c={len(hydrated['chunks'])}")
+    print(
+        f"funnel counts: k={len(paper_ids)} n={len(n_ids)} "
+        f"C={len(chunk_ids)} c={len(hydrated['chunks'])}"
+    )
     print("top papers:")
     for p in papers[:5]:
         print(f"  {p['score']:.4f}  {p['arxiv_id']}  {p.get('title', '')}")

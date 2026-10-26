@@ -62,8 +62,11 @@ def main() -> None:
     parser.add_argument("--csv", required=True)
     parser.add_argument("--predictions", help="entity mode: predictions JSON")
     parser.add_argument("--out", help="optional report JSON path")
-    parser.add_argument("--benchmark-lenient", action="store_true",
-                        help="count Dataset|Method as correct for benchmark-like spans")
+    parser.add_argument(
+        "--benchmark-lenient",
+        action="store_true",
+        help="count Dataset|Method as correct for benchmark-like spans",
+    )
     args = parser.parse_args()
 
     if args.mode == "triples":
