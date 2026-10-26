@@ -4,9 +4,11 @@ Literature Evidence & Narrative Synthesis — an agentic systematic-literature-r
 harness over a GROBID-structured arXiv cs.AI corpus.
 
 > **Status (26 Oct 2026):** M0–M9 built (M9 = harness E2E, 5-query smoke, Tier-1
-> anchor, portable bundles). **M10 UI scaffolded** (LOG-121): `ui/data.py` is
-> filled and tested offline; `ui/app.py` is in fill units **U1–U9** (student-owned,
-> scaffold-and-fill LOG-33). Suite: **475 tests — 474 pass, 1 skip**.
+> anchor, portable bundles). **M10 UI filled** (LOG-121/122): `ui/data.py` and
+> `ui/app.py` are implemented and tested offline (`ui_app` self-skips without the
+> extra). Review rounds 1–2 applied (LOG-123/124): local display names, reasoning
+> first then collapsed code then the full message, and the pages are **Recorded
+> Runs** / **Live Query**. Suite: **487 tests — 486 pass, 1 skip**.
 
 > **M8 invariants that are easy to break:** the sandbox workspace is
 > `<run_dir>/work` (the run artifacts — `trajectory.jsonl`, `tasks.json`,
@@ -115,11 +117,14 @@ Full host/sandbox contracts: `docs/ARCHITECTURE.md` and
 
 Two pages over the same artifacts (`Tech Stack (Draft).md` §4p):
 
-- **Runs** — read-only recorded playback: run list → turn timeline → meters →
-  answer + resolved citations. Needs **no GPU, no DB, no key**: it is mode A
-  (scrubbed playback of a recording), and the page says so.
-- **Run** — the live path: shells out to `python -m lens.run` and streams stdout.
-  Needs the workstation stack (GPU, DB, Docker, key).
+- **Recorded Runs** — read-only recorded playback: run list → turn timeline →
+  meters → answer + resolved citations. Needs **no GPU, no DB, no key**: it is mode
+  A (scrubbed playback of a recording), and the page says so.
+- **Live Query** — the live path: shells out to `python -m lens.run` and streams
+  stdout. Needs the workstation stack (GPU, DB, Docker, key).
+
+Runs can be renamed locally (`aliases.json` beside the blob store — a viewer label,
+never run identity).
 
 ```powershell
 uv sync --extra ui
