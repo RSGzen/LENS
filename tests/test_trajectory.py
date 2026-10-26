@@ -85,7 +85,9 @@ class TrajectoryTestCase(unittest.TestCase):
     def test_log_event_appends_one_line_per_call(self) -> None:
         ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
         self.traj.log_event(
-            trace_ctx=ctx, call_type="chat", action="chat.completion",
+            trace_ctx=ctx,
+            call_type="chat",
+            action="chat.completion",
             model="openai/gpt-5",
         )
         self.traj.log_event(trace_ctx=ctx, call_type="jev", action="jev.decisions")
@@ -105,7 +107,9 @@ class TrajectoryTestCase(unittest.TestCase):
     def test_log_event_omits_none_fields(self) -> None:
         ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
         self.traj.log_event(
-            trace_ctx=ctx, call_type="chat", action="chat.completion",
+            trace_ctx=ctx,
+            call_type="chat",
+            action="chat.completion",
             cost_usd=0.0004,
         )
         event = self._events()[0]
@@ -117,7 +121,10 @@ class TrajectoryTestCase(unittest.TestCase):
         ctx = TraceCtx(trace_id="t1", step_idx=1, actor="root")
         err = {"type": "RateLimit", "status": 429, "retry": 2}
         self.traj.log_event(
-            trace_ctx=ctx, call_type="chat", action="chat.retry", error=err,
+            trace_ctx=ctx,
+            call_type="chat",
+            action="chat.retry",
+            error=err,
         )
         self.assertEqual(self._events()[0]["error"], err)
 
@@ -131,15 +138,25 @@ class TrajectoryTestCase(unittest.TestCase):
     def test_totals_sums_cost_and_tokens(self) -> None:
         ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
         self.traj.log_event(
-            trace_ctx=ctx, call_type="chat", action="chat.completion",
-            tokens_in=100, tokens_out=10, cost_usd=0.001,
+            trace_ctx=ctx,
+            call_type="chat",
+            action="chat.completion",
+            tokens_in=100,
+            tokens_out=10,
+            cost_usd=0.001,
         )
         self.traj.log_event(
-            trace_ctx=ctx, call_type="jev", action="jev.decisions",
-            tokens_in=50, cost_usd=0.0002,
+            trace_ctx=ctx,
+            call_type="jev",
+            action="jev.decisions",
+            tokens_in=50,
+            cost_usd=0.0002,
         )
         self.traj.log_event(
-            trace_ctx=ctx, call_type="tool", action="tool.dispatch", tool="build_kg",
+            trace_ctx=ctx,
+            call_type="tool",
+            action="tool.dispatch",
+            tool="build_kg",
         )
         totals = self.traj.totals()
         # `calls` = BILLABLE model calls (chat + jev). The tool event is counted
@@ -160,12 +177,17 @@ class TrajectoryTestCase(unittest.TestCase):
         # must not inflate "calls per query" in the H3 table.
         ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
         self.traj.log_event(
-            trace_ctx=ctx, call_type="chat", action="chat.retry",
+            trace_ctx=ctx,
+            call_type="chat",
+            action="chat.retry",
             error={"type": "RateLimit", "status": 429, "attempt": 1},
         )
         self.traj.log_event(
-            trace_ctx=ctx, call_type="chat", action="chat.completion",
-            tokens_in=100, cost_usd=0.001,
+            trace_ctx=ctx,
+            call_type="chat",
+            action="chat.completion",
+            tokens_in=100,
+            cost_usd=0.001,
         )
         totals = self.traj.totals()
         self.assertEqual(totals["calls"], 1)
@@ -178,8 +200,11 @@ class TrajectoryTestCase(unittest.TestCase):
         for step in (0, 1):
             self.traj.log_event(
                 trace_ctx=TraceCtx(trace_id="t1", step_idx=step, actor="root"),
-                call_type="chat", action="chat.completion",
-                tokens_in=100, tokens_out=10, cost_usd=0.001,
+                call_type="chat",
+                action="chat.completion",
+                tokens_in=100,
+                tokens_out=10,
+                cost_usd=0.001,
             )
         bucket = self.traj.totals()["by_action"]["chat.completion"]
         self.assertEqual(bucket["events"], 2)
@@ -205,17 +230,25 @@ class TrajectoryTestCase(unittest.TestCase):
     def _log_turn(self, step: int, messages: list[dict], code: str, stdout: str) -> None:
         """Append one realistic turn: root chat + exec, the way the loop does it."""
         root = TraceCtx(trace_id="t1", step_idx=step, actor="root")
-        prompt_ref = self.traj.store_blob(json.dumps({"model": "openai/gpt-5", "messages": messages}))
+        prompt_ref = self.traj.store_blob(
+            json.dumps({"model": "openai/gpt-5", "messages": messages})
+        )
         completion = f"```python\n{code}\n```"
         completion_ref = self.traj.store_blob(completion)
         self.traj.log_event(
-            trace_ctx=root, call_type="chat", action="chat.completion",
-            prompt_ref=prompt_ref, completion_ref=completion_ref,
-            tokens_in=100, tokens_out=10, cost_usd=0.001,
+            trace_ctx=root,
+            call_type="chat",
+            action="chat.completion",
+            prompt_ref=prompt_ref,
+            completion_ref=completion_ref,
+            tokens_in=100,
+            tokens_out=10,
+            cost_usd=0.001,
         )
         self.traj.log_event(
             trace_ctx=TraceCtx(trace_id="t1", step_idx=step, actor="tool"),
-            call_type="exec", action="exec.block",
+            call_type="exec",
+            action="exec.block",
             code_ref=self.traj.store_blob(code),
             stdout_ref=self.traj.store_blob(stdout),
             latency_ms=7,
@@ -261,12 +294,19 @@ class TrajectoryTestCase(unittest.TestCase):
             trace_ctx=ctx, call_type="note", action="budget", extra={"budget": snapshot}
         )
         self.traj.log_event(
-            trace_ctx=ctx, call_type="emit", action="emit.store",
-            result_ref="sha256:abc", extra={"var": "chunks"},
+            trace_ctx=ctx,
+            call_type="emit",
+            action="emit.store",
+            result_ref="sha256:abc",
+            extra={"var": "chunks"},
         )
         self.traj.log_event(
-            trace_ctx=ctx, call_type="tool", action="tool.dispatch",
-            tool="shallow_match", args_hash="hash1", result_ref="sha256:def",
+            trace_ctx=ctx,
+            call_type="tool",
+            action="tool.dispatch",
+            tool="shallow_match",
+            args_hash="hash1",
+            result_ref="sha256:def",
         )
         state = self.traj.rebuild()
         self.assertEqual(state.budget, snapshot)
@@ -276,10 +316,15 @@ class TrajectoryTestCase(unittest.TestCase):
     def test_rebuild_marks_an_interrupted_exec(self) -> None:
         # Crash mid-block: the chat completed, the exec did not record stdout.
         ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
-        prompt_ref = self.traj.store_blob(json.dumps({"messages": [{"role": "system", "content": "s"}]}))
+        prompt_ref = self.traj.store_blob(
+            json.dumps({"messages": [{"role": "system", "content": "s"}]})
+        )
         self.traj.log_event(
-            trace_ctx=ctx, call_type="chat", action="chat.completion",
-            prompt_ref=prompt_ref, completion_ref=self.traj.store_blob("```python\nx=1\n```"),
+            trace_ctx=ctx,
+            call_type="chat",
+            action="chat.completion",
+            prompt_ref=prompt_ref,
+            completion_ref=self.traj.store_blob("```python\nx=1\n```"),
         )
         self.traj.log_event(trace_ctx=ctx, call_type="exec", action="exec.block")
         state = self.traj.rebuild()
@@ -297,12 +342,14 @@ class TrajectoryTestCase(unittest.TestCase):
         )
         self.traj.log_event(
             trace_ctx=TraceCtx(trace_id="t1", step_idx=1, actor="sub"),
-            call_type="chat", action="chat.completion",
+            call_type="chat",
+            action="chat.completion",
             prompt_ref=self.traj.store_blob(
                 json.dumps({"messages": [{"role": "user", "content": "summarise blob 7"}]})
             ),
             completion_ref=self.traj.store_blob("a summary"),
-            tokens_in=50, cost_usd=0.0001,
+            tokens_in=50,
+            cost_usd=0.0001,
         )
         contents = [m["content"] for m in self.traj.rebuild().messages]
         self.assertEqual(contents[0], "sys")

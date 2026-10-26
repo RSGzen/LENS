@@ -123,8 +123,9 @@ class ToolRegistryTestCase(unittest.TestCase):
 
         # Registration order (pipeline order), not alphabetical.
         self.assertEqual(self.registry.names(), ["echo", "alpha", "zulu"])
-        self.assertLess(self.registry.manifest().index("1. echo"),
-                        self.registry.manifest().index("3. zulu"))
+        self.assertLess(
+            self.registry.manifest().index("1. echo"), self.registry.manifest().index("3. zulu")
+        )
 
     def test_manifest_never_leaks_a_function_repr(self) -> None:
         # A repr carries a memory address -> the system prompt changes every run
@@ -132,7 +133,7 @@ class ToolRegistryTestCase(unittest.TestCase):
         manifest = self.registry.manifest()
         self.assertNotIn("0x", manifest)
         self.assertNotIn("function echo", manifest)
-        self.assertEqual(manifest, self.registry.manifest())   # deterministic
+        self.assertEqual(manifest, self.registry.manifest())  # deterministic
 
     def test_manifest_falls_back_to_the_docstring_first_line(self) -> None:
         self.registry.register("documented", echo)  # no explicit description
@@ -153,10 +154,10 @@ class ToolRegistryTestCase(unittest.TestCase):
         event = json.loads(
             self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()[-1]
         )
-        self.assertEqual(event["action"], "tool.dispatch")   # not the tool name
+        self.assertEqual(event["action"], "tool.dispatch")  # not the tool name
         self.assertEqual(event["tool"], "boom")
         self.assertEqual(event["error"]["type"], "RuntimeError")
-        self.assertIsInstance(event["latency_ms"], int)      # ms, not seconds
+        self.assertIsInstance(event["latency_ms"], int)  # ms, not seconds
 
     def test_envelope_always_carries_ok_and_result(self) -> None:
         failed = self.registry.dispatch(
@@ -165,7 +166,7 @@ class ToolRegistryTestCase(unittest.TestCase):
         envelope = failed.to_dict()
         self.assertIn("ok", envelope)
         self.assertIn("result", envelope)
-        self.assertNotIn("result_summary", envelope)         # None fields omitted
+        self.assertNotIn("result_summary", envelope)  # None fields omitted
 
 
 if __name__ == "__main__":

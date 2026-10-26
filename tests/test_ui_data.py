@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-
 from pathlib import Path
 
 import lens.config as config_module
@@ -85,9 +84,15 @@ class UiDataTestCase(unittest.TestCase):
     ) -> Path:
         """Build a two-turn run with one hydrating tool call in each turn."""
         self._chat(run_id, 0)
-        self._chunks(run_id, 0, [{"chunk_uuid": CHUNK_A, "arxiv_id": "2511.02817", "section_type": "Results"}])
+        self._chunks(
+            run_id,
+            0,
+            [{"chunk_uuid": CHUNK_A, "arxiv_id": "2511.02817", "section_type": "Results"}],
+        )
         self._chat(run_id, 1, tokens_in=500)
-        self._chunks(run_id, 1, [{"chunk_uuid": CHUNK_B, "arxiv_id": "2511.02817", "section_type": "Intro"}])
+        self._chunks(
+            run_id, 1, [{"chunk_uuid": CHUNK_B, "arxiv_id": "2511.02817", "section_type": "Intro"}]
+        )
 
         run_dir = self.root / run_id
         manifest = runstore.RunManifest(
@@ -199,7 +204,9 @@ class UiDataTestCase(unittest.TestCase):
         view = data.load_run("run-a")
 
         assert view is not None
-        self.assertEqual([row["chunk_uuid"] for row in data.evidence_upto(view, 9)], [CHUNK_A, CHUNK_B])
+        self.assertEqual(
+            [row["chunk_uuid"] for row in data.evidence_upto(view, 9)], [CHUNK_A, CHUNK_B]
+        )
 
     # ---------------------------------------------------------- payloads
     def test_tool_payload_roundtrip_and_missing_ref(self) -> None:

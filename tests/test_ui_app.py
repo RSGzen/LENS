@@ -17,7 +17,6 @@ import importlib.util
 import json
 import tempfile
 import unittest
-
 from pathlib import Path
 
 import lens.config as config_module
@@ -84,11 +83,20 @@ class UiAppTestCase(unittest.TestCase):
                 args_hash=f"hash-{step}",
                 args_ref=traj.store_blob(json.dumps({"chunk_ids": ["c1"], "k": 100})),
                 result_ref=traj.store_blob(
-                    json.dumps({"chunks": [{"chunk_uuid": CHUNK, "arxiv_id": "2511.02817"}], "papers": []})
+                    json.dumps(
+                        {"chunks": [{"chunk_uuid": CHUNK, "arxiv_id": "2511.02817"}], "papers": []}
+                    )
                 ),
                 result_summary="rerank_chunks: 1 row",
                 latency_ms=120,
-                extra={"gate": {"verdict": "pass", "tier": 1, "confidence": 0.9, "failing_criterion": None}},
+                extra={
+                    "gate": {
+                        "verdict": "pass",
+                        "tier": 1,
+                        "confidence": 0.9,
+                        "failing_criterion": None,
+                    }
+                },
             )
 
         runstore.write_manifest(
@@ -119,7 +127,7 @@ class UiAppTestCase(unittest.TestCase):
         labels = {metric.label: metric.value for metric in at.metric}
         self.assertEqual(labels["status"], "completed")
         self.assertEqual(labels["turns"], "2")
-        self.assertEqual(labels["cap"], "$1.00")       # from the manifest, not config
+        self.assertEqual(labels["cap"], "$1.00")  # from the manifest, not config
         self.assertTrue(any("Recorded playback" in c.value for c in at.caption))
 
     def test_step_advances_the_cursor(self) -> None:
@@ -167,7 +175,9 @@ class UiAppTestCase(unittest.TestCase):
         at.checkbox[0].check().run()
 
         self.assertEqual([str(e.value) for e in at.exception], [])
-        self.assertTrue(any(button.label == "Download Full Payload" for button in at.download_button))
+        self.assertTrue(
+            any(button.label == "Download Full Payload" for button in at.download_button)
+        )
 
     def test_page_names_separate_recording_from_live(self) -> None:
         from lens.ui.app import PAGE_LIVE, PAGE_RECORDED, PAGES

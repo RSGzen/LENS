@@ -46,9 +46,7 @@ class SqlGateTestCase(unittest.TestCase):
 
     def test_keyword_check_respects_word_boundaries(self) -> None:
         # A column called ``updated_at`` must not trip the ``update`` keyword.
-        self.assertEqual(
-            validate_sql("SELECT updated_at FROM runs"), "SELECT updated_at FROM runs"
-        )
+        self.assertEqual(validate_sql("SELECT updated_at FROM runs"), "SELECT updated_at FROM runs")
 
 
 class FakeCursor:
@@ -103,7 +101,7 @@ class QuerySqlTestCase(unittest.TestCase):
         self.assertIn("set_config", cursor.statements[1][0])
         self.assertEqual(cursor.statements[1][1], ("5000",))
         self.assertEqual(cursor.statements[2], ("SELECT 1", None))
-        self.assertEqual(cursor.limit, 2)                      # the cap, not the query's LIMIT
+        self.assertEqual(cursor.limit, 2)  # the cap, not the query's LIMIT
 
     def test_writes_are_rejected_before_the_connection_is_touched(self) -> None:
         from lens.tools.sql import query_sql

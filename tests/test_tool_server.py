@@ -25,9 +25,7 @@ class FakeRuntime:
 
 class ToolServerTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.server = ToolServer(
-            FakeRuntime(), host="127.0.0.1", port=0, token="secret-token"
-        )
+        self.server = ToolServer(FakeRuntime(), host="127.0.0.1", port=0, token="secret-token")
 
     def test_health_is_public(self) -> None:
         status, body = self.server.handle_request("GET", "/health", None, token=None)
@@ -86,9 +84,7 @@ class ToolServerTransportTestCase(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.server = ToolServer(
-            FakeRuntime(), host="127.0.0.1", port=0, token="secret-token"
-        )
+        self.server = ToolServer(FakeRuntime(), host="127.0.0.1", port=0, token="secret-token")
         self.server.start()
         self.addCleanup(self.server.stop)
         self.assertTrue(self.server.port, "port 0 must be replaced by the bound port")
@@ -102,12 +98,12 @@ class ToolServerTransportTestCase(unittest.TestCase):
         token: str | None = "secret-token",
         raw: bytes | None = None,
     ) -> tuple[int, dict]:
-        data = raw if raw is not None else (
-            None if payload is None else json.dumps(payload).encode("utf-8")
+        data = (
+            raw
+            if raw is not None
+            else (None if payload is None else json.dumps(payload).encode("utf-8"))
         )
-        request = urllib.request.Request(
-            self.server.url + path, data=data, method=method
-        )
+        request = urllib.request.Request(self.server.url + path, data=data, method=method)
         if token is not None:
             request.add_header("Authorization", f"Bearer {token}")
         if data is not None:
@@ -116,7 +112,7 @@ class ToolServerTransportTestCase(unittest.TestCase):
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 return response.status, json.loads(response.read())
-        except urllib.error.HTTPError as exc:      # 4xx/5xx raise by default
+        except urllib.error.HTTPError as exc:  # 4xx/5xx raise by default
             return exc.code, json.loads(exc.read())
 
     def test_health_over_the_wire(self) -> None:
@@ -148,7 +144,7 @@ class ToolServerTransportTestCase(unittest.TestCase):
 
     def test_stop_is_idempotent(self) -> None:
         self.server.stop()
-        self.server.stop()                          # cleanup calls it a third time
+        self.server.stop()  # cleanup calls it a third time
 
 
 if __name__ == "__main__":
