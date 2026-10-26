@@ -26,14 +26,15 @@ import psycopg
 from pgvector import HalfVector
 from pgvector.psycopg import register_vector
 
-
 from lens import config
 from lens.embeddings import Embedder
+
 
 def chunked_iterable(iterable, size):
     """Yield successive chunks from the data source."""
     for i in range(0, len(iterable), size):
-        yield iterable[i:i + size]
+        yield iterable[i : i + size]
+
 
 def load_papers(
     conn: psycopg.Connection,
@@ -79,9 +80,7 @@ def load_papers(
     run_start = time.perf_counter()
 
     with conn.cursor() as cur:
-        for chunk_index, chunk in enumerate(
-            chunked_iterable(entries, process_chunk_size), start=1
-        ):
+        for chunk_index, chunk in enumerate(chunked_iterable(entries, process_chunk_size), start=1):
             chunk_start = time.perf_counter()
 
             # 1. Extract abstract just for this chunk
@@ -89,14 +88,26 @@ def load_papers(
 
             # 2. Encode the abstract embeddings
             encode_start = time.perf_counter()
-            embeddings = embedder.encode_documents(abstract_lists,
-                                                task_prefix=task_prefix,
-                                                batch_size=encode_batch_size)
+            embeddings = embedder.encode_documents(
+                abstract_lists, task_prefix=task_prefix, batch_size=encode_batch_size
+            )
             encode_s = time.perf_counter() - encode_start
 
             # 3. Prepare list of parameter tuples
             records = [
-                (m["arxiv_id"], m["title"], m["authors"], m["categories"], m["arxiv_doi"], m["journal_ref"], m["version"], m["update_date"], m["abstract"], HalfVector(emb), embedding_version)
+                (
+                    m["arxiv_id"],
+                    m["title"],
+                    m["authors"],
+                    m["categories"],
+                    m["arxiv_doi"],
+                    m["journal_ref"],
+                    m["version"],
+                    m["update_date"],
+                    m["abstract"],
+                    HalfVector(emb),
+                    embedding_version,
+                )
                 for m, emb in zip(chunk, embeddings)
             ]
 

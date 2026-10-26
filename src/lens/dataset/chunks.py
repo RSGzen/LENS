@@ -73,7 +73,7 @@ def eta_calculation(elapsed_s, total_processed, total_papers):
 def chunked_iterable(iterable, size):
     """Yield successive chunks from the data source."""
     for i in range(0, len(iterable), size):
-        yield iterable[i:i + size]
+        yield iterable[i : i + size]
 
 
 def chunk_paper(
@@ -107,8 +107,9 @@ def chunk_uuid(arxiv_id: str, section_type: str, section_order: int) -> uuid.UUI
     ``uuid.uuid5(CHUNK_UUID_NAMESPACE, f"{arxiv_id}:{section_type}:{section_order}")``.
     Uses :data:`lens.chunking.CHUNK_UUID_NAMESPACE`; never rebase once rows exist.
     """
-    c_uuid = uuid.uuid5(namespace=CHUNK_UUID_NAMESPACE,
-                        name=f"{arxiv_id}:{section_type}:{section_order}")
+    c_uuid = uuid.uuid5(
+        namespace=CHUNK_UUID_NAMESPACE, name=f"{arxiv_id}:{section_type}:{section_order}"
+    )
 
     return c_uuid
 
@@ -167,9 +168,7 @@ def load_chunks(
     run_start = time.perf_counter()
 
     with conn.cursor() as cur:
-        for batch_index, batch in enumerate(
-            chunked_iterable(entries, papers_per_batch)
-        ):
+        for batch_index, batch in enumerate(chunked_iterable(entries, papers_per_batch)):
             batch_start = time.perf_counter()
 
             uuid_list = []
@@ -180,10 +179,12 @@ def load_chunks(
             section_order_list = []
 
             for paper_entry in batch:
-                paper_chunk_list = chunk_paper(entry=paper_entry,
-                                               xml_dir=xml_dir,
-                                               count_tokens=count_tokens,
-                                               threshold=threshold)
+                paper_chunk_list = chunk_paper(
+                    entry=paper_entry,
+                    xml_dir=xml_dir,
+                    count_tokens=count_tokens,
+                    threshold=threshold,
+                )
 
                 # Collect the per-chunk fields for this paper, and derive the
                 # deterministic PK from *each chunk's own* (arxiv_id, type, order).
@@ -201,9 +202,9 @@ def load_chunks(
             encode_start = time.perf_counter()
 
             if chunk_txt_list:
-                embeddings = embedder.encode_documents(texts=chunk_txt_list,
-                                                       task_prefix=task_prefix,
-                                                       batch_size=encode_batch_size)
+                embeddings = embedder.encode_documents(
+                    texts=chunk_txt_list, task_prefix=task_prefix, batch_size=encode_batch_size
+                )
             else:
                 embeddings = []
 
@@ -211,13 +212,30 @@ def load_chunks(
 
             # 3. Prepare list of parameter tuples
             records = [
-                (uuid, arxiv_id, section_type, text, HalfVector(emb), t_count, section_order, embedding_version)
-                for uuid, arxiv_id, section_type, text, emb, t_count, section_order in zip(uuid_list, arxivID_list, section_type_list, chunk_txt_list, embeddings, token_count_list, section_order_list)
+                (
+                    uuid,
+                    arxiv_id,
+                    section_type,
+                    text,
+                    HalfVector(emb),
+                    t_count,
+                    section_order,
+                    embedding_version,
+                )
+                for uuid, arxiv_id, section_type, text, emb, t_count, section_order in zip(
+                    uuid_list,
+                    arxivID_list,
+                    section_type_list,
+                    chunk_txt_list,
+                    embeddings,
+                    token_count_list,
+                    section_order_list,
+                )
             ]
 
             # 4. Define the SQL query with placeholders
             query = """
-                INSERT INTO chunks (chunk_uuid, arxiv_id, section_type, chunk_text, 
+                INSERT INTO chunks (chunk_uuid, arxiv_id, section_type, chunk_text,
                                     chunk_embedding, token_count, section_order,
                                     embedding_version)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -243,9 +261,11 @@ def load_chunks(
             # 7. Per-chunk progress (mirrored to the run log by the runner)
             batch_s = time.perf_counter() - batch_start
             elapsed_s = time.perf_counter() - run_start
-            eta_str, remaining_str = eta_calculation(elapsed_s=elapsed_s,
-                                                     total_processed=num_processed_entries,
-                                                     total_papers=total_entries)
+            eta_str, remaining_str = eta_calculation(
+                elapsed_s=elapsed_s,
+                total_processed=num_processed_entries,
+                total_papers=total_entries,
+            )
 
             print(
                 f"[batch {batch_index}] papers={len(set(arxivID_list))} chunks={len(uuid_list)} "

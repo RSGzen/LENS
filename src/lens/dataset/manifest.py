@@ -23,19 +23,15 @@ entry carries the ``papers``-table fields those stages need plus the TEI filenam
 from __future__ import annotations
 
 import json
-
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from datetime import datetime, timezone
 
 from lens import config
 
+
 # ------------------------------------------------------------------ filtering
-def is_candidate(
-    record: dict[str, Any],
-    target_category: str,
-    paper_year_range: set
-) -> bool:
+def is_candidate(record: dict[str, Any], target_category: str, paper_year_range: set) -> bool:
     """True when a metadata record is in the target category and id-year window.
 
     - ``categories`` is a whitespace-joined **string** (e.g. ``"cs.AI cs.LG"``),
@@ -48,11 +44,12 @@ def is_candidate(
         return False
 
     paper_year = record.get("id", "")[:2]
-    
+
     if paper_year not in paper_year_range:
         return False
 
     return True
+
 
 def tei_xml_filename_gen(record: dict[str, Any]) -> str:
     """Return the on-disk TEI basename ``<arxiv_id><latest_version>.tei.xml``.
@@ -62,18 +59,17 @@ def tei_xml_filename_gen(record: dict[str, Any]) -> str:
     file. Callers must ensure ``record["versions"]`` is non-empty first.
     """
     paper_id = record["id"]
-    
+
     paper_ver = record["versions"][-1]["version"]
 
     tei_xml_filename = f"{paper_id}{paper_ver}.tei.xml"
 
     return tei_xml_filename
 
+
 # ------------------------------------------------------------------ logging
-def checkpoint_logging(checkpoint_path: str | Path,
-                       scanned_lines: int,
-                       num_candidates: int,
-                       done_flag: bool = False
+def checkpoint_logging(
+    checkpoint_path: str | Path, scanned_lines: int, num_candidates: int, done_flag: bool = False
 ) -> None:
     """Append one JSONL progress record to ``checkpoint_path``.
 
@@ -81,15 +77,12 @@ def checkpoint_logging(checkpoint_path: str | Path,
     (``done: true``) marks completion. A reader must parse the **last line** —
     ``json.loads`` on the whole file fails on multiple JSON values.
     """
-    log_dict = {
-        "lines_scanned": scanned_lines,
-        "candidates": num_candidates,
-        "done": done_flag
-    }
+    log_dict = {"lines_scanned": scanned_lines, "candidates": num_candidates, "done": done_flag}
 
     with open(checkpoint_path, "a", encoding="utf-8") as checkpoint_log:
         json.dump(log_dict, checkpoint_log, ensure_ascii=False)
         checkpoint_log.write("\n")
+
 
 # ------------------------------------------------------------------ extracting
 def extract_manifest_entry(record: dict[str, Any], tei_xml_filename: str) -> dict[str, Any]:
@@ -118,9 +111,10 @@ def extract_manifest_entry(record: dict[str, Any], tei_xml_filename: str) -> dic
         "arxiv_doi": record.get("doi"),
         "journal_ref": record.get("journal-ref"),
         "update_date": record.get("update_date"),
-        "abstract": record["abstract"]
+        "abstract": record["abstract"],
     }
     return entry_dict
+
 
 # ------------------------------------------------------------------ build (pass)
 def build_manifest(
@@ -151,7 +145,7 @@ def build_manifest(
     """
     target_categories = config.TARGET_CATEGORY
     paper_yr_range = config.PAPER_YEAR_RANGE
-    
+
     scanned_lines = 0
     num_candidates = 0
     entries_list = []
@@ -165,7 +159,6 @@ def build_manifest(
 
             # Check if its a candidate paper (Category + Time range)
             if is_candidate(one_paper_metadata, target_categories, paper_yr_range):
-
                 # Skip if version not available
                 versions = one_paper_metadata.get("versions")
                 if not versions:
@@ -178,7 +171,9 @@ def build_manifest(
                     num_candidates += 1
 
                     # Generate manifest entry dictionary and append to list
-                    entries_list.append(extract_manifest_entry(one_paper_metadata, tei_xml_filename))
+                    entries_list.append(
+                        extract_manifest_entry(one_paper_metadata, tei_xml_filename)
+                    )
 
             # Log progress progressively
             if scanned_lines % config.MANIFEST_CHECKPOINT_INTERVAL == 0:
@@ -186,14 +181,14 @@ def build_manifest(
 
         checkpoint_logging(checkpoint_path, scanned_lines, num_candidates, done_flag=True)
 
-    manifest = {                                  
-        "generated_at":     datetime.now(timezone.utc).isoformat(),                  
-        "target_category":  config.TARGET_CATEGORY,               
-        "year_range":       [config.PAPER_START_YEAR, config.PAPER_END_YEAR],
-        "metadata_source":  str(metadata_path),    
-        "xml_dir":          str(xml_dir),           
-        "count":            len(entries_list),           
-        "papers":           entries_list,                
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "target_category": config.TARGET_CATEGORY,
+        "year_range": [config.PAPER_START_YEAR, config.PAPER_END_YEAR],
+        "metadata_source": str(metadata_path),
+        "xml_dir": str(xml_dir),
+        "count": len(entries_list),
+        "papers": entries_list,
     }
 
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -201,20 +196,21 @@ def build_manifest(
 
     return manifest
 
+
 def load_manifest(path: str | Path) -> dict[str, Any]:
     """Read ``manifest.json`` back into a dict (M3/M4 entry point)."""
 
     with open(path, "r", encoding="utf-8") as file:
         data = json.load(file)
 
-        manifest = {                                  
-            "generated_at":     data["generated_at"],                  
-            "target_category":  data["target_category"],               
-            "year_range":       data["year_range"],
-            "metadata_source":  data["metadata_source"],    
-            "xml_dir":          data["xml_dir"],           
-            "count":            data["count"],           
-            "papers":           data["papers"]            
+        manifest = {
+            "generated_at": data["generated_at"],
+            "target_category": data["target_category"],
+            "year_range": data["year_range"],
+            "metadata_source": data["metadata_source"],
+            "xml_dir": data["xml_dir"],
+            "count": data["count"],
+            "papers": data["papers"],
         }
         del data
 
