@@ -80,7 +80,9 @@ def main() -> None:
     rows = _entity_rows(sampled_ids)
     write_entities_worksheet(rows, out)
 
-    predictions_path = Path(args.predictions) if args.predictions else out.with_suffix(".predictions.json")
+    predictions_path = (
+        Path(args.predictions) if args.predictions else out.with_suffix(".predictions.json")
+    )
     predictions = entities_from_payload(payload)
     filtered = {cid: predictions.get(cid, []) for cid in sampled_ids}
     predictions_path.write_text(

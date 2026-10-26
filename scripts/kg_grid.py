@@ -52,17 +52,28 @@ def main() -> None:
     setup_file_logging("lens.kg_grid", "kg_grid")
 
     parser = argparse.ArgumentParser(description="M7 extractor/retrieval grid")
-    parser.add_argument("--chunks", nargs="+", required=True,
-                        help="saved chunk-id JSON files (one per retrieval scope)")
+    parser.add_argument(
+        "--chunks",
+        nargs="+",
+        required=True,
+        help="saved chunk-id JSON files (one per retrieval scope)",
+    )
     parser.add_argument("--ner-models", nargs="+", default=[config.KG_NER_MODEL_ID])
     parser.add_argument("--rel-model", default=config.KG_REL_MODEL_ID)
-    parser.add_argument("--labels", nargs="+", choices=tuple(ENTITY_LABEL_SETS),
-                        default=list(ENTITY_LABEL_SETS))
+    parser.add_argument(
+        "--labels", nargs="+", choices=tuple(ENTITY_LABEL_SETS), default=list(ENTITY_LABEL_SETS)
+    )
     parser.add_argument("--min-scores", nargs="+", type=float, default=[0.3, 0.5])
-    parser.add_argument("--no-postprocess", action="store_true",
-                        help="disable the M7.1 post-process (pre/post comparison)")
-    parser.add_argument("--verify", action="store_true",
-                        help="enable budgeted JEV direction verification (live API)")
+    parser.add_argument(
+        "--no-postprocess",
+        action="store_true",
+        help="disable the M7.1 post-process (pre/post comparison)",
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="enable budgeted JEV direction verification (live API)",
+    )
     parser.add_argument("--verify-budget", type=int, default=config.KG_VERIFY_BUDGET)
     parser.add_argument("--out-dir", default=config.LENS_LOGS_ROOT_PATH)
     args = parser.parse_args()
@@ -137,9 +148,7 @@ def main() -> None:
 
                         result["stats"]["timing"] = {
                             "overall_s": round(elapsed, 3),
-                            "chunks_per_s": round(len(chunk_ids) / elapsed, 2)
-                            if elapsed
-                            else 0.0,
+                            "chunks_per_s": round(len(chunk_ids) / elapsed, 2) if elapsed else 0.0,
                         }
                         result["stats"]["gpu"] = _gpu_stats()
 

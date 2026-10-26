@@ -27,7 +27,6 @@ import argparse
 import json
 import subprocess
 import sys
-
 from pathlib import Path
 from typing import Any
 
@@ -187,16 +186,16 @@ def check_run(run_id: str) -> bool:
     # The numbers the log and the thesis report need (R4: metric + source row).
     turn_tokens = [e.get("tokens_in") or 0 for e in events if e.get("call_type") == "chat"]
     budgets = [
-        (e.get("extra") or {}).get("budget")
-        for e in events
-        if isinstance(e.get("extra"), dict)
+        (e.get("extra") or {}).get("budget") for e in events if isinstance(e.get("extra"), dict)
     ]
     stop = [b["stop_reason"] for b in budgets if isinstance(b, dict) and b.get("stop_reason")]
 
     print("")
     print(f"iterations   {manifest.iterations}")
     print(f"tokens       in {totals.get('tokens_in') or 0} / out {totals.get('tokens_out') or 0}")
-    print(f"calls        {totals.get('calls') or 0} billable / {totals.get('tool_calls') or 0} tool")
+    print(
+        f"calls        {totals.get('calls') or 0} billable / {totals.get('tool_calls') or 0} tool"
+    )
     print(f"turn tokens  {turn_tokens}")
     print(f"cap binding  {stop[-1] if stop else 'none (FINAL_ANSWER)'}")
     print(f"arm          {json.dumps((manifest.extra or {}).get('arm') or {}, sort_keys=True)}")

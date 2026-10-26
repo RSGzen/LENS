@@ -51,11 +51,45 @@ METRIC_RE = re.compile(
 )
 
 STOPWORDS = {
-    "we", "the", "our", "this", "that", "in", "on", "for", "of", "and", "to",
-    "table", "figure", "section", "results", "result", "experiments", "experiment",
-    "model", "models", "method", "methods", "data", "dataset", "benchmark",
-    "training", "test", "testing", "baseline", "baselines", "approach", "task",
-    "tasks", "performance", "paper", "work", "study", "analysis", "setting",
+    "we",
+    "the",
+    "our",
+    "this",
+    "that",
+    "in",
+    "on",
+    "for",
+    "of",
+    "and",
+    "to",
+    "table",
+    "figure",
+    "section",
+    "results",
+    "result",
+    "experiments",
+    "experiment",
+    "model",
+    "models",
+    "method",
+    "methods",
+    "data",
+    "dataset",
+    "benchmark",
+    "training",
+    "test",
+    "testing",
+    "baseline",
+    "baselines",
+    "approach",
+    "task",
+    "tasks",
+    "performance",
+    "paper",
+    "work",
+    "study",
+    "analysis",
+    "setting",
 }
 
 
@@ -121,8 +155,11 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=100000)
     parser.add_argument("--min-count", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=5000)
-    parser.add_argument("--sections", default=",".join(DEFAULT_SECTION_TYPES),
-                        help="comma-separated section_type filter")
+    parser.add_argument(
+        "--sections",
+        default=",".join(DEFAULT_SECTION_TYPES),
+        help="comma-separated section_type filter",
+    )
     parser.add_argument("--out", default=config.KG_GAZETTEER_PATH)
     args = parser.parse_args()
     section_types = tuple(s.strip() for s in args.sections.split(",") if s.strip())
@@ -154,9 +191,7 @@ def main() -> None:
                 displays.setdefault(key, name)
 
     entries: dict[str, dict] = {}
-    dataset_keys = {key for key, _kind in eval_counts} | {
-        key for key, _kind in suffix_counts
-    }
+    dataset_keys = {key for key, _kind in eval_counts} | {key for key, _kind in suffix_counts}
     for key in dataset_keys:
         suffix = suffix_counts[(key, "Dataset")]
         eval_ = eval_counts[(key, "Dataset")]

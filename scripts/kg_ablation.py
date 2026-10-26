@@ -59,8 +59,9 @@ def main() -> None:
     parser.add_argument("--chunks", required=True, help="saved chunk-id JSON")
     parser.add_argument("--labels", choices=tuple(ENTITY_LABEL_SETS), default="descriptive")
     parser.add_argument("--min-score", type=float, default=0.5)
-    parser.add_argument("--verify", action="store_true",
-                        help="include the JEV-verified arm (live API)")
+    parser.add_argument(
+        "--verify", action="store_true", help="include the JEV-verified arm (live API)"
+    )
     parser.add_argument("--verify-budget", type=int, default=config.KG_VERIFY_BUDGET)
     parser.add_argument("--out-dir", default=config.LENS_LOGS_ROOT_PATH)
     args = parser.parse_args()
@@ -95,8 +96,14 @@ def main() -> None:
     arms = [
         ("off", {"kg_enabled": False}),
         ("raw", {"postprocess": False, "span_filter": False, "coref": False, "verifier": None}),
-        ("postprocess", {"postprocess": True, "span_filter": True, "coref": True, "verifier": None}),
-        ("verified", {"postprocess": True, "span_filter": True, "coref": True, "verifier": verifier}),
+        (
+            "postprocess",
+            {"postprocess": True, "span_filter": True, "coref": True, "verifier": None},
+        ),
+        (
+            "verified",
+            {"postprocess": True, "span_filter": True, "coref": True, "verifier": verifier},
+        ),
     ]
 
     out_dir = Path(args.out_dir)

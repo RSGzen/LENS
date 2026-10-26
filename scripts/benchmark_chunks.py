@@ -31,9 +31,7 @@ SAMPLE_SIZE = 200
 
 
 def main() -> None:
-    manifest = load_manifest(
-        Path(config.LENS_MANIFESTS_ROOT_PATH) / config.MANIFEST_FILENAME
-    )
+    manifest = load_manifest(Path(config.LENS_MANIFESTS_ROOT_PATH) / config.MANIFEST_FILENAME)
     papers = manifest["papers"]
     total_papers = manifest["count"]
 
@@ -83,8 +81,10 @@ def main() -> None:
     print(f"chunks                 : {len(chunks)}  ({chunks_per_paper:.1f}/paper)")
     print(f"tokens (sample)        : {total_tokens}")
     print(f"parse+chunk            : {parse_s:.2f}s  ({len(sample) / parse_s:.1f} papers/s)")
-    print(f"embed                  : {embed_s:.2f}s  ({len(chunks) / embed_s:.1f} chunks/s, "
-          f"{total_tokens / embed_s:.0f} tokens/s)")
+    print(
+        f"embed                  : {embed_s:.2f}s  ({len(chunks) / embed_s:.1f} chunks/s, "
+        f"{total_tokens / embed_s:.0f} tokens/s)"
+    )
     print(f"batch size             : {config.EMBEDDING_CHUNK_BATCH_SIZE} chunks")
     print(f"est. full chunk volume : {est_chunks:,.0f} chunks")
     print(f"est. embed-only time   : {est_chunks / (len(chunks) / embed_s) / 3600:.1f} h")
