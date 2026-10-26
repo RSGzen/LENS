@@ -61,7 +61,8 @@ def apply_schema(conn: psycopg.Connection) -> None:
        ``chunk_uuid UUID PRIMARY KEY`` (default ``gen_random_uuid()`` — core in
        PG13+, no extension) · ``arxiv_id TEXT NOT NULL REFERENCES papers(arxiv_id)`` ·
        ``section_type TEXT`` · ``chunk_text TEXT`` ·
-       ``chunk_embedding <config.EMBEDDING_PGVECTOR_TYPE>(<config.EMBEDDING_DIM>)`` · ``token_count INT`` ·
+       ``chunk_embedding <config.EMBEDDING_PGVECTOR_TYPE>(<config.EMBEDDING_DIM>)``
+       · ``token_count INT`` ·
        ``section_order INT`` · ``embedding_version TEXT``.
      4. HNSW indexes on both embeddings with cosine distance — the op class
         matches the stored type (``<config.EMBEDDING_INDEX_OPS>``)::
@@ -202,11 +203,7 @@ def drop_schema(conn: psycopg.Connection) -> None:
         # drop_schema is dev/test-only and is called on autocommit connections,
         # where a failed statement does not poison subsequent ones.
         try:
-            cur.execute(
-                sql.SQL("DROP ROLE IF EXISTS {}").format(
-                    sql.Identifier(role_name)
-                )
-            )
+            cur.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role_name)))
         except psycopg.errors.DependentObjectsStillExist:
             pass
 
