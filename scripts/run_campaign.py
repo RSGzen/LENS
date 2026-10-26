@@ -33,7 +33,6 @@ import json
 import os
 import subprocess
 import sys
-
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -42,6 +41,7 @@ from lens import config
 from lens.agent import runstore
 from lens.experiments.campaign import build_jobs, load_campaign
 from lens.observability.citations import resolve_citations
+
 
 def image_digest() -> str | None:
     """Return the local sandbox image id, or ``None`` when Docker is unavailable.
@@ -84,7 +84,9 @@ def run_jobs(jobs: list[dict[str, Any]], *, digest: str | None, dry_run: bool) -
             env["LENS_SANDBOX_DIGEST"] = digest
 
         if dry_run:
-            print("would run: " + " ".join(f'"{part}"' if " " in part else part for part in command))
+            print(
+                "would run: " + " ".join(f'"{part}"' if " " in part else part for part in command)
+            )
             print(f"  env: {job['env'] or '(inherited)'}")
             continue
 
@@ -146,7 +148,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("campaign", help="path to a campaign JSON file")
     parser.add_argument("--dry-run", action="store_true", help="print the matrix; spend nothing")
-    parser.add_argument("--out", default=None, help="output directory (default: DATA_ROOT/campaigns)")
+    parser.add_argument(
+        "--out", default=None, help="output directory (default: DATA_ROOT/campaigns)"
+    )
     args = parser.parse_args(argv)
 
     # A campaign prints the queries it is about to run; the console is cp1252.

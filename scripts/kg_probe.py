@@ -41,8 +41,7 @@ from lens.tools.kg import build_kg
 
 DEFAULT_PAPERS = 20
 DEFAULT_QUERY = (
-    "How do retrieval-augmented language models aggregate evidence "
-    "across a long context?"
+    "How do retrieval-augmented language models aggregate evidence across a long context?"
 )
 
 
@@ -84,9 +83,7 @@ def _chunks_for_papers(conn, arxiv_ids: list[str]) -> list[str]:
 
 def _head_chunk_ids(conn, papers: int) -> list[str]:
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT arxiv_id FROM papers ORDER BY arxiv_id LIMIT %s", (papers,)
-        )
+        cur.execute("SELECT arxiv_id FROM papers ORDER BY arxiv_id LIMIT %s", (papers,))
         arxiv_ids = [row[0] for row in cur.fetchall()]
     return _chunks_for_papers(conn, arxiv_ids)
 
@@ -94,8 +91,7 @@ def _head_chunk_ids(conn, papers: int) -> list[str]:
 def _random_chunk_ids(conn, papers: int, seed: int) -> list[str]:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT arxiv_id FROM papers "
-            "ORDER BY md5(arxiv_id || %s) LIMIT %s",
+            "SELECT arxiv_id FROM papers ORDER BY md5(arxiv_id || %s) LIMIT %s",
             (str(seed), papers),
         )
         arxiv_ids = [row[0] for row in cur.fetchall()]
@@ -125,16 +121,12 @@ def _query_chunk_ids(
     if scope == "papers":
         return _chunks_for_papers(conn, n_ids)
 
-    candidate_chunks = deep_match(
-        conn, n_ids, query, embedder, candidate_chunks=retrieval_c
-    )  # C
+    candidate_chunks = deep_match(conn, n_ids, query, embedder, candidate_chunks=retrieval_c)  # C
     if scope == "C":
         return candidate_chunks
 
     # scope == "c": the reranked answer-context chunks.
-    hydrated = rerank_chunks(
-        conn, candidate_chunks, query, reranker, top_chunks=retrieval_c_top
-    )
+    hydrated = rerank_chunks(conn, candidate_chunks, query, reranker, top_chunks=retrieval_c_top)
     return [chunk["chunk_uuid"] for chunk in hydrated["chunks"]]
 
 
@@ -143,9 +135,7 @@ def _sample_chunk_ids(conn, args: argparse.Namespace) -> list[str]:
         return _head_chunk_ids(conn, args.papers)
     if args.sample == "random":
         return _random_chunk_ids(conn, args.papers, args.seed)
-    return _query_chunk_ids(
-        conn, args.query, args.scope, args.retrieval_c, args.retrieval_c_top
-    )
+    return _query_chunk_ids(conn, args.query, args.scope, args.retrieval_c, args.retrieval_c_top)
 
 
 # ------------------------------------------------------------------ main
@@ -154,27 +144,37 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="M7 K-05 KG extraction probe")
     parser.add_argument("--papers", type=int, default=DEFAULT_PAPERS)
+    parser.add_argument("--sample", choices=("head", "random", "query"), default="head")
     parser.add_argument(
-        "--sample", choices=("head", "random", "query"), default="head"
+        "--scope",
+        choices=("c", "C", "papers"),
+        default="C",
+        help="query-arm KG scope (production KG scope: C=100; c=5 is the answer context)",
     )
-    parser.add_argument("--scope", choices=("c", "C", "papers"), default="C",
-                        help="query-arm KG scope (production KG scope: C=100; c=5 is the answer context)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--query", default=DEFAULT_QUERY)
     parser.add_argument("--retrieval-c", type=int, default=config.RETRIEVAL_C)
     parser.add_argument("--retrieval-c-top", type=int, default=config.RETRIEVAL_C_TOP)
-    parser.add_argument("--chunks-file", default=None,
-                        help="reuse a saved chunk-id list (skips sampling)")
-    parser.add_argument("--save-chunks", default=None,
-                        help="write the sampled chunk-id list to this JSON path")
+    parser.add_argument(
+        "--chunks-file", default=None, help="reuse a saved chunk-id list (skips sampling)"
+    )
+    parser.add_argument(
+        "--save-chunks", default=None, help="write the sampled chunk-id list to this JSON path"
+    )
     parser.add_argument("--labels", choices=tuple(ENTITY_LABEL_SETS), default="abstract")
     parser.add_argument("--ner-model", default=config.KG_NER_MODEL_ID)
     parser.add_argument("--rel-model", default=config.KG_REL_MODEL_ID)
     parser.add_argument("--min-score", type=float, default=config.KG_MIN_SCORE)
-    parser.add_argument("--no-postprocess", action="store_true",
-                        help="disable the M7.1 post-process (pre/post comparison)")
-    parser.add_argument("--verify", action="store_true",
-                        help="enable budgeted JEV direction verification (live API)")
+    parser.add_argument(
+        "--no-postprocess",
+        action="store_true",
+        help="disable the M7.1 post-process (pre/post comparison)",
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="enable budgeted JEV direction verification (live API)",
+    )
     parser.add_argument("--verify-budget", type=int, default=config.KG_VERIFY_BUDGET)
     args = parser.parse_args()
     postprocess = not args.no_postprocess
@@ -261,10 +261,7 @@ def main() -> None:
     for edge in triples[:20]:
         print(f"  {edge}")
 
-    out_path = (
-        Path(config.LENS_LOGS_ROOT_PATH)
-        / f"kg_probe_{time.strftime('%Y%m%d_%H%M%S')}.json"
-    )
+    out_path = Path(config.LENS_LOGS_ROOT_PATH) / f"kg_probe_{time.strftime('%Y%m%d_%H%M%S')}.json"
     out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {out_path}")
 

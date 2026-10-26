@@ -62,7 +62,9 @@ def _filter_loaded(conn, entries):
         print("resume: chunks is empty -> nothing to skip")
         return entries
     remaining = [entry for entry in entries if entry["arxiv_id"] not in loaded]
-    print(f"resume: {len(entries) - len(remaining)} papers already loaded, {len(remaining)} remaining")
+    print(
+        f"resume: {len(entries) - len(remaining)} papers already loaded, {len(remaining)} remaining"
+    )
     return remaining
 
 

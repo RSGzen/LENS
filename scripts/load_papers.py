@@ -98,11 +98,13 @@ def main() -> None:
 
     start = time.perf_counter()
     with connect(autocommit=True) as conn:
-        count = load_papers(conn=conn,
-                            entries=manifest["papers"],
-                            process_chunk_size=process_chunk_size,
-                            encode_batch_size=embedding_batch_size,
-                            embedder=embedder)
+        count = load_papers(
+            conn=conn,
+            entries=manifest["papers"],
+            process_chunk_size=process_chunk_size,
+            encode_batch_size=embedding_batch_size,
+            embedder=embedder,
+        )
     elapsed_s = time.perf_counter() - start
 
     rate = count / elapsed_s if elapsed_s > 0 else 0.0

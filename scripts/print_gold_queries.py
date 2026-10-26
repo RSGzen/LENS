@@ -8,12 +8,15 @@ Each row is printed as::
 
 Copy the line into Google, or open the arXiv URL, then fill the CSV by hand.
 
-Recommended (fast) usage — source context + read each paper once:
-  cd D:\lens
-  .\.venv\Scripts\python.exe scripts\print_gold_queries.py --csv D:\lens-data\logs\gold_triples_03.csv --start 11 --url --with-context --group-by-paper
+Recommended (fast) usage — source context + read each paper once::
 
-Resume only unfilled rows:
-  .\.venv\Scripts\python.exe scripts\print_gold_queries.py --csv D:\lens-data\logs\gold_triples_03.csv --skip-filled --with-context --group-by-paper
+    python scripts/print_gold_queries.py --csv <gold.csv> --start 11 \
+        --url --with-context --group-by-paper
+
+Resume only unfilled rows::
+
+    python scripts/print_gold_queries.py --csv <gold.csv> --skip-filled \
+        --with-context --group-by-paper
 """
 
 from __future__ import annotations
@@ -39,16 +42,26 @@ def main() -> None:
     parser.add_argument("--csv", required=True)
     parser.add_argument("--start", type=int, default=1, help="first row (1-based)")
     parser.add_argument("--end", type=int, default=0, help="last row (0 = to the end)")
-    parser.add_argument("--skip-filled", action="store_true",
-                        help="skip rows whose gold_relation_ok is already filled")
+    parser.add_argument(
+        "--skip-filled",
+        action="store_true",
+        help="skip rows whose gold_relation_ok is already filled",
+    )
     parser.add_argument("--url", action="store_true", help="also print the arXiv URL")
-    parser.add_argument("--with-context", action="store_true",
-                        help="fetch and print a source-chunk snippet (DB required)")
-    parser.add_argument("--group-by-paper", action="store_true",
-                        help="print rows sorted by arxiv_id (read each paper once)")
+    parser.add_argument(
+        "--with-context",
+        action="store_true",
+        help="fetch and print a source-chunk snippet (DB required)",
+    )
+    parser.add_argument(
+        "--group-by-paper",
+        action="store_true",
+        help="print rows sorted by arxiv_id (read each paper once)",
+    )
     parser.add_argument("--context-width", type=int, default=400)
-    parser.add_argument("--clean", action="store_true",
-                        help="apply punctuation cleanup before printing")
+    parser.add_argument(
+        "--clean", action="store_true", help="apply punctuation cleanup before printing"
+    )
     args = parser.parse_args()
 
     rows = read_triples_worksheet(args.csv)
@@ -71,8 +84,7 @@ def main() -> None:
         chunk_ids = list({row.get("chunk_uuid") for _, row in selected if row.get("chunk_uuid")})
         with connect(readonly=True) as conn:
             contexts = {
-                chunk["chunk_uuid"]: chunk["chunk_text"]
-                for chunk in fetch_chunks(conn, chunk_ids)
+                chunk["chunk_uuid"]: chunk["chunk_text"] for chunk in fetch_chunks(conn, chunk_ids)
             }
 
     for index, row in selected:
@@ -84,10 +96,7 @@ def main() -> None:
             print(f"    https://arxiv.org/abs/{row['arxiv_id']}")
         if args.with_context:
             text = contexts.get(row.get("chunk_uuid", ""), "")
-            print(
-                "    context: "
-                + snippet(text, [row["head"], row["tail"]], args.context_width)
-            )
+            print("    context: " + snippet(text, [row["head"], row["tail"]], args.context_width))
         print()
 
 

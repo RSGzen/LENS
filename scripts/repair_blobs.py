@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-
 from pathlib import Path
 
 from lens import config
@@ -69,8 +68,10 @@ def main(argv: list[str] | None = None) -> int:
 
     counts = repair(Path(args.blobs), dry_run=args.dry_run)
 
-    print(f"blobs {args.blobs}: {counts['ok']} ok, {counts['repaired']} repaired, "
-          f"{counts['corrupt']} corrupt" + (" (dry run)" if args.dry_run else ""))
+    print(
+        f"blobs {args.blobs}: {counts['ok']} ok, {counts['repaired']} repaired, "
+        f"{counts['corrupt']} corrupt" + (" (dry run)" if args.dry_run else "")
+    )
 
     return 1 if counts["corrupt"] else 0
 
