@@ -1,7 +1,4 @@
-"""Turn-level replay: turn the JSONL log into what a viewer shows (M10b / M8.5+).
-
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4n (recorded replay) and the
-``MVP Build Roadmap.md`` M10b block.
+"""Turn-level replay: turn the JSONL log into what a viewer shows.
 
 Why this module exists
 ----------------------
@@ -80,7 +77,7 @@ class Turn:
     # **chat** tokens only (a JEV call's ~500 input tokens are not the growing
     # context), while a cost meter must show total spend. Reported separately so
     # `replay_summary`'s cost can equal `Trajectory.totals()` without distorting
-    # the chart (M9 S5, LOG-116).
+    # the chart.
     jev_cost_usd: float | None = None
     jev_tokens_in: int | None = None
     ok: bool | None = None
@@ -228,7 +225,7 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
                 turn.completion = completion
 
     elif call_type == "jev":
-        # Gate calls cost money (H3 counts the decision layer) but are not context:
+        # Gate calls cost money (the decision layer is real spend) but are not context:
         # keep them out of ``tokens_in`` so the growth chart stays honest, and sum
         # them into the summary's cost so it matches ``Trajectory.totals()``.
         turn.jev_cost_usd = (turn.jev_cost_usd or 0.0) + (event.get("cost_usd") or 0.0)
@@ -308,7 +305,7 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
     for the same log; ``chat_cost_usd`` and ``tokens_in/tokens_out`` stay chat-only
     because they drive the context-growth chart (a JEV call's input tokens are not
     the growing context). The two used to be one number, so a viewer's cost meter
-    was short by the whole decision layer (M9 S5, LOG-116).
+    was short by the whole decision layer.
     """
     gates = [tool.gate for turn in turns for tool in turn.tools if tool.gate]
 

@@ -1,7 +1,4 @@
-"""Citation resolution: does the answer's evidence actually exist? (M9)
-
-Spec: ``MVP Build Roadmap.md`` M9 item 2 ("emit answer Markdown + cited sources")
-and M11 item 4 (citation-faithfulness = unsupported-citation rate, L-09).
+"""Citation resolution: does the answer's evidence actually exist?
 
 What this answers
 -----------------
@@ -167,7 +164,7 @@ def cited_ids(text: str) -> list[str]:
     Cheap and pure, for callers that need the ids but not the evidence join: the
     **final groundedness gate** used to be handed ``"citations": []`` hard-coded,
     so it was asked "is every claim supported by the cited chunks" about an answer
-    whose citations it had never seen - a blind check (§4m, LOG-115).
+    whose citations it had never seen - a blind check.
     """
     tokens: list[str] = []
 

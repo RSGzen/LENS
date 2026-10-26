@@ -1,8 +1,5 @@
 """Observability sink: content-addressed blobs + one-schema JSONL trajectory.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §5 (trajectory fields + payloads,
-LOG-31) and §4a (Observability layer).
-
 Design: :class:`Trajectory` is the *injected* sink — ``clients.py`` receives one
 in its constructor and calls :meth:`Trajectory.store_blob` /
 :meth:`Trajectory.log_event` for every LLM/JEV call, so no call escapes logging.
@@ -33,16 +30,16 @@ except ModuleNotFoundError as e:
         "lens.config not importable — run from the repo root or install the package with `uv sync`."
     ) from e
 
-# Who performed the action (Tech Stack §5 `actor`).
+# Who performed the action.
 Actor = Literal["root", "sub", "tool"]
 
-# What the event is (Tech Stack 5). One schema, several kinds:
-# - ``chat`` / ``jev`` : the two LLM transports (LOG-31)
+# What the event is. One schema, several kinds:
+# - ``chat`` / ``jev`` : the two LLM transports
 # - ``tool``          : one host-tool dispatch (ToolRegistry.dispatch)
 # - ``exec``          : one sandbox code block (Runtime._run_loop) — code + stdout blobs
 # - ``emit``          : one ``rlm_api.emit()`` offload (variable -> blob ref)
 # - ``note``          : a free-form RLM/operator annotation (also ``run.resume``)
-# Keeping them in one enum is what lets H3 cost aggregation separate model spend
+# Keeping them in one enum is what lets cost aggregation separate model spend
 # from tool spend; labelling a tool call ``chat`` would corrupt that number.
 #
 # ``chat`` + ``exec`` + ``emit`` make the log self-sufficient: the root message
@@ -67,7 +64,7 @@ class TraceCtx:
 
 @dataclass
 class RebuiltState:
-    """Everything the log can tell us about a run (M8.5 resume).
+    """Everything the log can tell us about a run.
 
     Returned by :meth:`Trajectory.rebuild`. If it is in here, it is derived —
     never stored twice, so it cannot diverge from the log.
@@ -88,7 +85,7 @@ class RebuiltState:
 class Trajectory:
     """Single JSONL sink + content-addressed blob store for one run.
 
-    Layout (MVP Roadmap §3)::
+    Layout ::
 
         <runs_root>/<run_id>/trajectory.jsonl   # metadata via log_event()
         <runs_root>/blobs/<hexdigest>           # prompt / completion payloads
@@ -127,7 +124,7 @@ class Trajectory:
             # Windows, so the file on disk would not be the bytes that were hashed.
             # Content-addressing then silently lies — the filename is not the hash of
             # the file — which is exactly what bundle verification caught (three
-            # blobs "do not match its name", M9 S5, LOG-116). Byte-exact or not at
+            # blobs "do not match its name", ). Byte-exact or not at
             # all is the only honest option for a content-addressed store.
             blob_path.write_bytes(text.encode("utf-8"))
 
@@ -233,7 +230,7 @@ class Trajectory:
                                         "tokens_in": <int>, "tokens_out": <int>}},
             }
 
-        Vocabulary (Tech Stack §5) — do not conflate the levels:
+        Vocabulary — do not conflate the levels:
 
         - **run** = one review (this file, one ``run_id``);
         - **turn** = one loop iteration (one ``step_idx``);
@@ -241,7 +238,7 @@ class Trajectory:
         - **tool call** = one host-tool dispatch (``call_type="tool"``), which
           costs no API money and is therefore counted **separately**.
 
-        ``calls`` is the number that sits next to cost in the thesis table
+        ``calls`` is the number that sits next to cost in the table
         (H₃), so it must not move when retrieval does more work. It also must not
         move on a retry: ``clients._post`` logs each failed attempt as a
         ``chat.retry`` event **carrying an ``error``**, so only the successful
@@ -252,13 +249,13 @@ class Trajectory:
         Why the log and not ``Budget``: ``Budget`` is the **cap enforcer** and
         only sees what the orchestrator tells it; JEV calls and host tools have
         their own paths. The trajectory is written by the transport itself, so
-        it is the authoritative record for a reported ``$/query`` (R4). Missing
+        it is the authoritative record for a reported ``$/query``. Missing
         fields count as zero; a missing/empty file returns zeroed totals;
         unreadable lines are skipped (a crash mid-append must not make a run
         unreportable). Use ``math.fsum`` for ``cost_usd`` so the reported total
         is correctly rounded and independent of event order.
 
-        This is read-only and must never mutate or rewrite the log (F-02: the
+        This is read-only and must never mutate or rewrite the log (: the
         audit trail is append-only).
         """
         totals_dict = {

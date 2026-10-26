@@ -1,9 +1,9 @@
-"""Shared console + file logger for long-running bulk jobs (M3/M4 runners).
+"""Shared console + file logger for long-running bulk jobs.
 
 Wiring only, no domain logic. Long load jobs print one progress line per batch
 (see ``dataset/papers.py`` and ``dataset/chunks.py``); the runner needs those
 lines persisted to a timestamped log file under ``config.LENS_LOGS_ROOT_PATH``
-for thesis evidence (Roadmap §4 M3/M4, §8 evidence column).
+for evidence.
 
 :func:`setup_file_logging` installs a :class:`logging.Logger` with a console and
 a file handler, then replaces ``sys.stdout`` / ``sys.stderr`` with a
