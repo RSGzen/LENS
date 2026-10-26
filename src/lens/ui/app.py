@@ -39,7 +39,6 @@ import json
 import re
 import subprocess
 import sys
-
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -76,10 +75,10 @@ PAGES: list[str] = [PAGE_RECORDED, PAGE_LIVE]
 #: ``st.session_state`` contract. Every unit reads and writes these keys and
 #: nothing else, so a page can be filled (or replaced) without touching another.
 STATE: dict[str, Any] = {
-    "page": PAGE_RECORDED,   # PAGE_RECORDED | PAGE_LIVE
-    "run_id": None,      # the selected run; mirrored in ``st.query_params["run"]``
-    "cursor": 0,         # the last turn shown (playback position)
-    "playing": False,    # Play is running (drives ``st.fragment(run_every=)``)
+    "page": PAGE_RECORDED,  # PAGE_RECORDED | PAGE_LIVE
+    "run_id": None,  # the selected run; mirrored in ``st.query_params["run"]``
+    "cursor": 0,  # the last turn shown (playback position)
+    "playing": False,  # Play is running (drives ``st.fragment(run_every=)``)
 }
 
 RUN_STATUSES: list[str] = ["all", "completed", "partial", "failed", "interrupted", "running"]
@@ -156,9 +155,7 @@ def _sidebar() -> None:
 
         st.caption(f"runs root: `{runstore.runs_root()}`")
         st.divider()
-        st.caption(
-            "Read-only view of recorded artifacts. No pipeline logic (T-06)."
-        )
+        st.caption("Read-only view of recorded artifacts. No pipeline logic (T-06).")
 
 
 def render_recording_banner() -> None:
@@ -256,9 +253,7 @@ def page_runs() -> None:
     # The playback block is the fragment body: a tick then re-renders only this
     # block, not the whole page, and ``run_every`` is None while paused.
     playing = st.session_state["playing"]
-    st.fragment(
-        render_playback, run_every=PLAY_SECONDS if playing else None
-    )(view)
+    st.fragment(render_playback, run_every=PLAY_SECONDS if playing else None)(view)
 
     render_answer(view)
     render_import()
@@ -336,9 +331,7 @@ def render_controls(view: data.RunView) -> None:
 
     playing = st.session_state["playing"]
 
-    if play.button(
-        "⏸ Pause" if playing else "▶ Play", type="primary"
-    ):
+    if play.button("⏸ Pause" if playing else "▶ Play", type="primary"):
         st.session_state["playing"] = not playing
         st.rerun(scope="app")  # run_every is fixed when the fragment is created
 
@@ -585,9 +578,7 @@ def render_turn(run_id: str, turn: Turn) -> None:
             chips.append("emits: " + ", ".join(f"`{name}`" for name in turn.emits))
 
         if turn.jev_cost_usd:
-            chips.append(
-                f"gate: ${turn.jev_cost_usd:.6f} ({turn.jev_tokens_in or 0} tokens in)"
-            )
+            chips.append(f"gate: ${turn.jev_cost_usd:.6f} ({turn.jev_tokens_in or 0} tokens in)")
 
         if turn.latency_ms:
             chips.append(_duration(turn.latency_ms))
@@ -699,8 +690,7 @@ def render_answer(view: data.RunView) -> None:
         st.markdown(view.answer)
     else:
         st.caption(
-            "No `answer.md` — the run stopped before an outside-a-fence "
-            "`FINAL_ANSWER:` sentinel."
+            "No `answer.md` — the run stopped before an outside-a-fence `FINAL_ANSWER:` sentinel."
         )
 
     report = view.citations

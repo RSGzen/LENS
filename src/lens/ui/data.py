@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import json
 import os
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -222,9 +221,7 @@ def set_alias(run_id: str, name: str) -> dict[str, str]:
     }
 
     if taken:
-        raise ValueError(
-            f"the name {clean!r} already belongs to {next(iter(taken))!r}"
-        )
+        raise ValueError(f"the name {clean!r} already belongs to {next(iter(taken))!r}")
 
     aliases[run_id] = clean
     _write_aliases(aliases)
@@ -249,7 +246,6 @@ def _write_aliases(aliases: dict[str, str]) -> None:
         encoding="utf-8",
     )
     os.replace(tmp, path)
-
 
 
 def load_run(run_id: str) -> RunView | None:
@@ -277,7 +273,9 @@ def load_run(run_id: str) -> RunView | None:
     trajectory = Trajectory(str(run_id))
     turns = replay_turns(trajectory)
     answer_path = run_dir / "answer.md"
-    answer = answer_path.read_text(encoding="utf-8", errors="replace") if answer_path.is_file() else ""
+    answer = (
+        answer_path.read_text(encoding="utf-8", errors="replace") if answer_path.is_file() else ""
+    )
 
     return RunView(
         run_id=str(run_id),
@@ -356,9 +354,7 @@ def _evidence_by_turn(turns: list[Turn], trajectory: Trajectory) -> dict[int, li
             if not isinstance(payload, list):
                 continue
 
-            rows.extend(
-                row for row in payload if isinstance(row, dict) and row.get("chunk_uuid")
-            )
+            rows.extend(row for row in payload if isinstance(row, dict) and row.get("chunk_uuid"))
 
         if rows:
             evidence[turn.turn] = rows
