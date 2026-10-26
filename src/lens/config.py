@@ -32,7 +32,7 @@ os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("TQDM_DISABLE", "1")
 
 # ------------------------------------------------------------------ paths
-# **Path portability (M8.0).** Code is installed read-only; runtime data lives in
+# **Path portability.** Code is installed read-only; runtime data lives in
 # ONE writable root. Nothing below is an absolute literal, so the same checkout
 # runs on a machine with no `D:` drive.
 #
@@ -69,10 +69,10 @@ DATA_ROOT = _data_root()
 LENS_RUNS_ROOT_PATH = Path(os.environ.get("LENS_RUNS_ROOT") or DATA_ROOT / "runs")
 BLOBS_DIR_NAME = "blobs"
 TRAJECTORY_FILENAME = "trajectory.jsonl"
-# Long-running dev-run logs (e.g. the M3 bulk load) kept for thesis evidence.
+# Long-running dev-run logs kept for evidence.
 LENS_LOGS_ROOT_PATH = Path(os.environ.get("LENS_LOGS_ROOT") or DATA_ROOT / "logs")
 
-# ------------------------------------------------------------------ dataset (M1)
+# ------------------------------------------------------------------ dataset
 # Source corpus locations and manifest-build knobs. Same env-override pattern as the runs root.
 
 TARGET_CATEGORY = "cs.AI"
@@ -90,7 +90,7 @@ PAPER_END_YEAR = 2026
 
 LENS_MANIFESTS_ROOT_PATH = Path(os.environ.get("LENS_MANIFESTS_ROOT") or DATA_ROOT / "manifests")
 # **Corpus inputs: no default on purpose.** They are machine-specific, huge, and
-# cannot be shipped; the harness itself runs without them, so only the M1/M3/M4
+# cannot be shipped; the harness itself runs without them, so only the //
 # loaders resolve them — via :func:`require_path`, which fails early with the env
 # var name instead of a ``TypeError`` deep inside a loader.
 ARXIV_METADATA_JSON_PATH: str | None = os.environ.get("LENS_ARXIV_METADATA") or None
@@ -102,7 +102,7 @@ MANIFEST_CHECKPOINT_INTERVAL = 3000
 def require_path(env_name: str, value: str | None) -> Path:
     """Resolve a corpus path or exit with an actionable message.
 
-    Only the M1/M3/M4 loaders call this — the harness itself must run on a machine
+    Only the // loaders call this — the harness itself must run on a machine
     that has no corpus at all, and validating at *use* (not at import) keeps
     ``--help`` working there too. Failing here names the env var; failing later
     would be a ``TypeError`` inside a loader, hours into a run.
@@ -120,10 +120,10 @@ def require_path(env_name: str, value: str | None) -> Path:
     return path
 
 
-# ------------------------------------------------------------------ database (M2)
-# Local pgvector container (MVP Roadmap §2.1/§3). These are DEV defaults only;
+# ------------------------------------------------------------------ database
+# Local pgvector container. These are DEV defaults only;
 # override any of them via the environment. A real password is never committed
-# (AGENTS §3) — the defaults match the `docker run` flags documented in
+# — the defaults match the `docker run` flags documented in
 # `db/schema.py`.
 LENS_DB_HOST = os.environ.get("LENS_DB_HOST", "localhost")
 LENS_DB_PORT = int(os.environ.get("LENS_DB_PORT", "5432"))
@@ -132,11 +132,11 @@ LENS_DB_USER = os.environ.get("LENS_DB_USER", "lens")
 LENS_DB_PASSWORD = os.environ.get("LENS_DB_PASSWORD")
 
 # Read-only role the host tool layer uses on the RLM's behalf: SELECT only,
-# never write. The sandbox itself holds no DB credentials (LOG-32).
+# never write. The sandbox itself holds no DB credentials.
 LENS_DB_RO_USER = os.environ.get("LENS_DB_RO_USER", "lens_ro")
 LENS_DB_RO_PASSWORD = os.environ.get("LENS_DB_RO_PASSWORD")
 
-# Container / image used by `scripts/setup_db.py` docs and M2 evidence.
+# Container / image used by `scripts/setup_db.py` docs and evidence.
 # PGDATA itself is the Docker **named volume** `lens-pgdata` (never a host path):
 # a Windows bind mount made index I/O ~100x slower and was migrated away on 11 Oct.
 LENS_DB_CONTAINER_NAME = os.environ.get("LENS_DB_CONTAINER", "lens-pg")
@@ -146,21 +146,21 @@ LENS_DB_VOLUME_NAME = os.environ.get("LENS_DB_VOLUME_NAME", "lens-pgdata")
 # Embedding width + pgvector storage type: nomic-embed-text-v1.5, Matryoshka
 # 768 -> 512, stored as `halfvec` (fp16). Note 2*512+8 == 4*256+8 bytes/row —
 # the same storage as the retired fp32 vector(256) but with 512 dims; `halfvec`
-# is native + HNSW-indexable with no quantization calibration (Tech Stack §3).
+# is native + HNSW-indexable with no quantization calibration.
 EMBEDDING_DIM = int(os.environ.get("LENS_EMBEDDING_DIM", "512"))
-# Abstracts embedded per model forward pass during the M3 load.
+# Abstracts embedded per model forward pass during the load.
 EMBEDDING_ABSTRACT_BATCH_SIZE = 64
 
 # pgvector column type + HNSW op class must match what the embedder produces.
 EMBEDDING_PGVECTOR_TYPE = os.environ.get("LENS_EMBEDDING_TYPE", "halfvec")
 EMBEDDING_INDEX_OPS = os.environ.get("LENS_EMBEDDING_INDEX_OPS", "halfvec_cosine_ops")
 
-# ------------------------------------------------------------------ papers + embeddings (M3)
-# No paper subset: the full manifest is loaded (advisor decision, 6 Oct 2026).
+# ------------------------------------------------------------------ papers + embeddings
+# No paper subset: the full manifest is loaded.
 
-# nomic-embed-text-v1.5, Matryoshka-truncated 768 -> 512, stored halfvec
-# (Tech Stack §2 stage 7). EMBEDDING_VERSION is copied into every row so a
-# re-index is detectable (T-08); bump it on any model/width/precision/prefix change.
+# nomic-embed-text-v1.5, Matryoshka-truncated 768 -> 512, stored halfvec.
+# EMBEDDING_VERSION is copied into every row so a re-index is detectable; bump
+# it on any model, width, precision or prefix change.
 EMBEDDING_MODEL_ID = os.environ.get("LENS_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5")
 EMBEDDING_VERSION = os.environ.get("LENS_EMBEDDING_VERSION", "nomic-embed-text-v1.5@512-halfvec")
 # nomic is prefix-conditioned: documents and queries use different task tokens.
@@ -171,16 +171,16 @@ EMBEDDING_QUERY_PREFIX = "search_query: "
 # Number of chunks (entries) to extract, encode, re-format and insert into the DB table
 PROCESS_CHUNK_SIZE = 3500
 
-# ------------------------------------------------------------------ chunks (M4)
-# Full-corpus structural chunking (Roadmap §4 M4; Tech Stack §2 stages 5-6).
-# Threshold is the frozen C-02/N-04 value: 512 nomic (BERT WordPiece) tokens.
-# The splitter (a stdlib paragraph-preserving packer, C-01 amendment) keeps a
+# ------------------------------------------------------------------ chunks
+# Full-corpus structural chunking.
+# Threshold is the frozen /N-04 value: 512 nomic (BERT WordPiece) tokens.
+# The splitter keeps a
 # whole GROBID section as one chunk when it is under the threshold, and only
 # splits sections that exceed it.
 CHUNK_TOKEN_THRESHOLD = int(os.environ.get("LENS_CHUNK_TOKEN_THRESHOLD", "512"))
 # Overlap between consecutive chunks within a section (0 = structural, no overlap).
 CHUNK_OVERLAP_TOKENS = int(os.environ.get("LENS_CHUNK_OVERLAP_TOKENS", "0"))
-# Chunks per model forward pass during the M4 load (GPU batch; separate from the
+# Chunks per model forward pass during the load (GPU batch; separate from the
 # paper batch below because one paper yields many chunks).
 EMBEDDING_CHUNK_BATCH_SIZE = int(os.environ.get("LENS_EMBEDDING_CHUNK_BATCH", "120"))
 # Papers parsed+chunked+embedded per DB batch. ~500 papers ~= 11k chunks ~= 25 MB
@@ -196,12 +196,12 @@ PAPERS_LIMIT = int(os.environ.get("LENS_PAPERS_LIMIT", "0"))
 # Set LENS_RESUME=0 to force a full pass.
 RESUME = os.environ.get("LENS_RESUME", "1").strip().lower() not in {"0", "false", "no", ""}
 
-# ------------------------------------------------------------------ retrieval (M5)
-# The frozen R-01 funnel (Tech Stack §2 stages 10-11, §3, §4i):
+# ------------------------------------------------------------------ retrieval
+# The frozen funnel :
 #   shallow_match k candidates -> Stage-A rerank -> n papers
 #   deep_match    C chunk candidates (filtered) -> Stage-B rerank -> c chunks
 # `k`/`C` are the candidate-recall knobs; the cross-encoder cost is linear in
-# them (one pass per candidate). These are the guardrail caps (Roadmap §7).
+# them (one pass per candidate). These are the guardrail caps.
 RETRIEVAL_K = int(os.environ.get("LENS_RETRIEVAL_K", "100"))  # Stage A candidates
 RETRIEVAL_N = int(os.environ.get("LENS_RETRIEVAL_N", "20"))  # papers after Stage A
 RETRIEVAL_C = int(os.environ.get("LENS_RETRIEVAL_C", "100"))  # Stage B candidates
@@ -213,27 +213,27 @@ if RETRIEVAL_C < RETRIEVAL_C_TOP:
 
 # HNSW query-time recall/latency knob. `m` / `ef_construction` are build-time
 # (see scripts/build_indexes.py); `ef_search` is set per query. Record all three
-# per run (E-04).
+# per run.
 HNSW_EF_SEARCH = int(os.environ.get("LENS_HNSW_EF_SEARCH", "40"))
 
-# Cross-encoder reranker, used at BOTH stages (Stage A = papers, Stage B = chunks;
-# Tech Stack §7 "both levels").
+# Cross-encoder reranker, used at BOTH stages (Stage A = papers, Stage B =
+# chunks) so one notion of relevance ranks both.
 RERANKER_MODEL_ID = os.environ.get("LENS_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 RERANK_BATCH_SIZE = int(os.environ.get("LENS_RERANK_BATCH", "32"))
 
-# ------------------------------------------------------------------ knowledge graph (M7)
-# Deterministic query-time NER/RE over the **deep-matched chunks** (D-06/A-02;
-# Tech Stack §2 stage 12). NER (GLiNER) + RE (GLiREL) run **host-side** (torch/GPU);
-# the resulting graph is handed to the RLM as a networkx namespace variable (K-07),
-# never dumped into root context. The subgraph is cached by (paper set + ontology
-# version + extractor identity) — K-06.
+# ------------------------------------------------------------------ knowledge graph
+# Deterministic query-time NER/RE over the **deep-matched chunks**, not over the
+# whole corpus. NER (GLiNER) + RE (GLiREL) run **host-side** (torch/GPU); the
+# resulting graph is handed to the RLM as a networkx namespace variable and is
+# never dumped into root context. The subgraph is cached by paper set, ontology
+# version and extractor identity, so unchanged inputs cost nothing to re-open.
 LENS_CACHE_ROOT_PATH = Path(os.environ.get("LENS_CACHE_ROOT") or DATA_ROOT / "cache")
 KG_CACHE_DIR_NAME = "kg"
-# Bump on ANY change to the entity/relation schema: it is the KG re-extraction key
-# (mirrors EMBEDDING_VERSION / T-08). Also the cache-key component (K-06).
+# Bump on ANY change to the entity/relation schema: it is both the KG
+# re-extraction key and part of the cache key.
 KG_ONTOLOGY_VERSION = os.environ.get("LENS_KG_ONTOLOGY_VERSION", "lens-ontology-1")
-# Both extractor families are installed for the M7 K-05 recall probe; the losing
-# family is removed once the probe decides (Roadmap §4 M7).
+# Both extractor families are installed for the recall probe; the losing
+# family is removed once the probe decides.
 KG_NER_MODEL_ID = os.environ.get("LENS_KG_NER_MODEL", "urchade/gliner_medium-v2.1")
 KG_REL_MODEL_ID = os.environ.get("LENS_KG_REL_MODEL", "jackboyla/glirel-large-v0")
 # Minimum span / relation confidence kept. Kept in one place so the probe can sweep it.
@@ -245,11 +245,11 @@ KG_MIN_SCORE = float(os.environ.get("LENS_KG_MIN_SCORE", "0.5"))
 KG_EXTRACT_MAX_TOKENS = int(os.environ.get("LENS_KG_EXTRACT_MAX_TOKENS", "384"))
 KG_EXTRACT_WINDOW_OVERLAP = int(os.environ.get("LENS_KG_EXTRACT_OVERLAP", "32"))
 
-# ------------------------------------------------------------------ KG post-process (M7.1)
+# ------------------------------------------------------------------ KG post-process
 # Modular post-process applied **before** filter_ontology: relation-slot type
 # inference, a corpus-built gazetteer, and directionality resolution. Types are
 # soft (``type`` + ``type_source`` + ``type_confidence``). Every stage is
-# toggleable/removable; see LOG-68 / LOG-69.
+# toggleable/removable; see /.
 KG_POSTPROCESS_ENABLED = os.environ.get("LENS_KG_POSTPROCESS", "1").strip() != "0"
 KG_TYPE_INFERENCE = os.environ.get("LENS_KG_TYPE_INFERENCE", "1").strip() != "0"
 KG_GAZETTEER_ENABLED = os.environ.get("LENS_KG_GAZETTEER", "1").strip() != "0"
@@ -263,7 +263,7 @@ KG_GAZETTEER_MIN_CONFIDENCE = float(os.environ.get("LENS_KG_GAZETTEER_MIN_CONF",
 KG_DIRECTIONALITY_ENABLED = os.environ.get("LENS_KG_DIRECTIONALITY", "1").strip() != "0"
 KG_CYCLE_BREAK = os.environ.get("LENS_KG_CYCLE_BREAK", "1").strip() != "0"
 
-# ------------------------------------------------------------------ KG quality (M7.3 / Phase 1.5)
+# ------------------------------------------------------------------ KG quality
 # The KG is an ablation arm: KG_ENABLED=False removes it from the RLM path.
 KG_ENABLED = os.environ.get("LENS_KG_ENABLED", "1").strip() != "0"
 KG_SPAN_FILTER = os.environ.get("LENS_KG_SPAN_FILTER", "1").strip() != "0"
@@ -290,16 +290,16 @@ KG_SUMMARY_TOP_ENTITIES = int(os.environ.get("LENS_KG_SUMMARY_TOP", "20"))
 # ------------------------------------------------------------------ endpoints
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
-# Decision layer is single-provider and NOT part of MODEL_REGISTRY (LOG-29).
+# Decision layer is single-provider and NOT part of MODEL_REGISTRY.
 JEV_MODEL_ID = "typesafe/jev-1.13"
 
 # ------------------------------------------------------------------ guardrails
-# R-05: 120 s per execution block, max 3 retries.
+# : 120 s per execution block, max 3 retries.
 DEFAULT_TIMEOUT_S = 120
 MAX_RETRIES = 3
 
-# ------------------------------------------------------------------ harness (M8)
-# Central RLM caps (Tech Stack 4a / 6, R-05). The orchestrator enforces these;
+# ------------------------------------------------------------------ harness
+# Central RLM caps. The orchestrator enforces these;
 # the sandbox can only read them through ``rlm_api.budget()``.
 #
 # The caps are ORDERED so that a run ends because the model finished, not because
@@ -316,7 +316,7 @@ MAX_RETRIES = 3
 MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "8"))
 MAX_EXEC_BLOCK_S = float(os.environ.get("LENS_MAX_EXEC_BLOCK_S", "120"))
 MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
-# Per-query COST cap. Raised 0.50 -> 1.00 on 26 Oct 2026 (LOG-120) because the
+# Per-query COST cap. Raised 0.50 -> 1.00 on 26 Oct 2026 because the
 # measured Tier-1 anchor spent **$0.436 in 8 iterations = 87 % of $0.50**: at that
 # ceiling the cap was one turn from becoming the *reason* a `gpt-5` run ended, so a
 # model-quality result would have been reported as an artefact of a number we
@@ -324,7 +324,7 @@ MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
 # (300k tokens x ~$3.1/M blended ~= $0.93), so the binding cap is now
 # **iterations** or **tokens** - both of which are defensible results. Do not raise
 # tokens or iterations to "use" the extra headroom: each turn grows the context and
-# that is what costs money. M9 artifacts were recorded at $0.50; state that
+# that is what costs money. artifacts were recorded at $0.50; state that
 # difference when reporting (the cap changes the stop-reason distribution, not the
 # pipeline).
 MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "1.00"))
@@ -350,10 +350,10 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "3000"
 
 # Cumulative token cap, DERIVED (not tuned): iterations x compacted-context
 # target x 1.25 overhead (system prompt + tool manifest + final answer).
-# Default 8 x 30,000 x 1.25 = 300,000. With the cost cap at $1.00 (LOG-120) this is
+# Default 8 x 30,000 x 1.25 = 300,000. With the cost cap at $1.00 this is
 # the cap most likely to bind on a measured gpt-5 run (the anchor used 141k tokens
 # and $0.436), which is a defensible stop reason; a measured estimate, not a result
-# - M11 reports the observed distribution.
+# - reports the observed distribution.
 MAX_TOKENS_PER_QUERY = int(
     os.environ.get(
         "LENS_MAX_TOKENS",
@@ -373,13 +373,13 @@ LENS_RECORDED = os.environ.get("LENS_RECORDED", "0").strip().lower() not in {
 # The root's final answer is explicit, so the loop never has to guess.
 FINAL_ANSWER_MARKER = "FINAL_ANSWER:"
 
-# ------------------------------------------------------------------ sandbox (M8)
-# One ``lens-repl`` container per query session (LOG-31/LOG-32).
+# ------------------------------------------------------------------ sandbox
+# One ``lens-repl`` container per query session.
 SANDBOX_IMAGE = os.environ.get("LENS_SANDBOX_IMAGE", "lens-repl:0.1.0")
 SANDBOX_SERVICE = os.environ.get("LENS_SANDBOX_SERVICE", "lens-repl")
-# The sandbox's only peer. An ``internal: true`` bridge has no route to the host
-# (LOG-114), so the container cannot use ``host.docker.internal``; it dials this
-# relay, which forwards one port to the host RPC server. Same image, different
+# The sandbox's only peer. An ``internal: true`` bridge has no route to the host,
+# so the container cannot use ``host.docker.internal``; it dials this relay,
+# which forwards one port to the host RPC server. Same image, different
 # entrypoint (``/app/relay.py``).
 SANDBOX_RELAY_SERVICE = os.environ.get("LENS_RELAY_SERVICE", "lens-relay")
 SANDBOX_RELAY_URL = os.environ.get(
@@ -402,14 +402,14 @@ SANDBOX_PIDS_LIMIT = int(os.environ.get("LENS_SANDBOX_PIDS_LIMIT", "256"))
 SANDBOX_STDOUT_MAX_CHARS = int(os.environ.get("LENS_SANDBOX_STDOUT_MAX_CHARS", "6000"))
 
 # Host RPC server the sandbox calls back into. It binds all interfaces because the
-# *relay* connects to it over ``rpc-net`` (LOG-114); a per-run token is the auth
+# *relay* connects to it over ``rpc-net``; a per-run token is the auth
 # boundary (the API key never enters the container, and neither does the sandbox
 # ever see this address — it dials ``lens-relay``).
 HOST_RPC_BIND = os.environ.get("LENS_HOST_RPC_BIND", "0.0.0.0")
 HOST_RPC_PORT = int(os.environ.get("LENS_HOST_RPC_PORT", "8765"))
 HOST_RPC_TOKEN_ENV = "LENS_RPC_TOKEN"
 
-# ------------------------------------------------------------------ gated T3 (M8)
+# ------------------------------------------------------------------ gated T3
 # Dev-only read-only SQL escape hatch. Off by default; forced off in recorded runs.
 ALLOW_SQL = os.environ.get("LENS_ALLOW_SQL", "0").strip().lower() not in {
     "0",
@@ -420,10 +420,10 @@ ALLOW_SQL = os.environ.get("LENS_ALLOW_SQL", "0").strip().lower() not in {
 SQL_ROW_CAP = int(os.environ.get("LENS_SQL_ROW_CAP", "1000"))
 SQL_TIMEOUT_MS = int(os.environ.get("LENS_SQL_TIMEOUT_MS", "5000"))
 
-# ------------------------------------------------------------------ gating (M8)
-# The decision-layer gates (Decision Layer §3.x.4b): the per-stage gate after each
+# ------------------------------------------------------------------ gating
+# The decision-layer gates : the per-stage gate after each
 # stage-completing tool, and the final groundedness check before an answer is
-# accepted. Turning this off is the **decision-layer-OFF arm** of the M11
+# accepted. Turning this off is the **decision-layer-OFF arm** of the
 # ablation — no JEV call and **no `gate` key** in the RPC envelope: an arm with no
 # gate must look like it has no gate, not like a gate that always passes.
 GATE_ENABLED = os.environ.get("LENS_GATE", "1").strip().lower() not in {
@@ -458,8 +458,8 @@ def _parse_stage_thresholds(raw: str) -> dict[str, float]:
     return thresholds
 
 
-# Calibrated per-stage acceptance thresholds (Decision Layer §3.x.4b tier 1).
-# **Empty until a stage has a reliability curve** (M11): do not invent numbers — an
+# Calibrated per-stage acceptance thresholds.
+# **Empty until a stage has a reliability curve** : do not invent numbers — an
 # empty map simply skips tier 1 and lets the JEV `noul` check decide, which is the
 # honest state before calibration. A single threshold can only *accept*: without a
 # lower τ_fail, "below τ_pass" means "ask tier 2", never "fail".
@@ -476,7 +476,7 @@ class ModelSpec:
 
     Callers ask for a *role* ("root"/"sub"/"dev"); they never pass a raw model ID.
     This is where the exact id, capability flags, sampling controls, and provider
-    pinning live (Tech Stack §2a).
+    pinning live.
     """
 
     id: str
@@ -504,7 +504,7 @@ def _model_override(spec: ModelSpec, raw: str | None) -> ModelSpec:
     ``MODEL_REGISTRY`` used to be the only way to say which model a role uses, so
     every harness debug iteration cost ``gpt-5`` prices. ``LENS_ROOT_MODEL`` /
     ``LENS_SUB_MODEL`` / ``LENS_DEV_MODEL`` override the **id only**; the id is
-    recorded per call, so a recorded run stays attributable (E-04).
+    recorded per call, so a recorded run stays attributable.
 
     Provider pins are vendor **slugs**: an override from a different vendor drops
     them rather than pinning the wrong one (``allow_fallbacks`` stays ``False``).
@@ -573,7 +573,7 @@ def require_api_key() -> str:
     key = os.environ.get("OPENROUTER_API_KEY")
     if not key:
         raise RuntimeError(
-            "OPENROUTER_API_KEY is not set. Put it in the OS environment (or a "
-            "gitignored .env) outside the repo — see MVP Build Roadmap §3."
+            "OPENROUTER_API_KEY is not set. Put it in the OS environment or in a "
+            "git-ignored .env file at the repo root."
         )
     return key

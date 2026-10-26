@@ -1,11 +1,5 @@
 """Host transport for OpenRouter: ``chat()`` and ``jev()``.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md``
-  - §4a Transport — auth, retries, provider pinning, ``usage``/``cost`` extraction.
-    **No orchestration**: the client is stateless; the orchestrator owns history.
-  - §2a model routing + provider pinning (LOG-29).
-  - §5 trajectory schema + content-addressed payloads (LOG-31).
-
 Call contract
 -------------
 - Outgoing HTTP goes through ``self.session.post(url, headers=...,
@@ -32,12 +26,12 @@ from lens.config import ModelSpec
 from lens.models import CallResult, JevResult, Question, Role
 from lens.observability.trajectory import CallType, TraceCtx, Trajectory
 
-# Transient HTTP statuses worth retrying (R-05).
+# Transient HTTP statuses worth retrying.
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
 class LensTransportError(RuntimeError):
-    """A transport call failed after exhausting retries (F-02).
+    """A transport call failed after exhausting retries.
 
     ``status`` is the last HTTP status (or ``None`` for a network error);
     ``attempts`` is the number of POSTs made.
@@ -217,7 +211,7 @@ class LensClient:
 
         The body is ``{"model": config.JEV_MODEL_ID, "state": state, "questions":
         {name: q.model_dump() for name, q in questions.items()}}`` — JEV is
-        single-provider and not in ``MODEL_REGISTRY`` (LOG-29). The serialized
+        single-provider and not in ``MODEL_REGISTRY``. The serialized
         body is blobbed, POSTed via ``_post`` (retries + error logs), and the
         **top-level** ``usage`` / ``answers`` / dated ``model`` are extracted; the
         raw response is blobbed as ``completion_ref``, one ``log_event`` is
@@ -230,7 +224,7 @@ class LensClient:
         if not questions:
             raise ValueError("jev() requires at least one question.")
 
-        # Decision layer is single-provider and not in MODEL_REGISTRY (LOG-29).
+        # Decision layer is single-provider and not in MODEL_REGISTRY.
         model_slug = config.JEV_MODEL_ID
 
         payload: dict[str, Any] = {

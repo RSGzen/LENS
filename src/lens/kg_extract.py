@@ -1,16 +1,12 @@
-r"""M7 — deterministic NER/RE extraction (GLiNER family), host-side.
-
-Spec: ``MVP Build Roadmap.md`` §4 (M7); ``Thesis Drafts/Tech Stack (Draft).md``
-§2 (stage 12), §3, §4i. Decisions: D-06/A-02 (query-time, deterministic, over the
-reranked set), K-01 (ontology), K-05 (recall probe + fallback), K-06 (cache).
+r"""— deterministic NER/RE extraction (GLiNER family), host-side.
 
 What this module is
 -------------------
 The **host-side extractor**: text in -> raw triples out. It is host-side because
-GLiNER/GLiREL need torch, and the sandbox holds no torch/key (LOG-32). The graph
+GLiNER/GLiREL need torch, and the sandbox holds no torch/key. The graph
 assembly, dedup, caching and the RLM-facing helpers live in ``lens.tools.kg``.
 
-Ontology (K-01, SciERC-aligned — see ``docs/ontology.md``)
+Ontology
 ----------------------------------------------------------
 Entities and relations are **zero-shot labels**, so the taxonomy is a precision /
 usefulness choice, not a model constraint. The set is compact on purpose:
@@ -21,13 +17,13 @@ fine-grained method-like types hurt zero-shot precision.
   outperforms, addresses, explores — each with allowed head/tail entity types
   (:data:`RELATION_SCHEMA`).
 
-Variant (decided by the K-05 probe)
+Variant
 -----------------------------------
 :class:`GlinerExtractor` is written so the probe can pick between:
   * **pipeline** — GLiNER (spans) then GLiREL (relations, constrained by
     ``allowed_head``/``allowed_tail``), and
   * **joint** — a single GLiNER multi-task / "relex" checkpoint.
-The losing family's dependency is removed once the probe is resolved (Roadmap §4 M7).
+The losing family's dependency is removed once the probe is resolved.
 
 Why the models are loaded lazily
 --------------------------------
@@ -38,7 +34,7 @@ load them. ``tests/test_kg.py`` is the contract (no key, zero cost).
 Implementation status
 ---------------------
 The pipeline extractor (GLiNER NER -> GLiREL RE) is implemented; the joint
-variant remains a K-05 probe arm. The losing family is removed after the probe.
+variant remains a probe arm. The losing family is removed after the probe.
 """
 
 from __future__ import annotations
@@ -99,7 +95,7 @@ def relation_label_config() -> dict[str, dict[str, dict[str, list[str]]]]:
 
 
 # Canonical entity type -> the **label string** asked of GLiNER. Zero-shot NER is
-# sensitive to label phrasing, so descriptive labels are a cheap K-05 lever. The
+# sensitive to label phrasing, so descriptive labels are a cheap lever. The
 # extractor maps the (lower-cased) returned label back to the canonical type, so
 # ``filter_ontology`` still sees ``ENTITY_TYPES`` / ``RELATION_SCHEMA``.
 ENTITY_LABEL_SETS: dict[str, dict[str, str]] = {

@@ -1,9 +1,6 @@
 """Host embedding wrapper — nomic-embed-text-v1.5 (Matryoshka 768 -> 512, halfvec).
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §2 (stage 7) + §3 (the
-``halfvec(512)`` columns); ``MVP Build Roadmap.md`` §4 (M3).
-
-One shared host-side embedder (M3 documents; M5 reuses it for queries). It is
+One shared host-side embedder. It is
 deliberately thin: ``sentence-transformers`` does the work; this module only
 pins the model id, the Matryoshka width, and nomic's task-prefix convention.
 

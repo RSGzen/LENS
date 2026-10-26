@@ -1,15 +1,15 @@
-r"""M7.2 — small gold-sample tooling for K-04 (triple precision) and K-05 (entity recall).
+r"""— small gold-sample tooling for (triple precision) and (entity recall).
 
 Pure helpers + CSV/JSON I/O; ``scripts/build_gold_sample.py`` and
 ``scripts/score_gold.py`` are thin wrappers.
 
-Triple precision (K-04)
+Triple precision
 -----------------------
 Sample kept triples **stratified by relation** into a CSV. The annotator fills
 ``gold_relation_ok`` / ``gold_head_type_ok`` / ``gold_tail_type_ok`` with ``y``/``n``.
 :func:`score_triples` reports precision overall and per relation, with Wilson 95% CIs.
 
-Entity recall (K-05)
+Entity recall
 --------------------
 Sample chunks into a CSV containing **text only** (plus a blank ``gold_entities``
 field); the KG predictions go to a **separate JSON**, so the annotator is not shown

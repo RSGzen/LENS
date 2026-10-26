@@ -1,7 +1,4 @@
-r"""M4 — TEI section extraction + hybrid structural chunking (stdlib packer).
-
-Spec: ``MVP Build Roadmap.md`` §4 (M4); ``Thesis Drafts/Tech Stack (Draft).md``
-§2 (stages 5-6), §3 (``chunks`` columns), and the proposal §3.4 (deep matching).
+r"""— TEI section extraction + hybrid structural chunking (stdlib packer).
 
 What this module does
 ---------------------
@@ -15,7 +12,7 @@ for embedding, in two steps:
    chunk when it is under :data:`config.CHUNK_TOKEN_THRESHOLD` (512 nomic
    tokens); otherwise pack its paragraphs into ``<= threshold`` chunks.
 
-Design decision (C-01 amendment)
+Design decision
 --------------------------------
 The 512-token split uses this **stdlib paragraph-preserving packer** rather than
 ``langchain-text-splitters``. Rationale: paragraph integrity is guaranteed and
@@ -23,14 +20,14 @@ oversized paragraphs are sentence-aware (the default recursive splitter cuts at
 spaces, i.e. mid-sentence); it adds no dependency; and the nomic tokenizer
 (already present) is the only length source. The *outcome* — GROBID-section
 structure + the frozen 512-token threshold — is unchanged. This is recorded in
-``Tech Stack (Draft).md`` §2 stage 6 + §4i and the improvement log (M4 session).
+ stage 6 + and the improvement log.
 
 In-text references (Option A, 9 Oct 2026)
 -----------------------------------------
 GROBID's ``<figure>``/``<formula>`` heads/labels are unreliable (~40% empty,
 14% mismatched), but the ``ref @target`` -> asset ``xml:id`` link is exact
 (99.6% resolve). So ``chunk_text`` keeps the **visible label** ("Table 2") and
-the mention -> asset link is carried as **M5 metadata** (``asset_refs``), *not*
+the mention -> asset link is carried as ** metadata** (``asset_refs``), *not*
 injected into the prose. Citation markers (``bibr``/``foot``) are blanked; every
 ``<formula>`` is blanked; figure/table/formula *refs* are left untouched.
 
@@ -96,9 +93,8 @@ header_pattern = r"^\d+(?:\.\d+)*\.?\s*"
 # Splits on terminal punctuation (. ! ?) followed by whitespace or end of string
 split_pattern = r"(?<=[.!?])\s+"
 
-
 # ------------------------------------------------------------------ section registry
-# The 6 canonical section types (Tech Stack §2 stage 5) and the head keywords
+# The 6 canonical section types and the head keywords
 # that map into each. Matching is on the *normalized* head (see
 # :func:`normalize_head`). Heads are matched case-insensitively as substrings;
 # the **longest matching keyword wins** (so "experimental results" -> Result/
@@ -299,7 +295,7 @@ def extract_sections(tei_path: str | Path) -> list[Section]:
        - every ``<formula>`` (incl. inline in ``<p>``) -> **blanked**.
        - ``<ref type="bibr">`` and ``<ref type="foot">`` -> **blanked**.
        - ``<ref type="figure" | "table" | "formula">`` -> kept as-is (their
-         visible label, e.g. "Table 2"); the ref -> asset link is M5 metadata.
+         visible label, e.g. "Table 2"); the ref -> asset link is metadata.
        - collapse runs of whitespace to a single space and drop empty paragraphs.
     5. Return the sections in document order. A paper with no body/divs -> ``[]``.
     """
@@ -445,7 +441,7 @@ def segment_section(
 ) -> list[str]:
     """Split one :class:`Section` into chunk texts of ``<= threshold`` tokens.
 
-    Hybrid rule (Roadmap §4 M4; proposal §3.4):
+    Hybrid rule :
 
     - Join the section paragraphs with ``"\\n\\n"``. If the whole section is
       ``<= threshold`` tokens, return it as a **single** chunk (the common case:
@@ -484,7 +480,7 @@ def chunk_tei(
     threshold: int,
     overlap: int = 0,
 ) -> list[Chunk]:
-    """Full M4 chunking for one paper: extract sections, segment, number them.
+    """Full chunking for one paper: extract sections, segment, number them.
 
     Composes :func:`extract_sections` + :func:`segment_section` and assigns each
     chunk a monotonic ``section_order`` (0-based, across the whole paper), then
