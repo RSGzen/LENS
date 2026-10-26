@@ -24,6 +24,7 @@ import lens.config as config_module
 import lens.observability.trajectory as trajectory_module
 from lens.agent import runstore
 from lens.observability.trajectory import TraceCtx, Trajectory
+from lens.ui import data
 
 # Streamlit is an optional extra: import it only when present so the module can
 # self-skip on a core install (the no-key suite must not need the UI stack).
@@ -66,7 +67,10 @@ class UiAppTestCase(unittest.TestCase):
                 model="openai/gpt-5-mini",
                 provider="openai",
                 prompt_ref=traj.store_blob(json.dumps({"messages": []})),
-                completion_ref=traj.store_blob(f"I will look at turn {step}"),
+                completion_ref=traj.store_blob(
+                    f"I will look at turn {step} first.\n\n```python\n"
+                    f"rows = shallow_match(buckets=buckets)\n```"
+                ),
                 tokens_in=100 * (step + 1),
                 tokens_out=20,
                 cost_usd=0.01,
@@ -128,6 +132,34 @@ class UiAppTestCase(unittest.TestCase):
         self.assertEqual([str(e.value) for e in at.exception], [])
         self.assertTrue(any("turn 0–1 of 1" in c.value for c in at.caption))
 
+    def test_jump_and_progress_stay_in_sync(self) -> None:
+        at = self._app()
+        jump = at.selectbox(key="jump_turn")
+
+        jump.select(1).run()
+
+        self.assertEqual(at.session_state["cursor"], 1)
+        self.assertEqual(at.selectbox(key="jump_turn").value, 1)
+        self.assertIn("turn 2 of 2", [bar.text for bar in at.progress])
+
+        at.run()  # the controls re-render at the new cursor before we click again
+        step_back = [button for button in at.button if button.label.startswith("◀")][0]
+        step_back.click().run()
+
+        self.assertEqual(at.session_state["cursor"], 0)
+        self.assertEqual(at.selectbox(key="jump_turn").value, 0)
+        self.assertIn("turn 1 of 2", [bar.text for bar in at.progress])
+
+    def test_reasoning_is_shown_outside_the_expander(self) -> None:
+        at = self._app()
+
+        visible = [block.value.strip() for block in at.markdown]
+
+        # The prose is its own block (what the reviewer reads), and the fenced
+        # block appears only inside the collapsed full message.
+        self.assertIn("I will look at turn 0 first.", visible)
+        self.assertTrue(any("```python" in value for value in visible))
+
     def test_payload_toggle_renders_the_blob(self) -> None:
         at = self._app()
 
@@ -135,7 +167,22 @@ class UiAppTestCase(unittest.TestCase):
         at.checkbox[0].check().run()
 
         self.assertEqual([str(e.value) for e in at.exception], [])
-        self.assertTrue(any(button.label == "download the full payload" for button in at.download_button))
+        self.assertTrue(any(button.label == "Download Full Payload" for button in at.download_button))
+
+    def test_rename_from_the_page(self) -> None:
+        at = self._app()
+
+        at.text_input(key="alias::run-ui").set_value("Anchor run").run()
+        save = [button for button in at.button if button.label == "Save name"][0]
+        save.click().run()
+
+        self.assertEqual(data.load_aliases(), {"run-ui": "Anchor run"})
+        self.assertIn("### Anchor run", [block.value for block in at.markdown])
+        self.assertEqual([str(e.value) for e in at.exception], [])
+
+        # The run id stays on screen underneath the label: a name must never hide
+        # the key the artifacts are filed under.
+        self.assertTrue(any("run-ui" in c.value for c in at.caption))
 
     def test_live_page_needs_no_pipeline_import(self) -> None:
         at = self._app()

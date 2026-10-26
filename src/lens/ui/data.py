@@ -27,6 +27,7 @@ Contract tests: ``tests/test_ui_data.py`` (no streamlit, no key, no DB, no Docke
 from __future__ import annotations
 
 import json
+import os
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,6 +51,12 @@ CREDIT_FEE = 1.055
 #: Tools whose payload hydrates chunks. The same pair ``citations.py`` trusts: an
 #: id list from ``deep_match`` names candidates, not evidence the model could read.
 CHUNK_TOOLS = frozenset({"rerank_chunks", "fetch_chunks"})
+
+#: Local display names live beside the blob store, not inside a run directory.
+ALIASES_FILENAME = "aliases.json"
+
+#: Long enough for "Tier-1 anchor, gpt-5, aggregation query", short enough to render.
+ALIAS_MAX_CHARS = 64
 
 
 def is_run_id(run_id: str | None) -> bool:
@@ -126,16 +133,19 @@ def run_rows(status: str | None = None) -> list[dict[str, Any]]:
 
     ``status`` filters exactly (``completed`` / ``partial`` / ``failed`` /
     ``interrupted`` / ``running``); ``None`` means every run. A failed or partial
-    run is a row like any other — it is labelled, never hidden.
+    run is a row like any other — it is labelled, never hidden. ``name`` is the
+    local display name (empty when the run has never been renamed).
     """
+    aliases = load_aliases()
     rows: list[dict[str, Any]] = []
 
     for manifest in list_runs(status=status):
         rows.append(
             {
+                "name": aliases.get(manifest.run_id, ""),
                 "run_id": manifest.run_id,
                 "status": manifest.status,
-                "created_at": manifest.created_at,
+                "updated_at": manifest.updated_at,
                 "query": manifest.query,
                 "cost_usd": float((manifest.totals or {}).get("cost_usd") or 0.0),
                 "iterations": manifest.iterations,
@@ -143,6 +153,103 @@ def run_rows(status: str | None = None) -> list[dict[str, Any]]:
         )
 
     return rows
+
+
+# --------------------------------------------------------- local display names
+def aliases_path() -> Path:
+    """Path of the local rename file (``<runs_root>/aliases.json``).
+
+    Deliberately **outside** the run directory: a display name is a *viewer's*
+    convenience, not run identity, so it never enters ``manifest.json`` (which is
+    provenance and is written once), never travels inside a ``.lens`` bundle, and
+    cannot change what the M11 campaign reports.
+    """
+    return runs_root() / ALIASES_FILENAME
+
+
+def load_aliases() -> dict[str, str]:
+    """Return ``{run_id: display_name}``; a missing or corrupt file is ``{}``.
+
+    Tolerance is the contract: a rename must never be the reason a run cannot be
+    opened (the same rule as a damaged blob in ``replay_turns``).
+    """
+    path = aliases_path()
+
+    if not path.is_file():
+        return {}
+
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return {}
+
+    if not isinstance(loaded, dict):
+        return {}
+
+    return {
+        str(run_id): str(name)
+        for run_id, name in loaded.items()
+        if isinstance(name, str) and name.strip()
+    }
+
+
+def set_alias(run_id: str, name: str) -> dict[str, str]:
+    """Rename ``run_id`` locally and return the whole map.
+
+    Contract:
+      1. ``name`` is trimmed; an empty name **clears** the alias (back to the id).
+      2. 1–``ALIAS_MAX_CHARS`` characters, and unique across runs
+         **case-insensitively** — two runs called "baseline" would defeat the
+         point of a label, and the run id underneath stays the unique key.
+      3. The file is written through a temp file and ``os.replace``: a crash
+         mid-rename must not leave a half-written alias map.
+    """
+    clean = (name or "").strip()
+    aliases = load_aliases()
+
+    if not clean:
+        aliases.pop(run_id, None)
+        _write_aliases(aliases)
+        return aliases
+
+    if len(clean) > ALIAS_MAX_CHARS:
+        raise ValueError(f"a display name is at most {ALIAS_MAX_CHARS} characters")
+
+    taken = {
+        other: existing
+        for other, existing in aliases.items()
+        if other != run_id and existing.casefold() == clean.casefold()
+    }
+
+    if taken:
+        raise ValueError(
+            f"the name {clean!r} already belongs to {next(iter(taken))!r}"
+        )
+
+    aliases[run_id] = clean
+    _write_aliases(aliases)
+
+    return aliases
+
+
+def display_name(run_id: str, aliases: dict[str, str] | None = None) -> str:
+    """Return the local name for ``run_id``, falling back to the run id itself."""
+    resolved = aliases if aliases is not None else load_aliases()
+
+    return resolved.get(run_id) or run_id
+
+
+def _write_aliases(aliases: dict[str, str]) -> None:
+    """Write the alias map atomically (temp file in the same directory, then replace)."""
+    path = aliases_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(
+        json.dumps(dict(sorted(aliases.items())), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(tmp, path)
+
 
 
 def load_run(run_id: str) -> RunView | None:
@@ -270,14 +377,20 @@ def run_dir(run_id: str) -> Path | None:
 
 
 __all__ = [
+    "ALIASES_FILENAME",
+    "ALIAS_MAX_CHARS",
     "CHUNK_TOOLS",
     "CREDIT_FEE",
     "RunView",
+    "aliases_path",
     "cap_of",
+    "display_name",
     "evidence_upto",
     "is_run_id",
+    "load_aliases",
     "load_run",
     "run_dir",
     "run_rows",
+    "set_alias",
     "tool_payload",
 ]

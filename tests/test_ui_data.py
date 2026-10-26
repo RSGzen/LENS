@@ -238,6 +238,51 @@ class UiDataTestCase(unittest.TestCase):
         self.assertIsNone(data.run_dir("not-a-run"))
         self.assertEqual(data.run_dir("run-a"), self.root / "run-a")
 
+    # ------------------------------------------------------ local display names
+    def test_alias_round_trip_and_display_name(self) -> None:
+        self._make_run("run-a")
+
+        data.set_alias("run-a", "  Tier-1 anchor  ")
+
+        self.assertEqual(data.load_aliases(), {"run-a": "Tier-1 anchor"})
+        self.assertEqual(data.display_name("run-a"), "Tier-1 anchor")
+        self.assertEqual(data.display_name("run-b"), "run-b")  # never renamed
+        self.assertEqual(data.run_rows()[0]["name"], "Tier-1 anchor")
+
+    def test_alias_is_unique_case_insensitively(self) -> None:
+        self._make_run("run-a")
+        self._make_run("run-b", updated_at="2026-10-24T10:00:00+00:00")
+        data.set_alias("run-a", "Baseline")
+
+        with self.assertRaises(ValueError):
+            data.set_alias("run-b", "baseline")
+
+        # The same run may be renamed again, even to a case variant of its own name.
+        data.set_alias("run-a", "BASELINE")
+        self.assertEqual(data.load_aliases(), {"run-a": "BASELINE"})
+
+    def test_alias_clear_and_length_limit(self) -> None:
+        self._make_run("run-a")
+        data.set_alias("run-a", "anchor")
+
+        data.set_alias("run-a", "   ")  # empty clears it
+        self.assertEqual(data.load_aliases(), {})
+
+        with self.assertRaises(ValueError):
+            data.set_alias("run-a", "x" * (data.ALIAS_MAX_CHARS + 1))
+
+    def test_alias_file_lives_outside_the_run_and_survives_corruption(self) -> None:
+        self._make_run("run-a")
+        data.set_alias("run-a", "anchor")
+
+        path = data.aliases_path()
+        self.assertEqual(path.parent, self.root)
+        self.assertFalse((self.root / "run-a" / data.ALIASES_FILENAME).exists())
+
+        path.write_text("{not json", encoding="utf-8")
+        self.assertEqual(data.load_aliases(), {})
+        self.assertEqual(data.load_run("run-a").run_id, "run-a")  # still openable
+
 
 if __name__ == "__main__":
     unittest.main()

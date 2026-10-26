@@ -26,11 +26,17 @@ Run it::
     streamlit run src/lens/ui/app.py
     # the demo laptop (no GPU, no DB, no key) points at an imported bundle:
     LENS_RUNS_ROOT=D:\\lens-data\\runs-import streamlit run src/lens/ui/app.py
+
+Editing this file hot-reloads on the next interaction. Editing ``lens/ui/data.py``
+does **not**: the app imports it once, so restart the server (a stale module reads
+as "module has no attribute ..."). Display names live in ``<runs_root>/aliases.json``
+— local to the viewer, never inside a run directory or a bundle.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 
@@ -53,6 +59,13 @@ PLAY_SECONDS = 1.5
 #: ``st.expander`` still builds its DOM, and a ``build_kg`` node-link is the
 #: largest blob in a run.
 PAYLOAD_PREVIEW_CHARS = 20_000
+
+#: How much of a turn's *reasoning* (the completion minus its code fences) is
+#: shown outside the expander. The full message stays one click away.
+REASONING_CHARS = 700
+
+#: A fenced block inside a model completion: ```lang ... ```
+_FENCE_RE = re.compile(r"```[^\n]*\n.*?(?:```|$)", re.DOTALL)
 
 #: ``st.session_state`` contract. Every unit reads and writes these keys and
 #: nothing else, so a page can be filled (or replaced) without touching another.
@@ -177,25 +190,46 @@ def page_runs() -> None:
         render_import()
         return
 
+    aliases = data.load_aliases()
     st.dataframe(
-        rows,
+        [
+            {
+                "name": row["name"] or "—",
+                "run_id": row["run_id"],
+                "status": row["status"],
+                "updated": _when(row["updated_at"]),
+                "query": row["query"],
+                "cost $": row["cost_usd"],
+                "turns": row["iterations"],
+            }
+            for row in rows
+        ],
         hide_index=True,
         column_config={
-            "cost_usd": st.column_config.NumberColumn("cost $", format="%.4f"),
-            "query": st.column_config.TextColumn("query", width="large"),
+            "cost $": st.column_config.NumberColumn(format="%.4f"),
+            "query": st.column_config.TextColumn("query"),
         },
     )
 
     ids = [row["run_id"] for row in rows]
     current = st.session_state.get("run_id")
+    options = ["— select a run —", *ids]
+
+    # The picker owns its widget state, so it is re-pointed at the selected run
+    # whenever that changed elsewhere (URL, a rename, the live page). Without this
+    # the dropdown drifts out of sync with the playback cursor.
+    if st.session_state.get("picker_sync") != current:
+        st.session_state["run_picker"] = current if current in ids else options[0]
+        st.session_state["picker_sync"] = current
+
     picked = st.selectbox(
         "Open run",
-        ["— select a run —", *ids],
-        index=ids.index(current) + 1 if current in ids else 0,
+        options,
         key="run_picker",
+        format_func=lambda value: _run_label(value, aliases, options[0]),
     )
 
-    if picked != "— select a run —" and picked != current:
+    if picked != options[0] and picked != current:
         _open(picked)
 
     view = _load(st.session_state.get("run_id"))
@@ -297,10 +331,19 @@ def render_controls(view: data.RunView) -> None:
         st.session_state["playing"] = not playing
         st.rerun(scope="app")  # run_every is fixed when the fragment is created
 
+    # The step handlers above mutate session state *during* this run, so the
+    # local taken at the top is stale here. A jump widget pointed at a stale turn
+    # is exactly the reported bug: dropdown says turn 7, the playback is on 5.
+    cursor = st.session_state["cursor"]
+
+    if st.session_state.get("jump_sync") != cursor:
+        st.session_state["jump_turn"] = cursor
+        st.session_state["jump_sync"] = cursor
+
     jumped = jump.selectbox(
         "Jump to turn",
         list(range(n)),
-        index=cursor,
+        key="jump_turn",
         format_func=lambda turn: f"turn {turn}",
         label_visibility="collapsed",
     )
@@ -322,6 +365,10 @@ def render_controls(view: data.RunView) -> None:
             else:
                 st.success(f"wrote `{path}`")
 
+    # Re-read the cursor: a jump or a step changed it *inside* this function, and
+    # a progress bar drawn from the stale local would disagree with the dropdown
+    # (and with the chart, which reads session state).
+    cursor = st.session_state["cursor"]
     st.progress(
         (cursor + 1) / n,
         text=f"turn {cursor + 1} of {n}" + (" · playing" if playing else ""),
@@ -329,11 +376,43 @@ def render_controls(view: data.RunView) -> None:
 
 
 def render_header(view: data.RunView) -> None:
-    """Run identity and the headline numbers (U2)."""
+    """Run identity, the local display name, and the headline numbers (U2)."""
     manifest = view.manifest
     cap = view.cap_usd
+    aliases = data.load_aliases()
+    name = data.display_name(view.run_id, aliases)
 
-    st.markdown(f"### `{view.run_id}`")
+    title, rename = st.columns([6, 1])
+    title.markdown(f"### {name}")
+
+    if name != view.run_id:
+        # The id stays visible: it is the key the artifacts, the bundle and the
+        # campaign row all use, and a label must never hide it.
+        title.caption(f"run id `{view.run_id}`")
+
+    with rename.popover("Rename"):
+        typed = st.text_input(
+            "Display name",
+            value=aliases.get(view.run_id, ""),
+            max_chars=data.ALIAS_MAX_CHARS,
+            key=f"alias::{view.run_id}",
+            placeholder="e.g. anchor — gpt-5, aggregation",
+        )
+
+        if st.button("Save name"):
+            try:
+                data.set_alias(view.run_id, typed)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.rerun(scope="app")
+
+        st.caption(
+            "Local only: stored in `aliases.json` beside the blob store, so the run "
+            "id, the manifest and any exported bundle are untouched. Clear the field "
+            "to go back to the id."
+        )
+
     st.markdown(f"**{manifest.query or '(no query recorded)'}**")
 
     columns = st.columns(5)
@@ -397,9 +476,7 @@ def render_meters(view: data.RunView) -> None:
     columns[1].metric("tokens out", f"{summary['tokens_out']:,}")
     columns[2].metric("gate tokens", f"{summary['jev_tokens_in']:,}")
     columns[3].metric("tool calls", summary["tool_calls"])
-    columns[4].metric(
-        "gates", f"{summary['gates_passed']} pass / {summary['gates_failed']} fail"
-    )
+    columns[4].metric("gates pass/fail", f"{summary['gates_passed']} / {summary['gates_failed']}")
 
     series = view.tokens_in_series[: cursor + 1]
 
@@ -424,12 +501,12 @@ def render_meters(view: data.RunView) -> None:
         used = budget.get("used") or {}
         limits = budget.get("limits") or {}
         st.caption(
-            f"budget at turn {cursor}: iterations {used.get('iterations', 0)}"
-            f"/{limits.get('iterations', 0)} · tokens "
+            f"Budget at turn {cursor}:  Iterations {used.get('iterations', 0)}"
+            f"/{limits.get('iterations', 0)} ·  Tokens "
             f"{used.get('tokens_in', 0) + used.get('tokens_out', 0):,}"
-            f"/{limits.get('tokens', 0):,} · cost ${used.get('cost_usd', 0.0):.4f}"
+            f"/{limits.get('tokens', 0):,} ·  Cost ${used.get('cost_usd', 0.0):.4f}"
             f"/{limits.get('cost_usd', 0.0):.2f}"
-            + (f" · stop: {budget['stop_reason']}" if budget.get("stop_reason") else "")
+            + (f" ·  Stop: {budget['stop_reason']}" if budget.get("stop_reason") else "")
         )
 
 
@@ -468,8 +545,13 @@ def render_turn(run_id: str, turn: Turn) -> None:
         elif turn.ok is None and turn.code:
             st.warning("**interrupted** — this turn has code but no result in the log.")
 
+        reasoning = _reasoning(turn.completion)
+
+        if reasoning:
+            st.markdown(_clip(reasoning, REASONING_CHARS))
+
         if turn.completion:
-            with st.expander("model message (reasoning + the block it wrote)"):
+            with st.expander("Full Model Message (Reasoning + Code Written)"):
                 st.markdown(turn.completion)
 
         if turn.code:
@@ -493,7 +575,7 @@ def render_turn(run_id: str, turn: Turn) -> None:
             )
 
         if turn.latency_ms:
-            chips.append(f"{turn.latency_ms} ms")
+            chips.append(_duration(turn.latency_ms))
 
         if chips:
             st.caption(" · ".join(chips))
@@ -516,22 +598,22 @@ def render_tool(run_id: str, tool: ToolStep, slot: str) -> None:
     hash is not enough — two calls can share a result (a replay serves the same
     blob), and a duplicate widget key is a hard Streamlit error.
     """
-    columns = st.columns([4, 1, 2, 1, 1])
+    columns = st.columns([3, 1, 1, 1, 2])
     columns[0].markdown(
         f"`{tool.name}({_args_preview(tool.args)})`" if tool.args else f"`{tool.name}`"
     )
-    columns[1].caption(f"{tool.latency_ms or 0} ms")
+    columns[1].caption(_duration(tool.latency_ms))
     columns[2].caption(_gate_badge(tool.gate))
-    columns[3].caption("replayed" if tool.replayed else "")
+    columns[3].caption("Replayed" if tool.replayed else "")
 
     toggle_key = f"payload::{run_id}::{slot}"
-    show = columns[4].checkbox("payload", key=toggle_key, help="Show the full result")
+    show = columns[4].checkbox("Full Payload", key=toggle_key, help="Show the full result")
 
     if tool.error:
         st.error(f"tool error: {tool.error.get('type')}: {tool.error.get('message')}")
 
     if tool.result_summary:
-        with st.expander("result summary (what entered the context)"):
+        with st.expander("Result Summary (Return Context)"):
             st.code(tool.result_summary, language="text")
 
     if not show or not tool.result_ref:
@@ -540,11 +622,11 @@ def render_tool(run_id: str, tool: ToolStep, slot: str) -> None:
     text = data.tool_payload(run_id, tool.result_ref)
 
     if text is None:
-        st.warning("this payload blob is missing from the bundle")
+        st.warning("Payload blob missing from the bundle")
         return
 
     st.download_button(
-        "download the full payload",
+        "Download Full Payload",
         data=text,
         file_name=f"{run_id}-{tool.name}-{slot}.json",
         key=f"download::{toggle_key}",
@@ -552,7 +634,7 @@ def render_tool(run_id: str, tool: ToolStep, slot: str) -> None:
 
     if len(text) > PAYLOAD_PREVIEW_CHARS:
         st.caption(
-            f"payload is {len(text):,} chars — previewing the first "
+            f"Payload is {len(text):,} chars — previewing the first "
             f"{PAYLOAD_PREVIEW_CHARS:,}; the button above has all of it."
         )
         text = text[:PAYLOAD_PREVIEW_CHARS]
@@ -756,6 +838,61 @@ def _stream_run(query: str, run_id: str) -> None:
 def _next_run_id() -> str:
     """Return a sortable default run id (``ui-YYYYmmdd-HHMMSS``, UTC)."""
     return f"ui-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
+
+
+def _when(timestamp: str | None) -> str:
+    """Render an ISO timestamp readably: ``2026-10-25 14:49``."""
+    text = (timestamp or "").strip()
+
+    return f"{text[:10]} {text[11:16]}" if len(text) >= 16 else text
+
+
+def _duration(latency_ms: int | None) -> str:
+    """Render a latency in the unit a human reads it in: ``412 ms`` / ``19.1 s``.
+
+    Milliseconds stop being legible where they matter most: a ``build_kg`` call
+    is tens of seconds, and "19143 ms" is a number to decode rather than read.
+    """
+    if not latency_ms:
+        return "—"
+
+    if latency_ms < 1000:
+        return f"{latency_ms} ms"
+
+    return f"{latency_ms / 1000:.1f} s"
+
+
+def _reasoning(completion: str | None) -> str:
+    """Return the prose part of a completion: the fenced blocks removed.
+
+    The executed block is rendered by ``st.code`` right below, so keeping the fence
+    in the visible summary would show the same code twice — and it is the code, not
+    the sentence before it, that Streamlit renders with a horizontal scrollbar.
+    """
+    if not completion:
+        return ""
+
+    text = _FENCE_RE.sub("", completion)
+
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _clip(text: str, limit: int) -> str:
+    """Truncate ``text`` at ``limit`` characters, saying that it was truncated."""
+    if len(text) <= limit:
+        return text
+
+    return text[:limit].rstrip() + " … (truncated — open the full message below)"
+
+
+def _run_label(value: str, aliases: dict[str, str], empty: str) -> str:
+    """Label a run picker entry: the local name when set, always with its id."""
+    if value == empty:
+        return value
+
+    name = aliases.get(value)
+
+    return f"{name} — {value}" if name else value
 
 
 def _default_export_dir() -> Path:
