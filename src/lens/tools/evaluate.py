@@ -49,7 +49,6 @@ like a gate that always passes.
 from __future__ import annotations
 
 import json
-
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping, Sequence
 
@@ -119,9 +118,7 @@ def build_sufficiency_question(stage: str, artifact: Mapping[str, Any]) -> Quest
             "chunks actually say, with no invented links and no merged distinct entities"
         ),
     }
-    requirement = requirements.get(
-        stage, f"the output fulfils the purpose of the {stage} stage"
-    )
+    requirement = requirements.get(stage, f"the output fulfils the purpose of the {stage} stage")
     fields = len(artifact.get("summary") or {})
 
     return Question(
@@ -239,8 +236,10 @@ def _read_answer(answer: Mapping[str, Any]) -> tuple[Verdict, float | None, str 
     # nothing (M9 smoke, LOG-115). ``noul`` is a probability that the proposition
     # holds (0.96 on a plainly true example in the JEV contract, 0.03 on that
     # template answer), so it maps at 0.5.
-    if raw is None and isinstance(answer.get("noul"), (int, float)) and not isinstance(
-        answer.get("noul"), bool
+    if (
+        raw is None
+        and isinstance(answer.get("noul"), (int, float))
+        and not isinstance(answer.get("noul"), bool)
     ):
         noul = float(answer["noul"])
         raw = noul >= 0.5
@@ -266,11 +265,7 @@ def _read_answer(answer: Mapping[str, Any]) -> tuple[Verdict, float | None, str 
     else:
         verdict = "uncertain"
 
-    criterion = (
-        answer.get("failing_criterion")
-        or answer.get("criterion")
-        or answer.get("reason")
-    )
+    criterion = answer.get("failing_criterion") or answer.get("criterion") or answer.get("reason")
 
     return verdict, confidence, str(criterion)[:300] if criterion else None
 
@@ -347,9 +342,7 @@ def evaluate_stage(
             passed = False
 
         if passed:
-            verdict = StageVerdict(
-                verdict="pass", confidence=float(score), tier="threshold"
-            )
+            verdict = StageVerdict(verdict="pass", confidence=float(score), tier="threshold")
             _log_verdict(client, trace_ctx, stage, verdict)
 
             return verdict
@@ -363,9 +356,7 @@ def evaluate_stage(
     else:
         question = build_sufficiency_question(stage, artifact)
 
-    state = json.dumps(
-        {"stage": stage, "summary": summary}, ensure_ascii=False, default=str
-    )
+    state = json.dumps({"stage": stage, "summary": summary}, ensure_ascii=False, default=str)
 
     try:
         result = client.jev(state, {"gate": question}, trace_ctx=trace_ctx)

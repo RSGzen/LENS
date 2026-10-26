@@ -10,7 +10,6 @@ recorded run cannot bypass the ``k -> n -> C -> c`` funnel.
 from __future__ import annotations
 
 import re
-
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -113,12 +112,13 @@ def query_sql(
         # First statement in the transaction. ``set_config(..., true)`` is the
         # parameterisable form of ``SET LOCAL`` — ``SET`` itself takes no binds.
         cursor.execute("SET TRANSACTION READ ONLY")
-        cursor.execute(
-            "SELECT set_config('statement_timeout', %s, true)", (str(int(timeout_ms)),)
-        )
+        cursor.execute("SELECT set_config('statement_timeout', %s, true)", (str(int(timeout_ms)),))
         cursor.execute(statement, tuple(params) if params else None)
 
-        columns = [getattr(description, "name", str(description)) for description in cursor.description or []]
+        columns = [
+            getattr(description, "name", str(description))
+            for description in cursor.description or []
+        ]
         fetched = cursor.fetchmany(limit)
 
     rows: list[dict[str, Any]] = []

@@ -152,7 +152,6 @@ def _flatten_clauses(value: Any) -> Iterator[str]:
             yield from _flatten_clauses(nested)
 
 
-
 def year_from_arxiv_id(arxiv_id: str) -> int | None:
     """Publication year from the arXiv id prefix (YYMM).
 
@@ -165,7 +164,7 @@ def year_from_arxiv_id(arxiv_id: str) -> int | None:
     if arxiv_id[:2].isdigit():
         yr = 2000 + int(arxiv_id[:2])
         return yr
-    
+
     else:
         return None
 
@@ -187,7 +186,7 @@ def vector_literal(vec: np.ndarray) -> str:
     fake connection. Flatten to 1-D because the embedder returns shape
     ``(1, dim)`` for a single query while the literal is a flat list.
     """
-    # Accept anything array-like and normalise to nomic dtype (float32) and then flatten it 
+    # Accept anything array-like and normalise to nomic dtype (float32) and then flatten it
     flat = np.asarray(vec, dtype=np.float32).reshape(-1)
 
     # pgvector's text format, e.g. "[0.1,-0.02,...]"
@@ -213,9 +212,7 @@ def hnsw_config_sql(ef_search: int, iterative_scan: bool = False) -> list[str]:
     return set_statement_list
 
 
-def top_by_score(
-    items: Sequence[T], scores: Sequence[float], top: int
-) -> list[tuple[T, float]]:
+def top_by_score(items: Sequence[T], scores: Sequence[float], top: int) -> list[tuple[T, float]]:
     """Return the ``top`` ``(item, score)`` pairs, highest score first.
 
     Stable on ties (original order preserved). ``top <= 0`` -> ``[]``;
@@ -232,6 +229,7 @@ def top_by_score(
     ranked = sorted(zip(items, scores), key=lambda pair: pair[1], reverse=True)
 
     return ranked[:top]
+
 
 # ------------------------------------------------------------------ T1 funnel tools
 def shallow_match(
@@ -256,12 +254,11 @@ def shallow_match(
     """
     query = format_query(buckets=buckets)
 
-    vec = embedder.encode_documents(texts=[query],
-                                    task_prefix=config.EMBEDDING_QUERY_PREFIX,
-                                    batch_size=1)
+    vec = embedder.encode_documents(
+        texts=[query], task_prefix=config.EMBEDDING_QUERY_PREFIX, batch_size=1
+    )
 
     with conn.cursor() as cur:
-
         # Set configurations for HNSW. `ef_search` bounds the rows an unfiltered
         # HNSW scan returns (pgvector default 40), so it must be >= the LIMIT.
         for stmt in hnsw_config_sql(max(config.HNSW_EF_SEARCH, k)):
@@ -277,7 +274,7 @@ def shallow_match(
 
         rows = cur.fetchall()
 
-        # Select first col (arxiv_ID) that are already in order 
+        # Select first col (arxiv_ID) that are already in order
         return [r[0] for r in rows]
 
 
@@ -326,7 +323,7 @@ def rerank_papers(
     rows = fetch_papers(conn, arxiv_ids)
 
     order_map = {name: index for index, name in enumerate(arxiv_ids)}
-    sorted_rows = sorted(rows, key=lambda x: order_map.get(x["arxiv_id"], float('inf')))
+    sorted_rows = sorted(rows, key=lambda x: order_map.get(x["arxiv_id"], float("inf")))
 
     query = format_query(buckets)
 
@@ -338,7 +335,7 @@ def rerank_papers(
             "arxiv_id": row["arxiv_id"],
             "title": row["title"],
             "abstract": row["abstract"],
-            "score": score
+            "score": score,
         }
         for row, score in top_by_score(sorted_rows, scores, n)
     ]
@@ -373,15 +370,16 @@ def deep_match(
     if not query.strip():
         return []
 
-    vec = embedder.encode_documents(texts=[query],
-                                    task_prefix=config.EMBEDDING_QUERY_PREFIX,
-                                    batch_size=1)
+    vec = embedder.encode_documents(
+        texts=[query], task_prefix=config.EMBEDDING_QUERY_PREFIX, batch_size=1
+    )
 
     with conn.cursor() as cur:
         # Filtered HNSW applies the WHERE after the graph scan -> iterative scan.
         # `ef_search` must also be >= the LIMIT (see shallow_match).
-        for stmt in hnsw_config_sql(ef_search=max(config.HNSW_EF_SEARCH, candidate_chunks),
-                                    iterative_scan=True):
+        for stmt in hnsw_config_sql(
+            ef_search=max(config.HNSW_EF_SEARCH, candidate_chunks), iterative_scan=True
+        ):
             cur.execute(stmt)
 
         cur.execute(

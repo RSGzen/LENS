@@ -39,12 +39,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-
-from collections.abc import Sequence
 from collections import Counter
-from typing import Any
+from collections.abc import Sequence
 from heapq import nlargest
 from pathlib import Path
+from typing import Any
 
 import networkx as nx
 
@@ -55,8 +54,8 @@ from lens.kg_extract import (
     RELATION_SCHEMA,
     KGExtractor,
 )
-from lens.kg_postprocess import load_gazetteer, postprocess as kg_postprocess
-from lens.kg_verify import filter_spans, resolve_coref
+from lens.kg_postprocess import load_gazetteer
+from lens.kg_postprocess import postprocess as kg_postprocess
 from lens.kg_query import (
     Triple,
     create_triple_instance,
@@ -65,6 +64,7 @@ from lens.kg_query import (
     kg_triples,
     normalize_entity,
 )
+from lens.kg_verify import filter_spans, resolve_coref
 from lens.tools.retrieval import fetch_chunks
 
 # The triple shape and the traversal helpers live in ``lens.kg_query`` (a pure
@@ -110,7 +110,7 @@ def load_ontology() -> dict[str, Any]:
     ontology_dict = {
         "version": ONTOLOGY_VERSION,
         "entities": ENTITY_TYPES,
-        "relations": RELATION_SCHEMA
+        "relations": RELATION_SCHEMA,
     }
 
     return ontology_dict
@@ -195,7 +195,7 @@ def filter_ontology(triples: Sequence[Triple]) -> list[Triple]:
     in input order.
     """
     allowed_triples = []
-    
+
     for triple in triples:
         t_relation = triple["relation"]
 
@@ -343,15 +343,17 @@ def kg_index_summary(graph: nx.MultiDiGraph) -> dict[str, Any]:
         "entity_types": dict(entity_types),
         "type_sources": dict(type_sources),
         "relations": relations_dict,
-        "top_entities": top_entities
+        "top_entities": top_entities,
     }
 
     return summary_dict
+
 
 # --------------------------------------------------- helpers (lens.kg_query)
 # ``create_triple_instance`` and the three traversal helpers live in
 # ``lens.kg_query`` (pure; also shipped into the sandbox image) and are imported
 # at the top of this module. Host and sandbox therefore run the same code.
+
 
 # ------------------------------------------------------------------ cache (K-06)
 def cache_key(
@@ -470,10 +472,7 @@ def build_kg(
         if verifier is not None and config.KG_VERIFY_ENABLED
         else "off"
     )
-    postprocess_fingerprint += (
-        f";span={span_filter};coref={coref};"
-        f"verify={verify_fingerprint}"
-    )
+    postprocess_fingerprint += f";span={span_filter};coref={coref};verify={verify_fingerprint}"
 
     if not kg_enabled:
         empty = nx.MultiDiGraph()
@@ -527,9 +526,7 @@ def build_kg(
     # Re-order to the input (ANN) order.
     by_id = {row["chunk_uuid"]: row for row in chunk_rows}
     reordered_chunk_rows = [by_id[cid] for cid in chunk_ids if cid in by_id]
-    chunk_texts = {
-        row["chunk_uuid"]: row["chunk_text"] for row in reordered_chunk_rows
-    }
+    chunk_texts = {row["chunk_uuid"]: row["chunk_text"] for row in reordered_chunk_rows}
 
     key = cache_key(
         chunk_ids,
@@ -618,14 +615,12 @@ def build_kg(
 
     if cache_path is not None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(
-            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-        )
+        cache_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     return payload
+
 
 # ---------------------------------------------- RLM helpers (moved, see below)
 # ``kg_neighbors`` / ``kg_triples`` / ``kg_subgraph`` live in ``lens.kg_query``
 # (pure: stdlib + networkx, so the same file ships into the lens-repl image) and
 # are imported at the top of this module. Tests keep importing them from here.
-
