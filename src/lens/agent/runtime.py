@@ -47,7 +47,6 @@ import hashlib
 import json
 import os
 import platform
-
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -151,8 +150,8 @@ class Runtime:
         self.sandbox = sandbox
         self.registry = registry
         self.budget = budget if budget is not None else Budget()
-        self.ledger = ledger if ledger is not None else TaskLedger(
-            trajectory.run_dir / "tasks.json"
+        self.ledger = (
+            ledger if ledger is not None else TaskLedger(trajectory.run_dir / "tasks.json")
         )
         self.recorded = recorded
         # M8.5: continue an existing run (``--resume``) vs start a new one.
@@ -254,9 +253,7 @@ class Runtime:
         calls this method with a parsed payload. A request from here would call the
         server that is currently inside ``handle_request``.
         """
-        trace_ctx = TraceCtx(
-            trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
-        )
+        trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool")
 
         try:
             if endpoint == "/tool":
@@ -330,9 +327,7 @@ class Runtime:
                 # The registry maps a role to a ModelSpec (a dataclass, so not
                 # JSON-serialisable): the manifest records the **ids** only.
                 # JEV is deliberately outside the registry (LOG-29).
-                models={
-                    role: spec.id for role, spec in config.MODEL_REGISTRY.items()
-                }
+                models={role: spec.id for role, spec in config.MODEL_REGISTRY.items()}
                 | {"jev": config.JEV_MODEL_ID},
                 caps=self.budget.snapshot()["limits"],
                 created_by=self._provenance(),
@@ -340,9 +335,7 @@ class Runtime:
             # The arm is written once, at creation, and deliberately **not**
             # updatable (``UPDATABLE`` excludes ``extra``): a resumed run keeps the
             # arm it started with, which is what makes an old run attributable.
-            manifest.extra["arm"] = arm_fingerprint(
-                recorded=self.recorded, replay=self.replay
-            )
+            manifest.extra["arm"] = arm_fingerprint(recorded=self.recorded, replay=self.replay)
         else:
             # Resume: identity and lineage survive, status does not.
             manifest.status = "running"
@@ -580,9 +573,7 @@ class Runtime:
         format, and the workspace copy **is** the artifact (it sits under
         ``<run_dir>/work``). Do not write a second copy into ``run_dir``.
         """
-        trace_ctx = TraceCtx(
-            trace_id=self._trace_id, step_idx=self._step_idx, actor="root"
-        )
+        trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="root")
         buckets = segment_query(self.client, self.query, trace_ctx=trace_ctx)
 
         write_query_json(buckets, self.workspace / "query.json")
@@ -659,9 +650,7 @@ class Runtime:
 
         if self.resume:
             self.trajectory.log_event(
-                trace_ctx=TraceCtx(
-                    trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
-                ),
+                trace_ctx=TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"),
                 call_type="note",
                 action="run.resume",
                 extra={"from_seq": self._from_seq, "namespace_complete": self._namespace_complete},
@@ -720,9 +709,7 @@ class Runtime:
         answer = ""
 
         while self.budget.can_continue():
-            trace_ctx = TraceCtx(
-                trace_id=self._trace_id, step_idx=self._step_idx, actor="root"
-            )
+            trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="root")
             result = self.client.chat(
                 "root",
                 self._build_context(),
@@ -812,9 +799,7 @@ class Runtime:
     def _log_budget(self) -> None:
         """Log one ``budget`` snapshot (the event M11 folds for the cap-binding rate)."""
         self.trajectory.log_event(
-            trace_ctx=TraceCtx(
-                trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
-            ),
+            trace_ctx=TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"),
             call_type="note",
             action="budget.snapshot",
             extra={"budget": self.budget.snapshot()},
@@ -827,9 +812,7 @@ class Runtime:
         reads back from ``stdout_ref`` — the two must not diverge, or a resumed
         run would remember a turn differently from the run that produced it.
         """
-        trace_ctx = TraceCtx(
-            trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
-        )
+        trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool")
         result = self.sandbox.exec(code)
 
         if result.duration_ms:
@@ -912,18 +895,14 @@ class Runtime:
         if recorded is not None:
             return recorded
 
-        result = self.registry.dispatch(
-            name, args, trace_ctx=trace_ctx, trajectory=self.trajectory
-        )
+        result = self.registry.dispatch(name, args, trace_ctx=trace_ctx, trajectory=self.trajectory)
         envelope = result.to_dict()
 
         stage = GATED_STAGES.get(name)
 
         if stage is not None and stage not in self._gated_stages and envelope.get("ok"):
             self._gated_stages.add(stage)  # one gate per stage per run
-            verdict = self._evaluate(
-                stage, _bounded_artifact(result.result), trace_ctx=trace_ctx
-            )
+            verdict = self._evaluate(stage, _bounded_artifact(result.result), trace_ctx=trace_ctx)
 
             if verdict is not None:
                 envelope["gate"] = verdict.to_dict()
@@ -944,9 +923,7 @@ class Runtime:
 
         messages.append({"role": "user", "content": prompt})
 
-        trace_ctx = TraceCtx(
-            trace_id=self._trace_id, step_idx=self._step_idx, actor="sub"
-        )
+        trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="sub")
         result = self.client.chat("sub", messages, trace_ctx=trace_ctx)
         self.budget.record_chat(result)
 
@@ -1012,9 +989,7 @@ class Runtime:
         host_path.write_text(text, encoding="utf-8")
 
         self.trajectory.log_event(
-            trace_ctx=TraceCtx(
-                trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
-            ),
+            trace_ctx=TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"),
             call_type="emit",
             action="emit.value",
             result_ref=ref,
@@ -1034,9 +1009,7 @@ class Runtime:
     def _note(self, text: str) -> None:
         """Append one free-form note event to the trajectory (``call_type="note"``)."""
         self.trajectory.log_event(
-            trace_ctx=TraceCtx(
-                trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
-            ),
+            trace_ctx=TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"),
             call_type="note",
             action="note",
             extra={"text": text},

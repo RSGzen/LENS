@@ -48,8 +48,8 @@ import hashlib
 import json
 import os
 import shutil
-
-from dataclasses import dataclass, field, fields as dataclass_fields
+from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -615,9 +615,7 @@ def export_run(
 
     work_dir = run_dir / "work"
     if work_dir.is_dir():
-        shutil.copytree(
-            work_dir, bundle / "work", ignore=shutil.ignore_patterns("emits")
-        )
+        shutil.copytree(work_dir, bundle / "work", ignore=shutil.ignore_patterns("emits"))
 
     blobs: dict[str, int] = {}
     missing: list[str] = []
@@ -768,7 +766,7 @@ def import_run(bundle: str | Path, *, path: str | Path | None = None) -> RunMani
     blobs_root = root / "blobs"
     blobs_root.mkdir(parents=True, exist_ok=True)
 
-    for digest in (index.get("blobs") or {}):
+    for digest in index.get("blobs") or {}:
         destination = blobs_root / digest
 
         if destination.exists():

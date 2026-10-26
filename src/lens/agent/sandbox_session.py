@@ -15,7 +15,6 @@ import json
 import os
 import subprocess
 import time
-
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -145,9 +144,7 @@ class SandboxSession:
             # Leave nothing running: a half-started container (or relay) would keep
             # the workspace mount and confuse the next run's health check.
             self.stop()
-            raise RuntimeError(
-                f"sandbox {self.service!r} started but /health never answered"
-            )
+            raise RuntimeError(f"sandbox {self.service!r} started but /health never answered")
 
     def stop(self) -> None:
         """Remove the container (``docker compose ... rm -sf <service>``).

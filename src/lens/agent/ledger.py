@@ -204,19 +204,16 @@ class TaskLedger:
         """
         if self.tasks.get(task_id) is None:
             raise KeyError(f"task id: {task_id} invalid and out of range")
-        
+
         task = self.tasks[task_id]
 
         unknown = set(fields) - UPDATABLE_FIELDS
         if unknown:
-            raise TypeError(
-                f"cannot update {sorted(unknown)}; allowed: {sorted(UPDATABLE_FIELDS)}"
-            )
+            raise TypeError(f"cannot update {sorted(unknown)}; allowed: {sorted(UPDATABLE_FIELDS)}")
 
         if "status" in fields and fields["status"] not in VALID_STATUSES:
             raise ValueError(
-                f"invalid status {fields['status']!r}; "
-                f"expected one of {sorted(VALID_STATUSES)}"
+                f"invalid status {fields['status']!r}; expected one of {sorted(VALID_STATUSES)}"
             )
 
         for key, value in fields.items():

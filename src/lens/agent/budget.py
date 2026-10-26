@@ -161,23 +161,23 @@ class Budget:
                 "tokens": self.limits.max_tokens,
                 "cost_usd": self.limits.max_cost_usd,
                 "exec_block_s": self.limits.max_exec_block_s,
-                "backtracks": self.limits.max_backtracks
+                "backtracks": self.limits.max_backtracks,
             },
-            "used":{
+            "used": {
                 "iterations": self.iterations,
                 "tokens_in": self.tokens_in,
                 "tokens_out": self.tokens_out,
                 "cost_usd": self.cost_usd,
                 "exec_seconds": self.exec_seconds,
-                "backtracks": self.backtracks
+                "backtracks": self.backtracks,
             },
-            "left":{
+            "left": {
                 "iterations": max(0, (self.limits.max_iterations - self.iterations)),
                 "tokens": max(0, (self.limits.max_tokens - (self.tokens_in + self.tokens_out))),
                 "cost_usd": max(0, (self.limits.max_cost_usd - self.cost_usd)),
-                "backtracks": max(0, (self.limits.max_backtracks - self.backtracks))
+                "backtracks": max(0, (self.limits.max_backtracks - self.backtracks)),
             },
-            "stop_reason": self.stop_reason()
+            "stop_reason": self.stop_reason(),
         }
 
         return snapshot_dict

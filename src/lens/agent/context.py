@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import re
-
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -125,15 +124,14 @@ def build_system_prompt(
 ) -> str:
     """Fill ``SYSTEM_PROMPT_TEMPLATE`` without interpreting JSON braces."""
     prompt = (
-        SYSTEM_PROMPT_TEMPLATE
-        .replace("<<TOOL_MANIFEST>>", tool_manifest)
+        SYSTEM_PROMPT_TEMPLATE.replace("<<TOOL_MANIFEST>>", tool_manifest)
         .replace("<<QUERY_JSON>>", json.dumps(query_buckets, ensure_ascii=False, indent=2))
         .replace("<<BUDGET>>", json.dumps(budget_snapshot, ensure_ascii=False, indent=2))
     )
 
     if "<<" in prompt or ">>" in prompt:
         raise ValueError("unfilled placeholder in the system prompt")
-    
+
     return prompt
 
 
@@ -267,8 +265,7 @@ def compact_messages(
         marker = {
             "role": "user",
             "content": (
-                f"[{dropped} earlier messages omitted; "
-                "sandbox variables persist across turns]"
+                f"[{dropped} earlier messages omitted; sandbox variables persist across turns]"
             ),
         }
 
@@ -360,9 +357,7 @@ def budget_warning(
     return WRAP_UP_NUDGE_TEMPLATE.format(pct=fraction * 100, which=which)
 
 
-def truncate_observation(
-    text: str, max_chars: int = config.TOOL_RESULT_SUMMARY_CHARS
-) -> str:
+def truncate_observation(text: str, max_chars: int = config.TOOL_RESULT_SUMMARY_CHARS) -> str:
     """Truncate a printed observation with an explicit marker.
 
     The marker goes at the **end**, where the text actually stops: the model reads
@@ -500,9 +495,7 @@ def tool_bindings(parameters: Mapping[str, Sequence[str]]) -> str:
     logic in the sandbox. Keyword arguments pass straight through, and an
     omitted argument keeps the host-side default.
     """
-    rows = ",\n".join(
-        f"    {name!r}: {tuple(names)!r}" for name, names in parameters.items()
-    )
+    rows = ",\n".join(f"    {name!r}: {tuple(names)!r}" for name, names in parameters.items())
 
     return "\n".join(
         [
@@ -520,7 +513,7 @@ def tool_bindings(parameters: Mapping[str, Sequence[str]]) -> str:
             "    def _call(*args, **kwargs):",
             "        if len(args) > len(_keys):",
             "            raise TypeError(",
-            "                f\"{_name} accepts at most {len(_keys)} positional argument(s)\"",
+            '                f"{_name} accepts at most {len(_keys)} positional argument(s)"',
             "            )",
             "        kwargs.update(zip(_keys, args))",
             "        return rlm_api.tool(_name, **kwargs)",
