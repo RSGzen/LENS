@@ -1,17 +1,14 @@
-"""M3 — load the manifest papers with abstract embeddings.
-
-Spec: ``MVP Build Roadmap.md`` §4 (M3); ``Thesis Drafts/Tech Stack (Draft).md``
-§3 (``papers`` columns) and §4f (the M1 manifest this consumes).
+"""— load the manifest papers with abstract embeddings.
 
 Pipeline
 --------
-``manifest.json`` (166,704 papers, M1)
+``manifest.json``
   -> :func:`load_papers` — embed each abstract via :class:`lens.embeddings.Embedder`
      and upsert one ``papers`` row (metadata + ``abstract_embedding`` +
      ``embedding_version``).
 
-The **full** manifest is loaded — there is no paper subset (advisor decision,
-6 Oct 2026). M3 verify clause: ``rows == manifest["count"]`` and no NULL
+The **full** manifest is loaded — there is no paper subset
+6 Oct 2026). verify clause: ``rows == manifest["count"]`` and no NULL
 ``abstract_embedding``. ``tests/DESTRUCTIVE_db_tests/test_papers.py`` is the
 contract — it drops the schema, so run it only against a throwaway ``lens_test``.
 """
@@ -66,7 +63,7 @@ def load_papers(
 
     The caller passes ``manifest["papers"]`` (all 166,704). Build the HNSW indexes
     **after** this load (``scripts/build_indexes.py``) — pgvector recommends it, and
-    inserts are much faster without graph maintenance (Roadmap §10).
+    inserts are much faster without graph maintenance.
     """
     num_processed_entries = 0
 

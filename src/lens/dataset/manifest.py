@@ -1,7 +1,4 @@
-"""M1 — build the arXiv cs.AI subset manifest.
-
-Spec: ``MVP Build Roadmap.md`` §4 (M1), §2.1 (assets), §3 (runtime layout) and
-``Thesis Drafts/Tech Stack (Draft).md`` §3 (``papers`` metadata fields).
+"""— build the arXiv cs.AI subset manifest.
 
 Pipeline (single pass over the JSONL snapshot)
 ----------------------------------------------
@@ -15,7 +12,7 @@ Pipeline (single pass over the JSONL snapshot)
   -> ``manifests/manifest.json`` (provenance object + ``papers`` list)
      and ``manifests/manifest.checkpoint.json`` (append-only JSONL progress log).
 
-The manifest is the join list for M3 (abstract embeddings) and M4 (chunking): each
+The manifest is the join list for (abstract embeddings) and (chunking): each
 entry carries the ``papers``-table fields those stages need plus the TEI filename.
 ``tests/test_manifest.py`` defines the contracts (no key, no network, zero cost).
 """
@@ -88,7 +85,7 @@ def checkpoint_logging(
 def extract_manifest_entry(record: dict[str, Any], tei_xml_filename: str) -> dict[str, Any]:
     """Build one manifest entry dict from a metadata record.
 
-    Keys (the ``papers``-table fields M3 needs + the file M4 needs):
+    Keys :
 
     - ``arxiv_id``    ``record["id"]``
     - ``version``     ``record["versions"][-1]["version"]`` (latest; == DB ``current_ver``)
@@ -198,7 +195,7 @@ def build_manifest(
 
 
 def load_manifest(path: str | Path) -> dict[str, Any]:
-    """Read ``manifest.json`` back into a dict (M3/M4 entry point)."""
+    """Read ``manifest.json`` back into a dict."""
 
     with open(path, "r", encoding="utf-8") as file:
         data = json.load(file)

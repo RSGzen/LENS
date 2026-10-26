@@ -1,17 +1,14 @@
-r"""M4 — load the manifest papers' chunks with embeddings into ``chunks``.
-
-Spec: ``MVP Build Roadmap.md`` §4 (M4); ``Thesis Drafts/Tech Stack (Draft).md``
-§3 (``chunks`` columns) and §4h (the M3 loader this mirrors).
+r"""— load the manifest papers' chunks with embeddings into ``chunks``.
 
 Pipeline
 --------
-``manifest.json`` (166,704 papers, M1) + ``papers`` (loaded by M3)
+``manifest.json`` + ``papers``
   -> :func:`chunk_paper`  parse ``.tei.xml`` -> :class:`lens.chunking.Chunk` list
   -> :func:`load_chunks`  batch -> embed -> idempotent upsert into ``chunks``.
 
-The **full** manifest is chunked — no paper subset (advisor decision, 6 Oct
-2026). M4 verify clause: **0 FK orphans, sane chunk counts** (Roadmap §4). FK
-safety relies on M3 having loaded every manifest ``arxiv_id`` into ``papers``.
+The **full** manifest is chunked — no paper subset
+2026). verify clause: **0 FK orphans, sane chunk counts**. FK
+safety relies on having loaded every manifest ``arxiv_id`` into ``papers``.
 
 Idempotency / resume
 --------------------
@@ -23,10 +20,10 @@ durable (the loop prints one timing line per batch for the run log).
 
 Insert speed
 ------------
-The ``chunks_chunk_embedding_hnsw`` index already exists (M2). Per-row HNSW graph
-maintenance makes bulk inserts slow, so — exactly as M3 did for ``papers`` —
+The ``chunks_chunk_embedding_hnsw`` index already exists. Per-row HNSW graph
+maintenance makes bulk inserts slow, so — exactly as did for ``papers`` —
 **drop the chunks HNSW index before the load and rebuild with**
-``scripts/build_indexes.py`` after (Roadmap §4 M3/M4, §10).
+``scripts/build_indexes.py`` after.
 
 ``tests/DESTRUCTIVE_db_tests/test_chunks.py`` is the contract — it drops the
 schema, so run it only against a throwaway ``lens_test`` (no API key, zero cost).
