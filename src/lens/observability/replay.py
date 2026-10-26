@@ -34,7 +34,6 @@ Contract tests: ``tests/test_replay.py`` (no key, no DB, no Docker).
 from __future__ import annotations
 
 import json
-
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -266,9 +265,7 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
         if summary:
             turn.observation = summary
         elif turn.observation is None and stdout is not None:
-            turn.observation = truncate_observation(
-                stdout, config.TOOL_RESULT_SUMMARY_CHARS
-            )
+            turn.observation = truncate_observation(stdout, config.TOOL_RESULT_SUMMARY_CHARS)
 
     elif call_type == "tool":
         args = _load_json(trajectory, event.get("args_ref"), turn.missing_refs)
@@ -323,9 +320,7 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
         # Total spend = chat + gate calls: the cost meter compares against the cap,
         # so it must not hide the decision layer. ``tokens_in`` stays chat-only
         # because it drives the context-growth chart.
-        "cost_usd": sum(
-            (turn.cost_usd or 0.0) + (turn.jev_cost_usd or 0.0) for turn in turns
-        ),
+        "cost_usd": sum((turn.cost_usd or 0.0) + (turn.jev_cost_usd or 0.0) for turn in turns),
         "chat_cost_usd": sum(turn.cost_usd or 0.0 for turn in turns),
         "tool_calls": sum(len(turn.tools) for turn in turns),
         "emits": sum(len(turn.emits) for turn in turns),

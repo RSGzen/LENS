@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import re
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -297,9 +296,10 @@ def write_sources_md(report: CitationReport, path: str | Path | None = None) -> 
 
     for citation in resolved:
         title = (citation.title or "").replace("|", "/")[:70]
+        turn = citation.turn if citation.turn is not None else "-"
         lines.append(
             f"| `{citation.token}` | {citation.arxiv_id or '-'} {title} "
-            f"| {citation.section_type or '-'} | {citation.turn if citation.turn is not None else '-'} |"
+            f"| {citation.section_type or '-'} | {turn} |"
         )
 
     if report.unresolved:

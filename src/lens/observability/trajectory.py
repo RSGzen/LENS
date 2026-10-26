@@ -11,11 +11,10 @@ One instance = one run, writing to ``<runs_root>/<run_id>/trajectory.jsonl``.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
-import copy
-
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,8 +30,7 @@ try:
     )
 except ModuleNotFoundError as e:
     raise RuntimeError(
-        "lens.config not importable — run from the repo root or install the "
-        "package with `uv sync`."
+        "lens.config not importable — run from the repo root or install the package with `uv sync`."
     ) from e
 
 # Who performed the action (Tech Stack §5 `actor`).
@@ -182,35 +180,36 @@ class Trajectory:
         """
         iso_string = datetime.now(timezone.utc).isoformat()
 
-        info_dict = {"trace_id": trace_ctx.trace_id,
-                     "step_idx": trace_ctx.step_idx,
-                     "timestamp": iso_string,
-                     "actor": trace_ctx.actor,
-                     "call_type": call_type,
-                     "action": action,
-                     "model": model,
-                     "provider": provider,
-                     "model_snapshot": model_snapshot,
-                     "prompt_ref": prompt_ref,
-                     "completion_ref": completion_ref,
-                     "result_ref": result_ref,
-                     "code_ref": code_ref,
-                     "stdout_ref": stdout_ref,
-                     "stderr_ref": stderr_ref,
-                     "args_ref": args_ref,
-                     "result_summary": result_summary,
-                     "args_hash": args_hash,
-                     "tool": tool,
-                     "tokens_in": tokens_in,
-                     "tokens_out": tokens_out,
-                     "latency_ms": latency_ms,
-                     "cost_usd": cost_usd,
-                     "stage": stage,
-                     "confidence": confidence,
-                     "verdict": verdict,
-                     "error": error,
-                     "extra": extra
-                     }
+        info_dict = {
+            "trace_id": trace_ctx.trace_id,
+            "step_idx": trace_ctx.step_idx,
+            "timestamp": iso_string,
+            "actor": trace_ctx.actor,
+            "call_type": call_type,
+            "action": action,
+            "model": model,
+            "provider": provider,
+            "model_snapshot": model_snapshot,
+            "prompt_ref": prompt_ref,
+            "completion_ref": completion_ref,
+            "result_ref": result_ref,
+            "code_ref": code_ref,
+            "stdout_ref": stdout_ref,
+            "stderr_ref": stderr_ref,
+            "args_ref": args_ref,
+            "result_summary": result_summary,
+            "args_hash": args_hash,
+            "tool": tool,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "latency_ms": latency_ms,
+            "cost_usd": cost_usd,
+            "stage": stage,
+            "confidence": confidence,
+            "verdict": verdict,
+            "error": error,
+            "extra": extra,
+        }
 
         info_dict = {k: v for k, v in info_dict.items() if v is not None}
 
@@ -268,16 +267,16 @@ class Trajectory:
             "tokens_out": 0,
             "calls": 0,
             "tool_calls": 0,
-            "by_action": {}
+            "by_action": {},
         }
 
         if not self.trajectory_path.is_file():
             return totals_dict
 
-        with open(self.trajectory_path, 'r', encoding="utf-8") as f:
+        with open(self.trajectory_path, "r", encoding="utf-8") as f:
             for line in f:
                 clean_line = line.strip()
-                
+
                 if not clean_line:
                     continue
 
@@ -378,14 +377,14 @@ class Trajectory:
                 budget=budget,
                 emits=emits,
                 tool_results=tool_results,
-                last_seq=last_seq
+                last_seq=last_seq,
             )
             return rebuild_obj
 
         # Must live OUTSIDE the loop: the chat and its exec are two different lines.
         pending_completion = None
 
-        with open(self.trajectory_path, 'r', encoding="utf-8") as f:
+        with open(self.trajectory_path, "r", encoding="utf-8") as f:
             for line in f:
                 clean_line = line.strip()
 
@@ -430,20 +429,26 @@ class Trajectory:
                         pending_completion = None
 
                     if data.get("stdout_ref"):
-                        messages.append({
-                            "role": "user",
-                            "content": self.load_blob(data["stdout_ref"]),
-                        })
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": self.load_blob(data["stdout_ref"]),
+                            }
+                        )
                     elif data.get("error"):
-                        messages.append({
-                            "role": "user",
-                            "content": f"[block failed: {data['error']}]",
-                        })
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": f"[block failed: {data['error']}]",
+                            }
+                        )
                     else:
-                        messages.append({
-                            "role": "user",
-                            "content": "[block interrupted; effects unknown]",
-                        })
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": "[block interrupted; effects unknown]",
+                            }
+                        )
 
                 elif call_type == "emit" and "error" not in data:
                     var_name = extra.get("var") if isinstance(extra, dict) else None
@@ -474,4 +479,3 @@ class Trajectory:
             tool_results=tool_results,
             last_seq=last_seq,
         )
-
