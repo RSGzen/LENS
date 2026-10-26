@@ -71,7 +71,9 @@ class CorefTest(unittest.TestCase):
         self.assertEqual(out[1]["head"], "BERT")
 
     def test_unresolved_pronoun_is_left_for_filter(self) -> None:
-        out = resolve_coref([triple("It", "Method", "uses", "BERT", "Method")], {"u1": "It uses BERT."})
+        out = resolve_coref(
+            [triple("It", "Method", "uses", "BERT", "Method")], {"u1": "It uses BERT."}
+        )
         self.assertEqual(out[0]["head"], "It")
 
 

@@ -24,31 +24,106 @@ from lens.dataset.manifest import (
 
 # --- fixture metadata: cs.AI? / id-year 15-26? / has a TEI file? -----------------
 RECORDS = [
-    {"id": "1401.00004", "title": "too old", "authors": "A", "categories": "cs.AI",
-     "update_date": "2014-12-31", "abstract": "a", "versions": [{"version": "v1"}]},
-    {"id": "1501.00007", "title": "start edge", "authors": "B", "categories": "cs.AI cs.LG",
-     "update_date": "2015-01-01", "abstract": "a", "versions": [{"version": "v1"}]},
-    {"id": "1501.00601", "title": "one", "authors": "C", "categories": "cs.AI",
-     "doi": "10.1/x", "journal-ref": "J.1", "update_date": "2016-05-05", "abstract": "a",
-     "versions": [{"version": "v1"}, {"version": "v3"}]},
-    {"id": "1601.00002", "title": "two", "authors": "D", "categories": "cs.AI",
-     "update_date": "2015-06-06", "abstract": "a", "versions": [{"version": "v2"}]},
-    {"id": "1701.00003", "title": "not ai", "authors": "E", "categories": "cs.LG cs.CV",
-     "update_date": "2017-03-03", "abstract": "a", "versions": [{"version": "v1"}]},
-    {"id": "1801.00005", "title": "missing xml", "authors": "F", "categories": "cs.AI",
-     "update_date": "2018-01-01", "abstract": "a", "versions": [{"version": "v1"}]},
-    {"id": "1901.00008", "title": "no versions", "authors": "G", "categories": "cs.AI",
-     "update_date": "2019-01-01", "abstract": "a"},
-    {"id": "2601.00006", "title": "end edge", "authors": "H", "categories": "cs.AI",
-     "update_date": "2026-12-31", "abstract": "a", "versions": [{"version": "v1"}]},
-    {"id": "2701.00009", "title": "too new", "authors": "I", "categories": "cs.AI",
-     "update_date": "2027-01-01", "abstract": "a", "versions": [{"version": "v1"}]},
-    {"id": "acc-phys/9411001", "title": "old style", "authors": "J", "categories": "cs.AI",
-     "update_date": "1994-11-01", "abstract": "a", "versions": [{"version": "v1"}]},
+    {
+        "id": "1401.00004",
+        "title": "too old",
+        "authors": "A",
+        "categories": "cs.AI",
+        "update_date": "2014-12-31",
+        "abstract": "a",
+        "versions": [{"version": "v1"}],
+    },
+    {
+        "id": "1501.00007",
+        "title": "start edge",
+        "authors": "B",
+        "categories": "cs.AI cs.LG",
+        "update_date": "2015-01-01",
+        "abstract": "a",
+        "versions": [{"version": "v1"}],
+    },
+    {
+        "id": "1501.00601",
+        "title": "one",
+        "authors": "C",
+        "categories": "cs.AI",
+        "doi": "10.1/x",
+        "journal-ref": "J.1",
+        "update_date": "2016-05-05",
+        "abstract": "a",
+        "versions": [{"version": "v1"}, {"version": "v3"}],
+    },
+    {
+        "id": "1601.00002",
+        "title": "two",
+        "authors": "D",
+        "categories": "cs.AI",
+        "update_date": "2015-06-06",
+        "abstract": "a",
+        "versions": [{"version": "v2"}],
+    },
+    {
+        "id": "1701.00003",
+        "title": "not ai",
+        "authors": "E",
+        "categories": "cs.LG cs.CV",
+        "update_date": "2017-03-03",
+        "abstract": "a",
+        "versions": [{"version": "v1"}],
+    },
+    {
+        "id": "1801.00005",
+        "title": "missing xml",
+        "authors": "F",
+        "categories": "cs.AI",
+        "update_date": "2018-01-01",
+        "abstract": "a",
+        "versions": [{"version": "v1"}],
+    },
+    {
+        "id": "1901.00008",
+        "title": "no versions",
+        "authors": "G",
+        "categories": "cs.AI",
+        "update_date": "2019-01-01",
+        "abstract": "a",
+    },
+    {
+        "id": "2601.00006",
+        "title": "end edge",
+        "authors": "H",
+        "categories": "cs.AI",
+        "update_date": "2026-12-31",
+        "abstract": "a",
+        "versions": [{"version": "v1"}],
+    },
+    {
+        "id": "2701.00009",
+        "title": "too new",
+        "authors": "I",
+        "categories": "cs.AI",
+        "update_date": "2027-01-01",
+        "abstract": "a",
+        "versions": [{"version": "v1"}],
+    },
+    {
+        "id": "acc-phys/9411001",
+        "title": "old style",
+        "authors": "J",
+        "categories": "cs.AI",
+        "update_date": "1994-11-01",
+        "abstract": "a",
+        "versions": [{"version": "v1"}],
+    },
 ]
 # Only these ids have a TEI file on disk (plus one orphan not in metadata).
-XML_NAMES = ["1501.00007v1.tei.xml", "1501.00601v3.tei.xml", "1601.00002v2.tei.xml",
-             "2601.00006v1.tei.xml", "9999.99999v1.tei.xml"]
+XML_NAMES = [
+    "1501.00007v1.tei.xml",
+    "1501.00601v3.tei.xml",
+    "1601.00002v2.tei.xml",
+    "2601.00006v1.tei.xml",
+    "9999.99999v1.tei.xml",
+]
 # The 4 entries build_manifest should keep (order = source order).
 EXPECTED_IDS = ["1501.00007", "1501.00601", "1601.00002", "2601.00006"]
 
@@ -102,8 +177,9 @@ class ManifestTestCase(unittest.TestCase):
 
     # ---------------------------------------------------------------- build
     def test_build_manifest_end_to_end(self) -> None:
-        manifest = build_manifest(self.metadata, self.xml_dir, self.manifest_path,
-                                  checkpoint_path=self.checkpoint_path)
+        manifest = build_manifest(
+            self.metadata, self.xml_dir, self.manifest_path, checkpoint_path=self.checkpoint_path
+        )
 
         self.assertEqual(manifest["count"], len(EXPECTED_IDS))
         self.assertEqual([e["arxiv_id"] for e in manifest["papers"]], EXPECTED_IDS)
@@ -132,8 +208,9 @@ class ManifestTestCase(unittest.TestCase):
         self.assertTrue(json.loads(lines[-1])["done"])
 
     def test_build_manifest_skips_missing_xml_and_versionless(self) -> None:
-        manifest = build_manifest(self.metadata, self.xml_dir, self.manifest_path,
-                                  checkpoint_path=self.checkpoint_path)
+        manifest = build_manifest(
+            self.metadata, self.xml_dir, self.manifest_path, checkpoint_path=self.checkpoint_path
+        )
         kept = {e["arxiv_id"] for e in manifest["papers"]}
         self.assertNotIn("1801.00005", kept)  # cs.AI in range but no TEI file
         self.assertNotIn("1901.00008", kept)  # no "versions" -> cannot form a filename

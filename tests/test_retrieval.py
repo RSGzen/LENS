@@ -101,7 +101,9 @@ class FormatQueryTest(unittest.TestCase):
         # The M9 smoke bug: the RLM handed over {"query": "..."} and iterating the
         # string embedded "s o m e   q u e r y", so the funnel returned unrelated
         # papers. A string value is one clause.
-        self.assertEqual(format_query({"query": "long context aggregation"}), "long context aggregation")
+        self.assertEqual(
+            format_query({"query": "long context aggregation"}), "long context aggregation"
+        )
 
     def test_nested_and_non_text_values_are_tolerated(self) -> None:
         buckets = {"a": [["deep", "nested"]], "b": "flat", "c": None, "d": 3}
@@ -242,13 +244,14 @@ class RerankChunksTest(unittest.TestCase):
                 "token_count": 5,
             }
 
-        papers = [
-            {"arxiv_id": "2101.00001", "title": "T", "authors": "A", "abstract": "abs"}
-        ]
-        with mock.patch(
-            "lens.tools.retrieval.fetch_chunks",
-            return_value=[chunk("u2", 1), chunk("u1", 0), chunk("u3", 2)],
-        ), mock.patch("lens.tools.retrieval.fetch_papers", return_value=papers):
+        papers = [{"arxiv_id": "2101.00001", "title": "T", "authors": "A", "abstract": "abs"}]
+        with (
+            mock.patch(
+                "lens.tools.retrieval.fetch_chunks",
+                return_value=[chunk("u2", 1), chunk("u1", 0), chunk("u3", 2)],
+            ),
+            mock.patch("lens.tools.retrieval.fetch_papers", return_value=papers),
+        ):
             rr = FakeReranker([0.2, 0.8, 0.4])
             out = rerank_chunks(None, ["u1", "u2", "u3"], "q", rr, top_chunks=2)
 

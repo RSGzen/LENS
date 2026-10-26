@@ -31,7 +31,9 @@ class ReplayTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     # ---------------------------------------------------------------- helpers
-    def _chat(self, step: int, completion: str, *, tokens_in: int = 100, cost: float = 0.01) -> None:
+    def _chat(
+        self, step: int, completion: str, *, tokens_in: int = 100, cost: float = 0.01
+    ) -> None:
         self.traj.log_event(
             trace_ctx=TraceCtx("run-replay", step, "root"),
             call_type="chat",
@@ -66,7 +68,9 @@ class ReplayTestCase(unittest.TestCase):
             error=error,
         )
 
-    def _tool(self, step: int, name: str, args: dict, result: dict, *, gate: dict | None = None) -> None:
+    def _tool(
+        self, step: int, name: str, args: dict, result: dict, *, gate: dict | None = None
+    ) -> None:
         self.traj.log_event(
             trace_ctx=TraceCtx("run-replay", step, "tool"),
             call_type="tool",
@@ -101,15 +105,20 @@ class ReplayTestCase(unittest.TestCase):
     def test_tool_steps_carry_args_latency_and_gate(self) -> None:
         gate = {"verdict": "pass", "confidence": 0.82, "tier": "jev"}
         self._chat(0, "```python\nx = tool('shallow_match', buckets=b)\n```")
-        self._tool(0, "shallow_match", {"buckets": {"problems": ["p"]}, "k": 100},
-                   {"ids": ["a", "b"]}, gate=gate)
+        self._tool(
+            0,
+            "shallow_match",
+            {"buckets": {"problems": ["p"]}, "k": 100},
+            {"ids": ["a", "b"]},
+            gate=gate,
+        )
         self._exec(0, "x", "2 ids\n")
 
         turn = replay_turns(self.traj)[0]
         self.assertEqual(len(turn.tools), 1)
         step = turn.tools[0]
         self.assertEqual(step.name, "shallow_match")
-        self.assertEqual(step.args["k"], 100)          # args come from args_ref
+        self.assertEqual(step.args["k"], 100)  # args come from args_ref
         self.assertEqual(step.args_hash, "hash-shallow_match")
         self.assertEqual(step.latency_ms, 120)
         self.assertEqual(step.gate, gate)
@@ -152,7 +161,7 @@ class ReplayTestCase(unittest.TestCase):
             trace_ctx=TraceCtx("run-replay", 0, "tool"),
             call_type="exec",
             action="exec.block",
-            code_ref="sha256:" + "0" * 64,   # never stored
+            code_ref="sha256:" + "0" * 64,  # never stored
             stdout_ref=self.traj.store_blob("1\n"),
         )
         turn = replay_turns(self.traj)[0]
@@ -162,7 +171,7 @@ class ReplayTestCase(unittest.TestCase):
 
     def test_interrupted_last_turn_is_marked(self) -> None:
         self._chat(0, "```python\nprint(1)\n```")
-        self._exec(0, "print(1)", None)   # crash mid-block: no stdout blob
+        self._exec(0, "print(1)", None)  # crash mid-block: no stdout blob
         turn = replay_turns(self.traj)[0]
         self.assertIsNone(turn.ok)
         self.assertIsNone(turn.stdout_full)
@@ -186,8 +195,8 @@ class ReplayTestCase(unittest.TestCase):
 
         self.assertAlmostEqual(summary["cost_usd"], 0.011)
         self.assertAlmostEqual(summary["chat_cost_usd"], 0.01)
-        self.assertEqual(summary["tokens_in"], 1000)      # chat only: the chart
-        self.assertEqual(summary["jev_tokens_in"], 500)   # reported separately
+        self.assertEqual(summary["tokens_in"], 1000)  # chat only: the chart
+        self.assertEqual(summary["jev_tokens_in"], 500)  # reported separately
 
     def test_summary_matches_trajectory_totals(self) -> None:
         self._chat(0, "```python\nprint(1)\n```")
@@ -213,9 +222,7 @@ class ReplayRegressionTestCase(unittest.TestCase):
         trajectory_module.LENS_RUNS_ROOT_PATH = self._tmp.name
         self.traj = Trajectory("run-edge")
         self.addCleanup(self._tmp.cleanup)
-        self.addCleanup(
-            setattr, trajectory_module, "LENS_RUNS_ROOT_PATH", self._orig
-        )
+        self.addCleanup(setattr, trajectory_module, "LENS_RUNS_ROOT_PATH", self._orig)
 
     def _chat(self, step: int, text: str, *, actor: str = "root", tokens: int = 100) -> None:
         self.traj.log_event(
@@ -250,8 +257,8 @@ class ReplayRegressionTestCase(unittest.TestCase):
 
         turn = replay_turns(self.traj)[0]
         self.assertEqual(turn.completion, "root completion")
-        self.assertEqual(turn.tokens_in, 107)          # accumulated, not overwritten
-        self.assertEqual(turn.model, "openai/gpt-5")   # the root role wins
+        self.assertEqual(turn.tokens_in, 107)  # accumulated, not overwritten
+        self.assertEqual(turn.model, "openai/gpt-5")  # the root role wins
 
     def test_invalid_json_blob_is_reported_as_missing(self) -> None:
         bad_ref = self.traj.store_blob("{not json")

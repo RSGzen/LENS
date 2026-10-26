@@ -31,7 +31,9 @@ class RlmApiTestCase(unittest.TestCase):
         post.assert_called_once_with("/budget", {})
 
     def test_emit_and_note(self) -> None:
-        with patch.object(rlm_api, "_post", return_value={"ok": True, "result": {"ref": "sha256:x"}}) as post:
+        with patch.object(
+            rlm_api, "_post", return_value={"ok": True, "result": {"ref": "sha256:x"}}
+        ) as post:
             self.assertEqual(rlm_api.emit({"a": 1}, label="evidence")["ref"], "sha256:x")
             post.assert_called_once_with("/emit", {"value": {"a": 1}, "label": "evidence"})
         with patch.object(rlm_api, "_post", return_value={"ok": True, "result": None}) as post:
@@ -68,7 +70,9 @@ class RlmApiTransportTestCase(unittest.TestCase):
         return response
 
     def test_tool_posts_json_with_bearer(self) -> None:
-        with patch("httpx.request", return_value=self._response('{"ok": true, "result": 1}')) as req:
+        with patch(
+            "httpx.request", return_value=self._response('{"ok": true, "result": 1}')
+        ) as req:
             self.assertEqual(rlm_api.tool("echo", text="hi"), 1)
 
         args, kwargs = req.call_args
@@ -79,7 +83,9 @@ class RlmApiTransportTestCase(unittest.TestCase):
 
     def test_budget_is_a_get_without_a_body(self) -> None:
         # A GET carrying a body leaves those bytes in the keep-alive socket.
-        with patch("httpx.request", return_value=self._response('{"ok": true, "result": {}}')) as req:
+        with patch(
+            "httpx.request", return_value=self._response('{"ok": true, "result": {}}')
+        ) as req:
             self.assertEqual(rlm_api.budget(), {})
 
         args, kwargs = req.call_args
@@ -117,7 +123,7 @@ class RlmApiTransportTestCase(unittest.TestCase):
     def test_facade_never_imports_host_code(self) -> None:
         # The image ships this module alone; a host import is a ModuleNotFoundError
         # inside lens-repl, i.e. the façade never loads.
-        source = (rlm_api.__file__ or "")
+        source = rlm_api.__file__ or ""
         with open(source, encoding="utf-8") as handle:
             text = handle.read()
         self.assertNotIn("from lens.", text)

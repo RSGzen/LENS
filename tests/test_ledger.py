@@ -63,7 +63,7 @@ class TaskLedgerTestCase(unittest.TestCase):
         first = self.ledger.create("x")
         self.ledger.create("y")
         reloaded = TaskLedger(self.path)
-        self.assertEqual(reloaded.list(), [])   # nothing loaded yet
+        self.assertEqual(reloaded.list(), [])  # nothing loaded yet
         self.assertEqual(len(reloaded.load()), 2)
         self.assertEqual(len(reloaded.list()), 2)
         # The next id must not collide with an id that already exists.
