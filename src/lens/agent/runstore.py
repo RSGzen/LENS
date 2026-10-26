@@ -1,6 +1,4 @@
-"""Run store: manifest, resume cache, listing, and forking (M8.5 / P-01b).
-
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4n; ``MVP Build Roadmap.md`` M8.5.
+"""Run store: manifest, resume cache, listing, and forking.
 
 Why this module exists
 ----------------------
@@ -19,7 +17,7 @@ the two small files that make a run a **session**:
       work/             sandbox workspace (context files, emits/)
       answer.md         the answer
 
-Design (see §4n for the comparison that produced it)
+Design
 -----------------------------------------------------
 - **The log is authoritative.** Messages, budget counters, the next
   ``step_idx``, and the emit map are all derivable from ``trajectory.jsonl``
@@ -27,7 +25,7 @@ Design (see §4n for the comparison that produced it)
   duplicates the conversation — that is how Claude Code ends up copying history
   on every resume.
 - **``manifest.json`` is identity, not state.** It is written once and updated
-  on status changes; it is what ``--list`` and the M10 UI read.
+  on status changes; it is what ``--list`` and the UI read.
 - **``resume.json`` is a cache**, rebuildable from the log: the emit map
   (``variable -> blob ref``) plus workspace file hashes. If it is missing or
   corrupt, the run is still resumable (rebuilt), only slower.
@@ -112,7 +110,7 @@ class RunManifest:
     caps: dict[str, Any] = field(default_factory=dict)
     # From Trajectory.totals(): cost_usd / tokens_in / tokens_out / calls.
     totals: dict[str, Any] = field(default_factory=dict)
-    # Provenance for reproducibility (E-04): commit, image digest, python, recorded flag.
+    # Provenance for reproducibility : commit, image digest, python, recorded flag.
     created_by: dict[str, Any] = field(default_factory=dict)
     iterations: int = 0
     last_seq: int = 0

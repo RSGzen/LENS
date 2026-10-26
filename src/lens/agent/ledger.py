@@ -1,7 +1,5 @@
 """Deterministic task ledger (``tasks.json``).
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §5.
-
 The RLM updates the ledger through host tools (``ledger_*``), never by writing
 free-form text. The orchestrator reloads it after a crash; every write is
 atomic so a partial file cannot lose completed tasks.
@@ -42,7 +40,7 @@ UPDATABLE_FIELDS: frozenset[str] = frozenset(
 
 @dataclass
 class Task:
-    """One ledger row (schema fixed by Tech Stack §5)."""
+    """One ledger row."""
 
     task_id: str
     requirement: str
@@ -54,7 +52,7 @@ class Task:
     wall_clock_s: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the Tech Stack §5 JSON object for this task.
+        """Return the ledger row as the JSON object written to ``tasks.json``.
 
         ``evidence_refs`` is **copied**: this is a serialisation boundary, so a
         consumer (trajectory event, UI, test) must not be able to mutate the

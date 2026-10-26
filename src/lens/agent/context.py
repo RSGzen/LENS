@@ -1,13 +1,11 @@
 """Root-context assembly, observation formatting, and compaction.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a (context discipline) and §5.
-
 The root context is deliberately thin: a system prompt, a tool manifest (names,
 signatures, docstrings — not source), ``query.json``, the budget snapshot, and
 rolling working memory. Large tool results stay in sandbox variables or are
 offloaded with ``emit()``; only printed summaries become observations.
 
-File ownership: ``query.json`` is written by **M6**
+File ownership: ``query.json`` is written by ****
 (:func:`lens.agent.segmentation.write_query_json`) — one writer per file. This
 module writes the other sandbox context files (``AGENTS.md``, ``tools.md``,
 ``budget.md``, optional ``ontology.md``) and never rewrites the query.
@@ -23,7 +21,7 @@ from typing import Any, Mapping, Sequence
 from lens import config
 
 # The root system prompt. It is the first bytes of every request (so it must stay
-# byte-stable for prefix caching), and the tool manifest, the M6 buckets and the
+# byte-stable for prefix caching), and the tool manifest, the buckets and the
 # budget snapshot are injected through the placeholders below - never by string
 # formatting, so literal JSON braces in the payload stay safe.
 # Placeholders: <<TOOL_MANIFEST>>, <<QUERY_JSON>>, <<BUDGET>>
@@ -279,10 +277,9 @@ WRAP_UP_NUDGE_TEMPLATE = """\
 Budget at {pct:.0f}% ({which}). Stop exploring: emit FINAL_ANSWER now from the
 evidence you already hold, and list the claims you could not support."""
 
-
 # The caps that can stop the loop, in the order stop_reason() reports them.
 # exec_seconds is deliberately absent: it is a per-block limit enforced by the
-# runner, not a run budget (LOG-96).
+# runner, not a run budget.
 _WARNING_CAPS: tuple[str, ...] = ("iterations", "tokens", "cost_usd", "backtracks")
 
 
@@ -305,7 +302,7 @@ def budget_warning(
     ``{which}`` names that cap **with the absolute burn** (``tokens
     255,000/300,000``), because the percentage tells the model how urgent it is
     and the absolute numbers tell it what it can still afford. The token cap
-    counts **input + output** (LOG-96), so both are summed.
+    counts **input + output**, so both are summed.
 
     When several caps are over the threshold, the **most consumed** one is
     reported. Returns ``None`` when every cap is still below it — the orchestrator
@@ -411,8 +408,8 @@ def extract_python_block(text: str) -> str | None:
 def extract_final_answer(text: str) -> str | None:
     """Return the text after the last ``FINAL_ANSWER:`` that sits **outside** a fence.
 
-    Fenced blocks are removed before the search, for two reasons found in the M9
-    smoke (LOG-115):
+    Fenced blocks are removed before the search, for two reasons found in the
+    smoke :
 
     - A sentinel printed from Python (``print("FINAL_ANSWER: ...")``) belongs to the
       block, not to the conversation. It must not end a run.
@@ -487,7 +484,7 @@ def tool_bindings(parameters: Mapping[str, Sequence[str]]) -> str:
     ``shallow_match(buckets: dict[str, Any]) -> list[str]``, so the model writes
     ``shallow_match(buckets=...)``. The façade only exposed ``rlm_api.tool(...)``,
     so that call was a ``NameError`` on every turn — the model then reported
-    "retrieval unavailable" and never retrieved anything (M9 smoke, LOG-115).
+    "retrieval unavailable" and never retrieved anything.
 
     The block defines one module-level name per tool and maps positional
     arguments onto the tool's real parameter names, then delegates to
@@ -501,7 +498,7 @@ def tool_bindings(parameters: Mapping[str, Sequence[str]]) -> str:
         [
             # Imported under its real name: the docs and AGENTS.md tell the model to
             # call `rlm_api.emit()/sub_call()/budget()`, and an alias meant
-            # `NameError: name 'rlm_api' is not defined` (M9 smoke, LOG-115).
+            # `NameError: name 'rlm_api' is not defined`.
             "import rlm_api",
             "TOOL_PARAMETERS = {",
             rows,
@@ -541,7 +538,7 @@ def write_context_files(
     built from, so the RLM can re-read it from disk), ``budget.md``, and
     ``ontology.md`` only when ``ontology_summary`` is given (KG enabled).
 
-    **Not** ``query.json``: M6 owns that file
+    **Not** ``query.json``: owns that file
     (:func:`lens.agent.segmentation.write_query_json`) and writes it into the same
     workspace. Two writers for one file is how an artifact silently diverges from
     the context the model saw.

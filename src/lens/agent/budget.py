@@ -1,7 +1,5 @@
 """Central RLM budget: caps, counters, and a read-only snapshot.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a (budget) and §6 (R-05/M-06).
-
 The orchestrator owns the only mutable :class:`Budget`. The sandbox receives
 ``snapshot()`` through ``rlm_api.budget()`` and cannot change any counter.
 """
@@ -34,7 +32,7 @@ class Budget:
     answers whether another root turn is allowed. ``stop_reason`` names the cap
     that was hit (for the partial-answer report), or ``None``.
 
-    Two jobs, two sources (R4): this object **enforces** the caps, and
+    Two jobs, two sources: this object **enforces** the caps, and
     :meth:`lens.observability.trajectory.Trajectory.totals` is what a reported
     ``$/query`` is read from. They can differ — the caps only see what the
     orchestrator records, while the transport logs every call itself.
@@ -82,7 +80,7 @@ class Budget:
         self.exec_seconds += seconds
 
     def record_backtrack(self) -> None:
-        """Count one backtracking retry (F-01)."""
+        """Count one backtracking retry."""
         self.backtracks += 1
 
     # ------------------------------------------------------------- decisions

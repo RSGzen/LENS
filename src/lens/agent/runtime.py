@@ -1,8 +1,5 @@
 """The LENS orchestrator: host-owned RLM loop.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a (host drives, sandbox executes)
-and §5 (ledger + trajectory).
-
 One :class:`Runtime` instance owns one query. It starts the sandbox, seeds the
 workspace, calls the root model, sends generated code to the passive runner,
 services RPCs from that code, appends compact observations, checks the budget,
@@ -21,9 +18,9 @@ Invariants
 - Depth 1: ``sub_call`` is a plain GPT-5-mini call with no tools and no REPL.
 - Two cost sources: :class:`~lens.agent.budget.Budget` enforces the caps, and
   :meth:`lens.observability.trajectory.Trajectory.totals` is what the reported
-  ``$/query`` is read from (R4).
+  ``$/query`` is read from.
 
-Durability (P-01b, M8.5)
+Durability
 ------------------------
 The **log is the session**: every turn logs a root ``chat`` event (its
 ``prompt_ref`` holds the exact request body), an ``exec`` event (code + stdout
@@ -94,10 +91,11 @@ def _sha256_text(text: str) -> str:
 
 @dataclass
 class RunResult:
-    """Outcome of one query, also the handoff to M9/M10.
+    """Outcome of one query, also the handoff to /.
 
     ``cost_usd`` is the **trajectory** total (all chat + JEV calls, cached-token
-    pricing included), not the budget counter — that is the number R4 asks for.
+    pricing included), not the budget counter: the transport is the only place that
+sees every call.
     ``partial`` says the answer was cut by a cap or a backtrack limit, and
     ``stop_reason`` names which one.
     """
@@ -154,7 +152,7 @@ class Runtime:
             ledger if ledger is not None else TaskLedger(trajectory.run_dir / "tasks.json")
         )
         self.recorded = recorded
-        # M8.5: continue an existing run (``--resume``) vs start a new one.
+        # : continue an existing run (``--resume``) vs start a new one.
         self.resume = resume
         self.parent_run_id = parent_run_id
         # Recorded replay: serve a tool result from the log when
@@ -312,7 +310,7 @@ class Runtime:
         ``parent_run_id``, set ``status="running"``.
 
         The manifest is *identity*, never state: no messages, no counters. Those
-        are folded from the log (M8.5, §4n).
+        are folded from the log.
         """
         manifest: RunManifest | None = None
 
@@ -326,7 +324,7 @@ class Runtime:
                 parent_run_id=self.parent_run_id,
                 # The registry maps a role to a ModelSpec (a dataclass, so not
                 # JSON-serialisable): the manifest records the **ids** only.
-                # JEV is deliberately outside the registry (LOG-29).
+                # JEV is deliberately outside the registry.
                 models={role: spec.id for role, spec in config.MODEL_REGISTRY.items()}
                 | {"jev": config.JEV_MODEL_ID},
                 caps=self.budget.snapshot()["limits"],
@@ -346,7 +344,7 @@ class Runtime:
         return manifest
 
     def _provenance(self) -> dict[str, Any]:
-        """Return the reproducibility stamp for the manifest (E-04).
+        """Return the reproducibility stamp for the manifest.
 
         ``commit`` comes from ``LENS_COMMIT`` when the launcher knows it and is
         ``None`` otherwise — never ``0``: a provenance field that looks like a
@@ -356,7 +354,7 @@ class Runtime:
             "commit": os.environ.get("LENS_COMMIT") or None,
             "image": config.SANDBOX_IMAGE,
             # The tag alone is not reproducible (it is rebuilt in place); the digest
-            # is what E-04 wants. The launcher resolves it (`docker inspect`) and
+            # is what wants. The launcher resolves it (`docker inspect`) and
             # passes it in, so this stays a cheap env read with an honest ``None``.
             "image_digest": os.environ.get("LENS_SANDBOX_DIGEST") or None,
             "python": platform.python_version(),
@@ -502,7 +500,7 @@ class Runtime:
     def _register_runtime_tools(self) -> None:
         """Register the host-runtime operations the RLM is allowed to call.
 
-        LOG-31: these are **not** sandbox-local functions — they touch host
+        : these are **not** sandbox-local functions — they touch host
         state (budget, ledger) and are reached through the façade like any tool.
         Register them as small closures with a one-line docstring each (the
         docstring *is* the manifest entry the root reads; a ``functools.partial``
@@ -566,10 +564,10 @@ class Runtime:
                 self.registry.register(name, func)
 
     def _segment_query(self) -> dict[str, list[str]]:
-        """Segment the query with M6 and write ``<workspace>/query.json``.
+        """Segment the query with and write ``<workspace>/query.json``.
 
         Use :func:`lens.agent.segmentation.segment_query` then
-        :func:`lens.agent.segmentation.write_query_json` — M6 owns the file's
+        :func:`lens.agent.segmentation.write_query_json` — owns the file's
         format, and the workspace copy **is** the artifact (it sits under
         ``<run_dir>/work``). Do not write a second copy into ``run_dir``.
         """
@@ -586,7 +584,7 @@ class Runtime:
 
         Context files via :func:`lens.agent.context.write_context_files`
         (``AGENTS.md``, ``tools.md``, ``budget.md``, ``ontology.md`` when the KG is
-        on) — **not** ``query.json``, which M6 already wrote here.
+        on) — **not** ``query.json``, which already wrote here.
 
         Then run one block that defines at least ``query``, ``RUN_ID`` and
         ``WORKSPACE`` so later code does not re-read ``query.json`` on every turn.
@@ -695,7 +693,7 @@ class Runtime:
         truncate the printed observation with
         :func:`lens.agent.context.truncate_observation`, append it as a ``user``
         message, then log one ``budget`` event with ``self.budget.snapshot()``
-        (this is what M11 reads for the cap-binding rate) and check
+         and check
         :meth:`Budget.can_continue`.
 
         **Final gate** (the second half of the double gate): on ``FINAL_ANSWER``
@@ -724,7 +722,7 @@ class Runtime:
 
             code = extract_python_block(completion)
             # Fence-aware: the sentinel counts only outside a code block, so a
-            # turn may run one last block *and* answer (LOG-115).
+            # turn may run one last block *and* answer.
             final = extract_final_answer(completion)
 
             if code is not None:
@@ -755,12 +753,11 @@ class Runtime:
                         "answer": final,
                         # Real ids: the gate was previously handed a hard-coded
                         # empty list, so "is every claim supported by the cited
-                        # chunks" was asked about citations it never saw (LOG-115).
+                        # chunks" was asked about citations it never saw.
                         "citations": citations,
                         # And the *text* of those chunks: an id alone cannot be
                         # verified, so every gate call came back "unsupported" and a
-                        # correct answer was rejected until the iteration cap
-                        # (LOG-117).
+                        # correct answer was rejected until the iteration cap.
                         "evidence": self._citation_evidence(citations),
                     },
                 },
@@ -797,7 +794,7 @@ class Runtime:
         self._save_checkpoint()
 
     def _log_budget(self) -> None:
-        """Log one ``budget`` snapshot (the event M11 folds for the cap-binding rate)."""
+        """Log one ``budget`` snapshot."""
         self.trajectory.log_event(
             trace_ctx=TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"),
             call_type="note",
@@ -934,7 +931,7 @@ class Runtime:
 
         The final gate is asked whether the citations support the claims; without
         the text it can only guess, and it guessed "unsupported" on a correct answer
-        until the iteration cap (LOG-117). Host-side and read-only: no model call,
+        until the iteration cap. Host-side and read-only: no model call,
         no tool event — the root context stays untouched (this text never becomes an
         observation).
         """
@@ -969,7 +966,7 @@ class Runtime:
         container form** — a host path is unopenable inside the sandbox — and the
         blob is stored through the trajectory so the artifact is auditable.
 
-        **The label is the variable name** (M8.5): ``emit(x, label="chunks")`` is
+        **The label is the variable name** : ``emit(x, label="chunks")`` is
         how ``chunks`` survives a resume, because the restore block reads the blob
         back into a variable with that name. Also log one ``call_type="emit"``
         event with ``result_ref`` and ``extra={"var": label}`` — that event is how
@@ -1094,5 +1091,5 @@ def _bounded_artifact(result: Any) -> dict[str, Any]:
         summary["type"] = type(result).__name__
 
     # ``score`` stays None: no calibrated threshold exists yet, and a made-up score
-    # would make tier 1 decide on a number the thesis cannot defend (LOG-100).
+    # would make tier 1 decide on a number the cannot defend.
     return {"score": None, "summary": summary}
