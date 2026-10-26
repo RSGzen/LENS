@@ -1,7 +1,5 @@
 """Façade imported by the RLM's generated Python code.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a (façade API) and §4b.
-
 Only these methods exist at depth 1::
 
     tool(name, **kwargs) -> Any
@@ -10,7 +8,7 @@ Only these methods exist at depth 1::
     emit(value, label=None) -> dict
     note(text) -> None
 
-There is **no** ``self_call`` / recursion here (LOG-13, A-01). Every method is
+There is **no** ``self_call`` / recursion here. Every method is
 an RPC to the host; this module contains no tool logic and no credentials.
 
 Also importable in the namespace: ``networkx``, ``numpy``, ``pandas``, and
@@ -35,7 +33,7 @@ DEFAULT_TIMEOUT_S = 180.0
 #: GET-only (a POST is a 405), everything else takes a JSON body.
 #:
 #: Duplicated **on purpose**: the image ships this module on its own — there is no
-#: ``lens`` package in ``lens-repl`` (LOG-32), only ``runner.py``, ``rlm_api.py``
+#: ``lens`` package in ``lens-repl``, only ``runner.py``, ``rlm_api.py``
 #: and ``kg_query.py`` — so importing the host's route table is a
 #: ``ModuleNotFoundError`` inside the sandbox, i.e. the façade never loads.
 _METHODS: dict[str, str] = {"/budget": "GET"}
@@ -62,7 +60,7 @@ def _host_url() -> str:
     ``LENS_HOST_RPC_URL`` is set by the compose environment from the relay's
     address (``config.SANDBOX_RELAY_URL``). The fallback is that same relay
     address: ``host.docker.internal`` is unreachable from an ``internal: true``
-    bridge (LOG-114), so defaulting to it would turn a missing variable into a
+    bridge, so defaulting to it would turn a missing variable into a
     confusing "network unreachable" instead of a connection to the one peer the
     sandbox is allowed to have.
     """

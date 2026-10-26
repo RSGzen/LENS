@@ -2,7 +2,7 @@
 
 The host cannot reach the runner over TCP: ``sandbox-net`` is ``internal: true``
 and Docker installs no DNAT rule for an internal network, so the published port
-is silently dropped (LOG-107). ``docker compose exec`` runs *inside* the
+is silently dropped. ``docker compose exec`` runs *inside* the
 container instead, where ``127.0.0.1:8080`` is the runner.
 
 Usage (from ``SandboxSession``)::

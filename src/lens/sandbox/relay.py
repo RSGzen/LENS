@@ -1,13 +1,13 @@
-"""Single-destination TCP relay: the only way out of the no-egress sandbox (M9).
+"""Single-destination TCP relay: the only way out of the no-egress sandbox.
 
 Why this exists
 ---------------
 The sandbox network is ``internal: true`` - the sandbox must have **no route off
-its bridge** (Tech Stack §4b, LOG-32). But the RLM's code calls back to the host
+its bridge**. But the RLM's code calls back to the host
 RPC server on every ``tool()`` / ``sub_call()`` / ``emit()``, so *some* path from
 the container to the host is required.
 
-Measured on Docker Desktop / Windows (25 Oct 2026, LOG-114): there is no such path
+Measured on Docker Desktop / Windows : there is no such path
 from an internal network. ``extra_hosts: host.docker.internal:host-gateway`` maps
 to the WSL2 VM's own gateway (172.x.0.1) and is ``ENETUNREACH`` from the bridge;
 without that override the internal network has no DNS at all (``gaierror``); the

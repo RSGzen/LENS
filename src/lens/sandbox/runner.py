@@ -1,7 +1,5 @@
 """Passive, persistent Python executor for the RLM sandbox.
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4a.
-
 This process is **not** the agent. It never calls an LLM and never decides the
 next step. It keeps one Python namespace alive so variables survive across
 host-driven steps, and exposes only two HTTP endpoints::
