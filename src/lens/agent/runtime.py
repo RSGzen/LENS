@@ -93,11 +93,11 @@ def _sha256_text(text: str) -> str:
 class RunResult:
     """Outcome of one query, also the handoff to /.
 
-    ``cost_usd`` is the **trajectory** total (all chat + JEV calls, cached-token
-    pricing included), not the budget counter: the transport is the only place that
-sees every call.
-    ``partial`` says the answer was cut by a cap or a backtrack limit, and
-    ``stop_reason`` names which one.
+        ``cost_usd`` is the **trajectory** total (all chat + JEV calls, cached-token
+        pricing included), not the budget counter: the transport is the only place that
+    sees every call.
+        ``partial`` says the answer was cut by a cap or a backtrack limit, and
+        ``stop_reason`` names which one.
     """
 
     answer: str

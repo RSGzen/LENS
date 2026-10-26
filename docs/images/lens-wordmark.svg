@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1268" height="436" viewBox="0 0 634 218" role="img" aria-label="LENS">
+  <title>LENS</title>
+  <style>
+    .cell { fill: none; stroke: #1f2328; stroke-width: 2.8; }
+    .frame { fill: none; stroke: #d0d7de; stroke-width: 1.5; }
+    @media (prefers-color-scheme: dark) {
+      .cell { stroke: #e6edf3; }
+      .frame { stroke: #30363d; }
+    }
+  </style>
+  <rect x="4" y="4" width="626" height="210" rx="14" class="frame"/>
+    <rect x="19.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="19.5" y="45.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="19.5" y="71.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="19.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="19.5" y="123.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="19.5" y="149.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="19.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="45.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="71.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="97.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="123.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="175.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="201.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="227.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="253.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="279.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="175.5" y="45.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="175.5" y="71.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="175.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="201.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="227.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="253.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="175.5" y="123.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="175.5" y="149.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="175.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="201.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="227.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="253.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="279.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="331.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="435.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="331.5" y="45.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="357.5" y="45.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="435.5" y="45.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="331.5" y="71.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="383.5" y="71.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="435.5" y="71.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="331.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="383.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="435.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="331.5" y="123.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="409.5" y="123.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="435.5" y="123.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="331.5" y="149.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="435.5" y="149.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="331.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="435.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="513.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="539.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="565.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="591.5" y="19.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="487.5" y="45.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="487.5" y="71.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="513.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="539.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="565.5" y="97.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="591.5" y="123.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="487.5" y="149.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="591.5" y="149.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="513.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="539.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="565.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+    <rect x="591.5" y="175.5" width="23" height="23" rx="3" class="cell"/>
+</svg>

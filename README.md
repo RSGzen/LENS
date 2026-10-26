@@ -1,11 +1,4 @@
-```
-  _      ______ _   _  _____
- | |    |  ____| \ | |/ ____|
- | |    | |__  |  \| | (___
- | |    |  __| | . ` |\___ \
- | |____| |____| |\  |____) |
- |______|______|_| \_|_____/
-```
+![LENS](docs/images/lens-wordmark.svg)
 
 LENS is an agentic pipeline for systematic literature reviews over a
 GROBID-structured arXiv corpus. It takes a research question, retrieves evidence
@@ -173,10 +166,10 @@ from your own loader:
 from lens.dataset.manifest import build_manifest
 
 build_manifest(
-    metadata_path=...,   # the arXiv metadata dump
-    xml_dir=...,         # the GROBID TEI directory
-    manifest_path=...,   # where to write manifest.json
-    checkpoint_path=..., # resumable progress records
+    metadata_path=...,  # the arXiv metadata dump
+    xml_dir=...,  # the GROBID TEI directory
+    manifest_path=...,  # where to write manifest.json
+    checkpoint_path=...,  # resumable progress records
 )
 ```
 
