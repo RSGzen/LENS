@@ -1,17 +1,17 @@
-# LENS ontology (K-01) — query-time knowledge graph
+# LENS ontology — query-time knowledge graph
 
 > **Status:** LENS-defined, **SciERC-aligned** compact ontology. Registry source of
 > truth: `src/lens/kg_extract.py` (`ENTITY_TYPES`, `RELATION_SCHEMA`,
 > `ONTOLOGY_VERSION`). This file is the human-facing mirror and the sandbox context
-> file ("ontology.md", Tech Stack §4).
+> file.
 >
 > **Scope:** the KG is built **at query time**, deterministically, over the
-> **deep-matched chunks** of the reranked top-`n` papers (D-06/A-02). There is **no
+> **deep-matched chunks** of the reranked top-`n` papers. There is **no
 > corpus-scale KG**. Extraction is host-side (GLiNER/GLiREL); the graph is handed to
-> the RLM as a `networkx` variable (K-07), not injected as text.
+> the RLM as a `networkx` variable, not injected as text.
 >
 > **Version:** `lens-ontology-1`. Bump `KG_ONTOLOGY_VERSION` on any change here — it
-> is the re-extraction key and part of the KG cache key (K-06).
+> is the re-extraction key and part of the KG cache key.
 
 ## Why this set
 
@@ -48,12 +48,12 @@ scientific-IE reference) with two adaptations:
 | `addresses` | Method | Problem, Task | — |
 | `explores` | Method | Task, Dataset, Problem | — (Fig 4.2.2) |
 
-**Deltas from the original K-01 draft** (log as a decision): Algorithm/Model/
+**Deltas from the original draft** (log as a decision): Algorithm/Model/
 Framework → `Method`; `utilizes` → `uses`; `evaluates` + `evaluated_on` →
 `evaluated_on`; **dropped** `proposes` (a paper is provenance, not a graph node);
 **added** `Concept`, `measures`, `addresses`; kept `explores`.
 
-## Provenance (the M7 verify clause)
+## Provenance
 
 Every triple carries `chunk_uuid`, `arxiv_id`, and `section_type`, so any edge
 resolves back to the exact retrieved chunk — LENS citations trace
@@ -61,10 +61,10 @@ resolves back to the exact retrieved chunk — LENS citations trace
 
 ## Open validation
 
-- **K-05:** measured recall on a 20-paper cs.AI sample; fallback = few-shot LLM
+- **:** measured recall on a 20-paper cs.AI sample; fallback = few-shot LLM
   extraction (strict JSON schema) if recall is low.
-- **K-02 remainder:** fuzzy entity resolution / confidence merging is a deferred
-  sensitivity item; M7 does normalization + exact dedup only.
+- ** remainder:** fuzzy entity resolution / confidence merging is a deferred
+  sensitivity item; does normalization + exact dedup only.
 
 ## Benchmark ambiguity (17 Oct 2026)
 

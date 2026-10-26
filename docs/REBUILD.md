@@ -2,10 +2,10 @@
 
 Run this after changing `src/lens/sandbox/Dockerfile` or
 `src/lens/sandbox/requirements.txt`, or when the base image / host toolchain has
-moved (e.g. the Oct 2026 eMudhra CA incident, LOG-102).
+moved.
 
 **`lens-pgdata` is a named volume holding the loaded corpus and indexes.**
-`docker compose down -v` deletes it and the M3/M4 loads have to run again.
+`docker compose down -v` deletes it and the / loads have to run again.
 Never pass `-v` here.
 
 ## 1. Preconditions
@@ -41,7 +41,7 @@ warning is expected — the volume predates compose. Data is intact.
 
 ## 4. Verify the image
 
-The image has no shell and no `curl` (LOG-32), so probe it with `--entrypoint python`.
+The image has no shell and no `curl`, so probe it with `--entrypoint python`.
 
 ```powershell
 docker run --rm --entrypoint python lens-repl:0.1.0 -c "import sys, pip; print(sys.version.split()[0], pip.__version__)"
@@ -50,7 +50,7 @@ docker run --rm --entrypoint python lens-repl:0.1.0 -c "import sys, pip; print(s
 docker run --rm --entrypoint python lens-repl:0.1.0 -c "import httpx, numpy, pandas, networkx; print('deps ok')"
 ```
 
-## 5. Record provenance (before any M11 run)
+## 5. Record provenance
 
 ```powershell
 docker inspect --format "{{index .RepoDigests 0}}" lens-repl:0.1.0
@@ -68,15 +68,15 @@ manifest (`manifest.json`) so a recorded run can be traced to an exact image.
 .\.venv\Scripts\python.exe scripts\verify_sandbox.py
 ```
 
-Checks host-RPC reachability, that general egress is **blocked** (a thesis claim,
-Tech Stack §4b), namespace persistence, the workspace mount, and that no key or
-DB password is visible inside the container. Re-run after every rebuild.
+Checks host-RPC reachability, that general egress is **blocked**, namespace
+persistence, the workspace mount, and that no API key or DB password is
+visible inside the container. Re-run after every rebuild.
 
 ## Not done here (deliberate)
 
 - **Base image is not pinned by digest yet** — `FROM python:3.12-slim` still
-  floats. TODO(E-04) owns it: pin `python:3.12-slim@sha256:...` and record the
-  digest in the thesis log.
+  floats. TODO owns it: pin `python:3.12-slim@sha256:...` and record the
+  digest in the log.
 - **The image's `ca-certificates` is not refreshed.** The sandbox has no egress
   (`sandbox-net: internal: true`) and reaches the host over plain HTTP, so it
   makes no TLS call at runtime. Revisit if the sandbox is ever given outbound
