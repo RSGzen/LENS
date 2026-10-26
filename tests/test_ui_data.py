@@ -1,11 +1,11 @@
-r"""Contract tests for the M10 UI data layer (no Streamlit, no key, no DB, no Docker).
+r"""Contract tests for the UI data layer (no Streamlit, no key, no DB, no Docker).
 
 ``lens.ui.data`` is the only thing between the Streamlit page and the artifacts, so
 the two failures that matter are tested here rather than discovered in the demo:
 
 - **opening a bad id must create nothing on disk** (``Trajectory`` ``mkdir``s), and
-- **the cost cap comes from the manifest**, not from today's ``config`` — M9 runs
-  recorded ``0.5`` while the default is now ``1.00`` (LOG-120).
+- **the cost cap comes from the manifest**, not from today's ``config`` — runs
+  recorded ``0.5`` while the default is now ``1.00``.
 
 Run:  .\.venv\Scripts\python.exe -m unittest tests.test_ui_data -v
 """
