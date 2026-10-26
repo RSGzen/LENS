@@ -1,4 +1,4 @@
-r"""M7 K-05 probe — GLiNER-family extraction over a controlled sample.
+r"""probe — GLiNER-family extraction over a controlled sample.
 
 Wiring only: read-only connect (``lens_ro``), pick a sample, run ``build_kg`` with a
 fresh extraction (cache bypassed so timing is real), and print per-type/relation
@@ -9,7 +9,7 @@ Sample arms
 - ``head``   — the first ``--papers`` ``arxiv_id``s, all their chunks (legacy default).
 - ``random`` — ``--papers`` papers ordered by ``md5(arxiv_id || seed)`` (reproducible
   random), all their chunks.
-- ``query``  — run the M5 funnel for ``--query`` and take the KG **scope**:
+- ``query`` — run the funnel for ``--query`` and take the KG **scope**:
   ``c`` (reranked chunks, production answer-context), ``C`` (deep-match candidates),
   or ``papers`` (all chunks of the top-``n`` papers).
 
@@ -18,7 +18,7 @@ Extractor arms
 ``--ner-model`` / ``--rel-model`` / ``--min-score`` / ``--labels``
 (``abstract`` | ``descriptive`` | ``scierc`` — see ``kg_extract.ENTITY_LABEL_SETS``).
 
-Prereqs: ``lens-pg`` running with M3+M4 loaded.
+Prereqs: ``lens-pg`` running with + loaded.
 
 Run:
   .\.venv\Scripts\python.exe scripts\kg_probe.py --papers 20
@@ -101,7 +101,7 @@ def _random_chunk_ids(conn, papers: int, seed: int) -> list[str]:
 def _query_chunk_ids(
     conn, query: str, scope: str, retrieval_c: int, retrieval_c_top: int
 ) -> list[str]:
-    """Run the M5 funnel and return the chunk set for the requested KG scope."""
+    """Run the funnel and return the chunk set for the requested KG scope."""
     from lens.embeddings import Embedder
     from lens.reranking import Reranker
     from lens.tools.retrieval import (
@@ -142,7 +142,7 @@ def _sample_chunk_ids(conn, args: argparse.Namespace) -> list[str]:
 def main() -> None:
     setup_file_logging("lens.kg_probe", "kg_probe")
 
-    parser = argparse.ArgumentParser(description="M7 K-05 KG extraction probe")
+    parser = argparse.ArgumentParser
     parser.add_argument("--papers", type=int, default=DEFAULT_PAPERS)
     parser.add_argument("--sample", choices=("head", "random", "query"), default="head")
     parser.add_argument(
@@ -168,7 +168,7 @@ def main() -> None:
     parser.add_argument(
         "--no-postprocess",
         action="store_true",
-        help="disable the M7.1 post-process (pre/post comparison)",
+        help="disable the post-process (pre/post comparison)",
     )
     parser.add_argument(
         "--verify",

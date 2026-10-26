@@ -1,18 +1,18 @@
-r"""M4 runner — chunk + embed the full manifest into ``chunks``.
+r"""runner — chunk + embed the full manifest into ``chunks``.
 
-Wiring only: read the M1 manifest, build the nomic token counter + embedder, and
+Wiring only: read the manifest, build the nomic token counter + embedder, and
 call :func:`lens.dataset.chunks.load_chunks`. All stdout — including the
 per-batch timing lines printed by ``dataset/chunks.py`` — is mirrored to a
-timestamped log file under ``config.LENS_LOGS_ROOT_PATH`` for thesis evidence
-(Roadmap §4 M4, §8).
+timestamped log file under ``config.LENS_LOGS_ROOT_PATH`` for evidence
+.
 
 Prereqs:
   * ``lens-pg`` running with the schema applied (``python scripts/setup_db.py``);
-  * M3 complete (every manifest ``arxiv_id`` present in ``papers`` -> FK safety);
+  * complete (every manifest ``arxiv_id`` present in ``papers`` -> FK safety);
   * the ``chunks_chunk_embedding_hnsw`` index dropped for the load — this script
     drops it, then **you rebuild it afterwards** with
-    ``python scripts/build_indexes.py`` (Roadmap §10; per-row HNSW maintenance
-    would otherwise dominate insert time).
+    ``python scripts/build_indexes.py`` (per-row HNSW maintenance would
+    otherwise dominate insert time).
 
 Run:  .\\.venv\\Scripts\\python.exe scripts\\load_chunks.py
 """

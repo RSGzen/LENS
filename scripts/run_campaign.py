@@ -1,7 +1,4 @@
-"""Run a campaign: one ``python -m lens.run`` per (arm, query) (M9 scaffold).
-
-Spec: ``MVP Build Roadmap.md`` M9 item 3 ("experiment-runner scaffolding - arm
-config, scoring hooks"; the campaign itself is M11).
+"""Run a campaign: one ``python -m lens.run`` per (arm, query).
 
 Why subprocesses, not an in-process loop
 ---------------------------------------
@@ -20,8 +17,8 @@ Usage::
 validated before it costs money. Output: ``<DATA_ROOT>/campaigns/<name>-<ts>/``
 with ``campaign.json`` + ``campaign.csv``.
 
-The only "scoring hook" M9 has is citation resolvability (a run either backs its
-citations or it does not); the OOLONG/nDCG metrics attach at M11 against the same
+The only "scoring hook" has is citation resolvability (a run either backs its
+citations or it does not); the OOLONG/nDCG metrics attach at against the same
 CSV rather than through a plug-in registry with one plug-in.
 """
 
@@ -47,7 +44,7 @@ def image_digest() -> str | None:
     """Return the local sandbox image id, or ``None`` when Docker is unavailable.
 
     A tag is not reproducible (it is rebuilt in place); the manifest records both
-    (E-04). Best-effort: a campaign must run on a machine without Docker only if
+    . Best-effort: a campaign must run on a machine without Docker only if
     the runs themselves do not need it, so this never raises.
     """
     try:
@@ -72,7 +69,7 @@ def run_jobs(jobs: list[dict[str, Any]], *, digest: str | None, dry_run: bool) -
 
     A failing run does **not** abort the campaign: the row says ``exit_code`` and
     the next arm still runs. Partial evidence beats a campaign that stops at the
-    first bad query - which is exactly what M9 is looking for.
+    first bad query - which is exactly what is looking for.
     """
     rows: list[dict[str, Any]] = []
 
@@ -117,7 +114,7 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
         "tokens_in": totals.get("tokens_in") or 0,
         "tokens_out": totals.get("tokens_out") or 0,
         "cost_usd": round(cost, 6),
-        # R4: the 5.5 % credit-load fee is part of the reported $/query.
+        # The 5.5 % credit-load fee is part of the reported $/query.
         "cost_usd_with_fee": round(cost * 1.055, 6),
         "cited": counts.get("cited") or 0,
         "resolved": counts.get("resolved") or 0,

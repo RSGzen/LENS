@@ -1,14 +1,14 @@
-"""M3 runner — load the full manifest into ``papers``.
+"""runner — load the full manifest into ``papers``.
 
-Wiring only: read the M1 manifest, embed every abstract, upsert. All stdout —
+Wiring only: read the manifest, embed every abstract, upsert. All stdout —
 including the per-chunk timing lines printed by ``dataset/papers.py`` — is
 mirrored to a timestamped log file under ``config.LENS_LOGS_ROOT_PATH`` for
-thesis evidence.
+evidence.
 
 Prereqs: the ``lens-pg`` container is running with the schema applied
-(``python scripts/setup_db.py``); the M1 manifest exists under the manifests root.
+(``python scripts/setup_db.py``); the manifest exists under the manifests root.
 For the fastest bulk load, build the HNSW indexes **after** the load
-(``python scripts/build_indexes.py``) — see ``Tech Stack (Draft).md`` §3.
+(``python scripts/build_indexes.py``) — see.
 
 Run:  .\\.venv\\Scripts\\python.exe scripts\\load_papers.py
 """

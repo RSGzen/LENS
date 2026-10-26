@@ -1,4 +1,4 @@
-"""One-off: make every stored blob byte-exact with its filename (M9 S5, LOG-116).
+"""One-off: make every stored blob byte-exact with its filename.
 
 Why this is needed
 ------------------

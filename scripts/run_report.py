@@ -1,11 +1,4 @@
-"""Write a static, printable run report (M9 S8) - read-only, no key, no DB, no Docker.
-
-Spec: ``MVP Build Roadmap.md`` M9 item 4 ("screenshot/PDF of the flow") and M10b's
-turn timeline. There is no UI until M10, so the M9 artifact is the same content in
-Markdown: the turn-by-turn timeline (what ran, which tools, what the model saw),
-the meters, the answer and its resolved citations. Markdown prints to PDF from
-any editor, and this is exactly the shape M10b renders — so it doubles as the
-viewer's content check.
+"""Write a static, printable run report - read-only, no key, no DB, no Docker.
 
 Usage::
 
@@ -13,7 +6,7 @@ Usage::
     LENS_RUNS_ROOT=D:\\imported python scripts/run_report.py <run_id>
 
 Writes ``<run_dir>/report.md`` and prints the path. Never raises on a damaged
-bundle: a missing blob shows as such (the reader is tolerant by design, LOG-112).
+bundle: a missing blob shows as such.
 """
 
 from __future__ import annotations
@@ -116,7 +109,7 @@ def write_report(run_id: str) -> Path:
     lines = [
         f"# Run report — {run_id}",
         "",
-        "> Static rendering of the recorded trajectory (M9). The same content is what",
+        "> Static rendering of the recorded trajectory. The same content is what",
         "> the M10b viewer shows turn by turn; no model was called to produce it.",
         "",
         "| field | value |",
@@ -177,7 +170,7 @@ def write_report(run_id: str) -> Path:
     path = run_dir / "report.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    # The citation trace beside the answer (M9 item 2): `answer.md` stays the
+    # The citation trace beside the answer : `answer.md` stays the
     # model's own words, `sources.md` is the derived join against the recorded
     # payloads, and unresolved ids are listed rather than hidden.
     write_sources_md(citations, run_dir / "sources.md")
