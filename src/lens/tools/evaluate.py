@@ -1,12 +1,9 @@
-"""Per-stage confidence gate and the final groundedness check (Decision Layer §3.x.4b).
-
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4m/§6; ``Decision Layer (Draft).md``
-§3.x.3 (the stage → decision table), §3.x.4b (the three tiers).
+"""Per-stage confidence gate and the final groundedness check.
 
 Who runs it
 -----------
 **The orchestrator, automatically — not the RLM.** The draft calls the per-stage
-gate "a control rule, not a classifier": it drives the F-01 bounded backtracking,
+gate "a control rule, not a classifier": it drives the bounded backtracking,
 so its input and its cost have to be decided host-side. The RLM's only lever is
 ``backtrack(stage, reason)``; it cannot re-run a gate, because a model that decides
 whether it passed will pass itself — and that would confound the decision-layer
@@ -20,7 +17,7 @@ Two gates, same machinery (the "double" gate):
    the cited chunks? A reject hands the failing criterion back for one more turn
    (inside ``MAX_ITERATIONS``), so a fabricated answer is not silently accepted.
 
-Tiers (cheapest first, §3.x.4b)
+Tiers
 -------------------------------
 1. a calibrated confidence threshold on ``artifact["score"]`` — ~free;
 2. a JEV ``noul`` sufficiency check — one prefill pass, only in the ambiguous band;
@@ -59,7 +56,7 @@ from lens.observability.trajectory import TraceCtx
 
 Verdict = Literal["pass", "fail", "uncertain"]
 
-# Where the gate runs (M8). Map **stage-completing** tool -> stage. Do not add the
+# Where the gate runs. Map **stage-completing** tool -> stage. Do not add the
 # earlier tools of a stage: ``shallow_match`` returns a bare ``list[str]`` of ids
 # and ``rerank_papers`` only ids too, so there is nothing to evaluate — the first
 # version of this map gated ``shallow_match`` and asked JEV whether 100 ids were
@@ -83,7 +80,7 @@ class StageVerdict:
         """Return a JSON-serializable verdict for the trajectory.
 
         The shape is **stable** (all four keys, ``None`` where unknown) because the
-        M10b timeline and the M11 report both read it; a key that appears only for
+        M10b timeline and the report both read it; a key that appears only for
         some verdicts forces every reader to branch on the verdict first.
         """
         return {
@@ -147,7 +144,7 @@ def build_groundedness_question(
     "Is every claim in the answer supported by the cited chunks?" — ``citations``
     are the ``chunk_uuid`` values the answer relies on, and ``evidence`` carries a
     **bounded** excerpt of the cited chunk text (``chunk_uuid -> text``, or bare
-    excerpts). This is the guardrail row of §3.x.3 ("final guardrail /
+    excerpts). This is the guardrail row of.x.3 ("final guardrail /
     hallucination check"), so a ``false`` verdict means "do not accept this answer
     yet", not "the run failed".
 
@@ -233,7 +230,7 @@ def _read_answer(answer: Mapping[str, Any]) -> tuple[Verdict, float | None, str 
     # no ``answer`` key at all. Reading only ``answer``/``value``/``verdict`` made
     # **every** gate verdict ``uncertain``, and since only ``fail`` rejects, the
     # final groundedness gate silently accepted a template answer that cited
-    # nothing (M9 smoke, LOG-115). ``noul`` is a probability that the proposition
+    # nothing. ``noul`` is a probability that the proposition
     # holds (0.96 on a plainly true example in the JEV contract, 0.03 on that
     # template answer), so it maps at 0.5.
     if (
@@ -277,7 +274,7 @@ def _log_verdict(
 
     The JEV call itself is logged by the transport (``jev.decisions``); this event
     carries the **decision** — stage, verdict, confidence, tier — which is what the
-    M11 report counts.
+     report counts.
     """
     trajectory = getattr(client, "trajectory", None)
 

@@ -1,10 +1,6 @@
-r"""M5 — retrieval tools: the T1 funnel + T2 fetch-by-id.
+r"""— retrieval tools: the T1 funnel + T2 fetch-by-id.
 
-Spec: ``MVP Build Roadmap.md`` §4 (M5); ``Thesis Drafts/Tech Stack (Draft).md``
-§2 (stages 10-11), §3 (HNSW tuning), §4i (the retrieval / hydration / asset
-contract).
-
-Funnel — the graded path (R-01)::
+Funnel — the graded path ::
 
     shallow_match   global HNSW over papers.abstract_embedding   -> k arxiv_ids
     rerank_papers   bge-reranker-v2-m3 (Stage A) over abstracts  -> n papers
@@ -19,16 +15,16 @@ Design rules (do not deviate)
   ``C=100`` funnel and why ``k`` / ``C`` are the recall knobs. ``c`` is
   ``RETRIEVAL_C_TOP`` (100 by default), so Stage B reorders the candidates rather
   than truncating them.
-- **Hydration is host-side, at the deep stage only** (§4i): ``shallow_match``,
+- **Hydration is host-side, at the deep stage only** : ``shallow_match``,
   ``rerank_papers`` and ``deep_match`` return ids only; ``rerank_chunks`` returns
   the ``{chunks, papers, assets}`` payload the orchestrator ``emit()``s.
 - **The RLM never issues SQL here.** Every function runs on a host connection
   (``lens.db.connect``); in recorded runs the host uses the read-only ``lens_ro``
-  role. The sandbox holds no DB driver (LOG-32).
+  role. The sandbox holds no DB driver.
 
 Query input
 -----------
-The four funnel tools take ``buckets`` — the M6 segmentation output (a mapping of
+The four funnel tools take ``buckets`` — the segmentation output (a mapping of
 bucket name -> **list** of clause texts, e.g.
 ``{"objectives": ["improve Y", "test Y"], "problems": ["Y is costly"]}``), or a
 plain query string. :func:`format_query`
@@ -48,7 +44,7 @@ Assets
 ------
 Figures/tables (``assets``) are a follow-up module (``tools/assets.py``); until it
 lands, ``rerank_chunks`` returns an empty ``assets`` map and ``asset_refs: []`` so
-the §4i payload shape is already stable.
+the payload shape is already stable.
 
 ``tests/test_retrieval.py`` is the contract (no DB, no key, zero cost). The funnel
 tools are implemented; ``tools/assets.py`` remains the only deferred follow-up.
@@ -68,13 +64,13 @@ from lens.reranking import Reranker
 # Generic item type for :func:`top_by_score`.
 T = TypeVar("T")
 
-# Query input for the funnel: the M6 segmentation output (bucket name -> clause
+# Query input for the funnel: the segmentation output (bucket name -> clause
 # texts, e.g. ``{"objectives": ["...", "..."], "problems": [...]}``) or a
-# pre-formatted query string. M6 owns the dict build order; :func:`format_query`
+# pre-formatted query string. owns the dict build order; :func:`format_query`
 # joins in insertion order.
 QueryBuckets = Mapping[str, Sequence[str]] | str
 
-# SELECT column lists mirror the §3 table schemas. The order here is the order the
+# SELECT column lists mirror the table schemas. The order here is the order the
 # query must select them in, so :func:`row_to_dict` can zip row -> dict.
 PAPER_COLUMNS = (
     "arxiv_id",
@@ -107,16 +103,16 @@ def format_query(buckets: QueryBuckets) -> str:
 
     - ``str`` -> returned as-is (already formatted; e.g. a raw query).
     - ``Mapping`` -> every clause in every bucket, flattened and joined with a
-      single space, in the mapping's **insertion order** (M6 owns building the
+      single space, in the mapping's **insertion order** ( owns building the
       dict in a fixed order). Empty / whitespace-only values are skipped.
 
-    Flattening is shape-tolerant on purpose. The M6 shape is
+    Flattening is shape-tolerant on purpose. The shape is
     ``{"objectives": ["clause", ...], ...}``, but the RLM may hand over
     ``{"query": "one clause"}`` or a nested list. Iterating a *string* value as if
     it were a list of clauses splits it into **characters** — the embedded query
-    becomes ``"s o m e   c l a u s e"`` and the funnel returns unrelated papers
-    (found in the M9 smoke, LOG-115). So a string is one clause, a mapping or a
-    sequence is flattened recursively, and anything else is ignored.
+    becomes ``"s o m e   c l a u s e"`` and the funnel returns unrelated papers.
+    So a string is one clause, a mapping or a sequence is flattened recursively,
+    and anything else is ignored.
 
     Example: ``{"objective": ["improve Y"], "problem": ["why X"]}`` ->
     ``"improve Y why X"``.
@@ -157,7 +153,7 @@ def year_from_arxiv_id(arxiv_id: str) -> int | None:
 
     ``"2103.12345"`` -> ``2021``. Returns ``None`` when the first two characters
     are not a two-digit year (old-style ids like ``"acc-phys/9411001"``, or
-    malformed input). Mirrors the M1 manifest's id-prefix year rule (Tech Stack §4f).
+    malformed input). Mirrors the manifest's id-prefix year rule.
     """
 
     # Check if first two characters are all digits
@@ -194,7 +190,7 @@ def vector_literal(vec: np.ndarray) -> str:
 
 
 def hnsw_config_sql(ef_search: int, iterative_scan: bool = False) -> list[str]:
-    """The ``SET`` statements to run before an HNSW query (E-04).
+    """The ``SET`` statements to run before an HNSW query.
 
     Always sets ``hnsw.ef_search`` from ``ef_search``; when ``iterative_scan`` is
     true also sets ``hnsw.iterative_scan = relaxed_order``. Iterative scan is
@@ -429,14 +425,14 @@ def rerank_chunks(
       2. ``scores = reranker.score(format_query(buckets),
          [row["chunk_text"] or "" for row in rows], batch_size)``.
       3. Keep the top-``c`` via :func:`top_by_score`.
-      4. **Hydrate host-side (§4i):** build the chunk dicts
+      4. **Hydrate host-side :** build the chunk dicts
          ``{"chunk_uuid", "arxiv_id", "section_type", "section_order",
          "chunk_text", "token_count", "asset_refs": []}`` (``asset_refs`` is filled
          by the assets follow-up), and a ``papers`` map ``{arxiv_id: {"title",
          "authors", "year", "abstract"}}`` via :func:`fetch_papers` +
          :func:`year_from_arxiv_id`.
 
-    Returns ``{"chunks": [...], "papers": {...}, "assets": {}}`` — the §4i payload
+    Returns ``{"chunks": [...], "papers": {...}, "assets": {}}`` — the payload
     the orchestrator ``emit()``s. ``assets`` stays ``{}`` until ``tools/assets.py``
     lands.
     """
@@ -453,7 +449,7 @@ def rerank_chunks(
 
     top_rows = [row for row, _ in top_by_score(sorted_rows, scores, top_chunks)]
 
-    # §4i payload: chunk_text keeps the visible labels; asset_refs is filled by
+    # payload: chunk_text keeps the visible labels; asset_refs is filled by
     # the assets follow-up (tools/assets.py), so it stays [] for now.
     chunks = [
         {

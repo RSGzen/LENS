@@ -1,8 +1,4 @@
-r"""M7 — knowledge-graph tool: ``build_kg`` + graph assembly + RLM helpers.
-
-Spec: ``MVP Build Roadmap.md`` §4 (M7); ``Thesis Drafts/Tech Stack (Draft).md``
-§2 (stage 12), §4i. Decisions: D-06/A-02 (query-time, deterministic), K-01
-(ontology), K-02 (dedup), K-06 (cache + latency), K-07 (KG <-> RLM contract).
+r"""— knowledge-graph tool: ``build_kg`` + graph assembly + RLM helpers.
 
 Pipeline::
 
@@ -10,10 +6,10 @@ Pipeline::
               -> extractor.extract(text)            (lens.kg_extract, host-side)
               -> filter_ontology -> dedup_triples   (deterministic)
               -> build_graph -> graph_to_nodelink    (networkx)
-              -> cache by (chunk set + ontology ver + extractor id)  (K-06)
+              -> cache by (chunk set + ontology ver + extractor id)
     -> {"kg_id", "graph": <node-link>, "summary", "stats"}
 
-The RLM contract (K-07)
+The RLM contract
 -----------------------
 The full graph travels as **node-link JSON** and is loaded in the sandbox into a
 ``networkx`` namespace variable (``networkx`` is baked into the ``lens-repl``
@@ -23,7 +19,7 @@ in root context, and it is what tells the RLM what is in the graph. Traversal
 helpers (:func:`kg_neighbors`, :func:`kg_triples`, :func:`kg_subgraph`) run
 sandbox-side on that variable.
 
-Traceability (the M7 verify clause)
+Traceability
 -----------------------------------
 Every triple carries its source chunk (``chunk_uuid``, ``arxiv_id``,
 ``section_type``), so any edge in the graph resolves back to the exact chunk it
@@ -71,7 +67,7 @@ from lens.tools.retrieval import fetch_chunks
 # module with no project imports) so the same code ships into the sandbox image.
 # Everything is re-exported here: host callers and tests keep one import path.
 # ``__all__`` is what makes the re-export explicit - without it a linter sees four
-# unused imports and "fixes" the public surface away (LOG-120).
+# unused imports and "fixes" the public surface away.
 __all__ = [
     # re-exported from lens.kg_query
     "Triple",
@@ -96,7 +92,7 @@ __all__ = [
 
 # ------------------------------------------------------------------ ontology
 def load_ontology() -> dict[str, Any]:
-    """Return the active ontology as registry data (K-01).
+    """Return the active ontology as registry data.
 
     Shape::
 
@@ -105,7 +101,7 @@ def load_ontology() -> dict[str, Any]:
          "relations": {<name>: {"head": [...], "tail": [...]}, ...}}
 
     This is the in-memory mirror of ``docs/ontology.md``; the harness will also
-    copy that file into the sandbox workspace as a context file (Tech Stack §4).
+    copy that file into the sandbox workspace as a context file.
     """
     ontology_dict = {
         "version": ONTOLOGY_VERSION,
@@ -119,7 +115,6 @@ def load_ontology() -> dict[str, Any]:
 # ------------------------------------------------------------------ text normalisation
 # ``normalize_entity`` is re-exported from ``lens.kg_query`` (imported above); the
 # sandbox needs it to fold entity names the same way the host does.
-
 
 # Conservative surface-synonym backstop. GLiREL returns the canonical relation
 # names we pass it, so this only matters for a joint model or a renamed label.
@@ -158,12 +153,12 @@ def normalize_relation(label: str) -> str:
 
 # ------------------------------------------------------------------ dedup / filter
 def dedup_triples(triples: Sequence[Triple]) -> list[Triple]:
-    """Exact dedup (K-02, first half) — case-/whitespace-insensitive, order-stable.
+    """Exact dedup — case-/whitespace-insensitive, order-stable.
 
     Key = ``(fold(head), relation, fold(tail))`` where ``fold`` is
     ``normalize_entity`` + casefold. The **first** occurrence is kept (its display
     casing and score survive). No fuzzy/entity-resolution merging here — that is a
-    deferred sensitivity item (K-02 remainder), not part of M7.
+    deferred sensitivity item, not part of.
     """
     normalized_triples = []
     key_check = []
@@ -185,7 +180,7 @@ def dedup_triples(triples: Sequence[Triple]) -> list[Triple]:
 
 
 def filter_ontology(triples: Sequence[Triple]) -> list[Triple]:
-    """Drop off-ontology triples (the M7 "entities/relations in ontology" check).
+    """Drop off-ontology triples.
 
     Keep a triple only when:
       * ``relation`` is a key of :data:`RELATION_SCHEMA`,
@@ -355,7 +350,7 @@ def kg_index_summary(graph: nx.MultiDiGraph) -> dict[str, Any]:
 # at the top of this module. Host and sandbox therefore run the same code.
 
 
-# ------------------------------------------------------------------ cache (K-06)
+# ------------------------------------------------------------------ cache
 def cache_key(
     chunk_ids: Sequence[str],
     ontology_version: str,
@@ -363,7 +358,7 @@ def cache_key(
     extractor_fingerprint: str = "",
     postprocess_fingerprint: str = "",
 ) -> str:
-    """Deterministic cache key for a subgraph (K-06).
+    """Deterministic cache key for a subgraph.
 
     The key covers **everything that changes the extracted graph**: the **chunk
     set** (the KG scope — ``c`` vs ``C`` vs all chunks of the top-``n`` papers, which
@@ -406,9 +401,9 @@ def build_kg(
     verifier: Any | None = None,
     role_filter: bool = config.KG_ROLE_FILTER,
 ) -> dict[str, Any]:
-    """Build the query-time KG over ``chunk_ids`` (M7 entry point).
+    """Build the query-time KG over ``chunk_ids``.
 
-    **Scope (LOG-63).** The caller should pass the **deep-match candidate** chunk
+    **Scope.** The caller should pass the **deep-match candidate** chunk
     set (``deep_match``'s ``C``, default 100), not the reranked answer-context set
     (``rerank_chunks``' top-``c``, default 5). ``c`` is too sparse for a useful
     graph; ``C`` is already retrieved and bounded. The cache key covers the chunk
@@ -417,15 +412,15 @@ def build_kg(
     Steps:
       1. Empty ``chunk_ids`` -> an empty graph + zeroed stats (no DB read).
       2. ``rows = fetch_chunks(conn, chunk_ids)`` (T2); re-order to the input order.
-      3. Cache lookup (K-06): ``key = cache_key(<chunk_ids>, ontology_version)``;
+      3. Cache lookup : ``key = cache_key(<chunk_ids>, ontology_version)``;
          on a hit, load the **full cached payload** (graph + summary + stats), set
          ``stats["cached"] = True`` and return it.
       4. For each chunk, ``extractor.extract(row["chunk_text"])`` and attach
          provenance (``chunk_uuid``, ``arxiv_id``, ``section_type``) to every triple;
          normalize head/tail via :func:`normalize_entity` and the relation via
          :func:`normalize_relation`.
-      5. Optional **quality layer** (M7.3): heuristic coref + span filter, then
-         the M7.1 post-process (gazetteer + suffix/relation typing + **benchmark/
+      5. Optional **quality layer** : heuristic coref + span filter, then
+         the post-process (gazetteer + suffix/relation typing + **benchmark/
          task role filter** + directionality), then the budgeted JEV **direction
          verifier**; then ``filter_ontology`` -> ``dedup_triples`` ->
          ``build_graph``.

@@ -1,7 +1,5 @@
 """Gated T3 read-only SQL escape hatch (dev / exploration only).
 
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §4/§4i (tiering).
-
 T3 exists so a developer can inspect the corpus ad hoc. It is **not** part of the
 graded path: it is disabled by default and forced off when ``recorded=True`` so a
 recorded run cannot bypass the ``k -> n -> C -> c`` funnel.
@@ -43,7 +41,7 @@ def sql_is_allowed(
 
     Recorded wins over the opt-in: a recorded run is an experiment, and an
     experiment that can bypass the ``k -> n -> C -> c`` funnel is not the
-    experiment the thesis describes.
+    experiment the describes.
     """
     return bool(allow_sql) and not recorded
 
