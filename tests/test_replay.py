@@ -181,7 +181,7 @@ class ReplayTestCase(unittest.TestCase):
     def test_summary_cost_includes_gate_calls_but_tokens_stay_chat_only(self) -> None:
         # The M10b cost meter compares total spend against the cap, while the
         # context-growth chart must show chat tokens only. One number for both was
-        # short by the whole decision layer (M9 S5, LOG-116).
+        # short by the whole decision layer.
         self._chat(0, "```python\nprint(1)\n```", tokens_in=1000, cost=0.01)
         self.traj.log_event(
             trace_ctx=TraceCtx("run-replay", 0, "tool"),
@@ -214,7 +214,7 @@ class ReplayTestCase(unittest.TestCase):
 
 
 class ReplayRegressionTestCase(unittest.TestCase):
-    """Edge cases the nine contracts cannot see (LOG-112)."""
+    """Edge cases the nine contracts cannot see."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

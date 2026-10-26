@@ -1,4 +1,4 @@
-r"""Contract tests for the M5 cross-encoder wrapper (no network, no model, zero cost).
+r"""Contract tests for the cross-encoder wrapper (no network, no model, zero cost).
 
 A ``FakeCrossEncoder`` stands in for ``sentence-transformers.CrossEncoder``, so
 these tests never load torch or the model. The cross-encoder wrapper is

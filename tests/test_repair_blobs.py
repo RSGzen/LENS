@@ -1,4 +1,4 @@
-r"""Tests for the one-off blob repair (M9 S5, LOG-116) - no key, no DB, no Docker.
+r"""Tests for the one-off blob repair - no key, no DB, no Docker.
 
 Run:  .\.venv\Scripts\python.exe -m unittest tests.test_repair_blobs -v
 """

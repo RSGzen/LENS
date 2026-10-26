@@ -115,7 +115,7 @@ class MainWiringTestCase(unittest.TestCase):
         run_id = self.build_call.call_args.args[1]
         self.assertTrue(run_id.startswith("run-"), run_id)
 
-    # ------------------------------------------------- M8.5: read-only paths
+    # ------------------------------------------------- : read-only paths
     def test_list_never_builds_a_runtime(self) -> None:
         # --list must stay a directory scan: no key, no DB, no container.
         with (

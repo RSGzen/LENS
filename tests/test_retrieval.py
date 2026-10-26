@@ -1,4 +1,4 @@
-r"""Contract tests for M5 retrieval tools (no DB, no key, zero cost).
+r"""Contract tests for retrieval tools (no DB, no key, zero cost).
 
 Pure helpers are tested directly; the funnel functions are exercised with a
 ``FakeConn`` + ``FakeEmbedder`` + ``FakeReranker`` (and ``fetch_papers`` /
@@ -98,7 +98,7 @@ class FormatQueryTest(unittest.TestCase):
         self.assertEqual(format_query(buckets), "p n")
 
     def test_string_value_is_one_clause_not_characters(self) -> None:
-        # The M9 smoke bug: the RLM handed over {"query": "..."} and iterating the
+        # The smoke bug: the RLM handed over {"query": "..."} and iterating the
         # string embedded "s o m e   q u e r y", so the funnel returned unrelated
         # papers. A string value is one clause.
         self.assertEqual(
