@@ -1,13 +1,9 @@
-"""M2 — psycopg connection helper for the local LENS pgvector database.
+"""— psycopg connection helper for the local LENS pgvector database.
 
-Spec: ``MVP Build Roadmap.md`` §4 (M2); ``Thesis Drafts/Tech Stack (Draft).md``
-§3 (store layer). Connection settings live in :mod:`lens.config` (env-overridable);
-nothing here reads or logs the API key — this is the database, not OpenRouter.
-
-Two roles exist (M2 verify clause):
+Two roles exist :
   - **admin/owner** — the ``LENS_DB_USER`` connection; runs the migration.
   - **read-only ``lens_ro``** — used by the host tool layer on the RLM's behalf;
-    SELECT only. The sandbox itself holds no DB credentials (LOG-32).
+    SELECT only. The sandbox itself holds no DB credentials.
 """
 
 from __future__ import annotations

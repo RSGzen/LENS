@@ -1,7 +1,4 @@
-"""M2 — idempotent pgvector schema migration for the LENS database.
-
-Spec: ``Thesis Drafts/Tech Stack (Draft).md`` §3 (the authoritative ``papers`` /
-``chunks`` figure schemas + HNSW indexes); ``MVP Build Roadmap.md`` §4 (M2).
+"""— idempotent pgvector schema migration for the LENS database.
 
 Bring the DB up first (Docker Desktop must be running)::
 
@@ -24,14 +21,14 @@ works and the flags can stay ``-p 5432:5432``.
 
 This is a **one-time** container creation. Afterwards ``docker start lens-pg``
 (or the ``--restart`` flag + Docker Desktop) is enough — do not re-run it, the
-name would collide. A ``docker-compose.yaml`` covering the DB **and** the M8
-sandbox is deferred to M8 (that is where a second service appears); one
+name would collide. A ``docker-compose.yaml`` covering the DB **and** the
+sandbox is deferred to (that is where a second service appears); one
 container does not need it.
 
 Then ``python scripts/setup_db.py`` (which calls :func:`apply_schema`).
 
 The migration is **safe to run repeatedly** (``IF NOT EXISTS`` / a ``pg_roles``
-guard) because M3/M4 and every fresh session may re-run it.
+guard) because / and every fresh session may re-run it.
 ``tests/DESTRUCTIVE_db_tests/test_schema.py`` is the contract (it drops the
 schema; run it only against a throwaway ``lens_test``, needs the container).
 """
@@ -51,7 +48,7 @@ def apply_schema(conn: psycopg.Connection) -> None:
 
     1. ``CREATE EXTENSION IF NOT EXISTS vector;`` (pgvector; the
        ``pgvector/pgvector:pg16`` image ships it).
-    2. ``CREATE TABLE IF NOT EXISTS papers`` with the columns (Tech Stack §3):
+    2. ``CREATE TABLE IF NOT EXISTS papers`` with the columns :
        ``arxiv_id TEXT PRIMARY KEY`` · ``title TEXT`` · ``authors TEXT`` ·
        ``categories TEXT[]`` · ``arxiv_doi TEXT`` · ``journal_ref TEXT`` ·
        ``current_ver TEXT`` · ``update_date DATE`` · ``abstract TEXT`` ·
@@ -80,7 +77,7 @@ def apply_schema(conn: psycopg.Connection) -> None:
     6. ``GRANT SELECT ON papers, chunks TO <role>`` — read access **only**. The
        grant is idempotent and runs on every call, so a pre-existing role keeps
        access even if the tables were dropped and recreated. No
-       INSERT/UPDATE/DELETE is granted — that denial is the M2 verify clause;
+       INSERT/UPDATE/DELETE is granted — that denial is the verify clause;
        ``CONNECT``/``USAGE`` already come from PUBLIC defaults.
 
     Do not commit here; the caller controls the transaction (``autocommit`` or an
@@ -211,7 +208,7 @@ def drop_schema(conn: psycopg.Connection) -> None:
 def tables_exist(conn: psycopg.Connection) -> dict[str, bool]:
     """Return ``{"papers": bool, "chunks": bool}`` for the current database.
 
-    One lookup against ``information_schema.tables``; the M2 existence check used
+    One lookup against ``information_schema.tables``; the existence check used
     by tests and ``scripts/setup_db.py``.
     """
     with conn.cursor() as cur:
