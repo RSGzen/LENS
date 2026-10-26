@@ -70,7 +70,7 @@ class ExecutorGuardTestCase(unittest.TestCase):
     def test_timeout_is_structured(self) -> None:
         import signal
 
-        if not hasattr(signal, "SIGALRM"):     # Windows host: no alarm
+        if not hasattr(signal, "SIGALRM"):  # Windows host: no alarm
             self.skipTest("SIGALRM is Linux-only")
 
         from lens.sandbox import runner as runner_module
@@ -104,8 +104,8 @@ class ExecHandlerTransportTestCase(unittest.TestCase):
     def _call(
         self, method: str, path: str, body: dict | None = None, raw: bytes | None = None
     ) -> tuple[int, dict]:
-        data = raw if raw is not None else (
-            None if body is None else json.dumps(body).encode("utf-8")
+        data = (
+            raw if raw is not None else (None if body is None else json.dumps(body).encode("utf-8"))
         )
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.port}{path}", data=data, method=method
@@ -132,7 +132,9 @@ class ExecHandlerTransportTestCase(unittest.TestCase):
 
     def test_namespace_persists_across_requests(self) -> None:
         self._call("POST", "/exec", {"code": "y = 5"})
-        self.assertEqual(self._call("POST", "/exec", {"code": "print(y * 2)"})[1]["stdout"].strip(), "10")
+        self.assertEqual(
+            self._call("POST", "/exec", {"code": "print(y * 2)"})[1]["stdout"].strip(), "10"
+        )
 
     def test_exec_error_envelope(self) -> None:
         status, body = self._call("POST", "/exec", {"code": "raise ValueError('bad')"})
@@ -158,7 +160,7 @@ class ExecHandlerTransportTestCase(unittest.TestCase):
 
         wire = b"".join(chunks)
         self.assertIn(b"404", wire.split(b"\r\n", 1)[0])
-        self.assertNotIn(b"200 OK", wire)          # exactly one response
+        self.assertNotIn(b"200 OK", wire)  # exactly one response
 
 
 if __name__ == "__main__":

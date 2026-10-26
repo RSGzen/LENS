@@ -118,9 +118,11 @@ class MainWiringTestCase(unittest.TestCase):
     # ------------------------------------------------- M8.5: read-only paths
     def test_list_never_builds_a_runtime(self) -> None:
         # --list must stay a directory scan: no key, no DB, no container.
-        with patch.object(run_module, "build_runtime") as build, patch(
-            "lens.agent.runstore.list_runs", return_value=[]
-        ) as listing, patch("lens.agent.runstore.sweep_interrupted", return_value=[]):
+        with (
+            patch.object(run_module, "build_runtime") as build,
+            patch("lens.agent.runstore.list_runs", return_value=[]) as listing,
+            patch("lens.agent.runstore.sweep_interrupted", return_value=[]),
+        ):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 code = run_module.main(["--list"])
@@ -132,8 +134,9 @@ class MainWiringTestCase(unittest.TestCase):
         from lens.agent.runstore import RunManifest
 
         manifest = RunManifest.new("run-x", "a stored query")
-        with patch.object(run_module, "build_runtime") as build, patch(
-            "lens.agent.runstore.read_manifest", return_value=manifest
+        with (
+            patch.object(run_module, "build_runtime") as build,
+            patch("lens.agent.runstore.read_manifest", return_value=manifest),
         ):
             with redirect_stdout(io.StringIO()):
                 code = run_module.main(["--show", "run-x"])
@@ -154,11 +157,12 @@ class MainWiringTestCase(unittest.TestCase):
         build.assert_not_called()
 
     def test_export_and_import_never_build_a_runtime(self) -> None:
-        with patch.object(run_module, "build_runtime") as build, patch(
-            "lens.agent.runstore.export_run", return_value=Path("out/run-x.lens")
-        ) as export, patch("lens.agent.runstore.verify_bundle", return_value={"ok": True, "errors": []}), patch(
-            "lens.agent.runstore.import_run"
-        ) as importer:
+        with (
+            patch.object(run_module, "build_runtime") as build,
+            patch("lens.agent.runstore.export_run", return_value=Path("out/run-x.lens")) as export,
+            patch("lens.agent.runstore.verify_bundle", return_value={"ok": True, "errors": []}),
+            patch("lens.agent.runstore.import_run") as importer,
+        ):
             from lens.agent.runstore import RunManifest
 
             importer.return_value = RunManifest.new("run-x", "q")
@@ -170,10 +174,14 @@ class MainWiringTestCase(unittest.TestCase):
         importer.assert_called_once()
 
     def test_import_reports_a_bad_bundle(self) -> None:
-        with patch.object(run_module, "build_runtime") as build, patch(
-            "lens.agent.runstore.verify_bundle",
-            return_value={"ok": False, "errors": ["hash mismatch"], "run_id": "run-x"},
-        ), patch("lens.agent.runstore.import_run") as importer:
+        with (
+            patch.object(run_module, "build_runtime") as build,
+            patch(
+                "lens.agent.runstore.verify_bundle",
+                return_value={"ok": False, "errors": ["hash mismatch"], "run_id": "run-x"},
+            ),
+            patch("lens.agent.runstore.import_run") as importer,
+        ):
             with redirect_stdout(io.StringIO()):
                 code = run_module.main(["--import", "bad.lens"])
         self.assertEqual(code, 2)
@@ -185,22 +193,28 @@ class MainWiringTestCase(unittest.TestCase):
 
         stored = RunManifest.new("run-x", "the stored question")
         runtime = FakeRuntime()
-        with patch.object(run_module, "build_runtime", return_value=(runtime, FakeServer(), FakeSandbox())) as build, patch(
-            "lens.agent.runstore.read_manifest", return_value=stored
+        with (
+            patch.object(
+                run_module, "build_runtime", return_value=(runtime, FakeServer(), FakeSandbox())
+            ) as build,
+            patch("lens.agent.runstore.read_manifest", return_value=stored),
         ):
             with redirect_stdout(io.StringIO()):
                 code = run_module.main(["--resume", "run-x"])
         self.assertEqual(code, 0)
         args, kwargs = build.call_args
         self.assertEqual(args[0], "the stored question")  # query
-        self.assertEqual(args[1], "run-x")                # run_id
+        self.assertEqual(args[1], "run-x")  # run_id
         self.assertIs(kwargs["resume"], True)
 
     def test_fork_creates_the_child_then_runs_under_the_parent(self) -> None:
         runtime = FakeRuntime()
-        with patch.object(
-            run_module, "build_runtime", return_value=(runtime, FakeServer(), FakeSandbox())
-        ) as build, patch("lens.agent.runstore.fork_run") as fork:
+        with (
+            patch.object(
+                run_module, "build_runtime", return_value=(runtime, FakeServer(), FakeSandbox())
+            ) as build,
+            patch("lens.agent.runstore.fork_run") as fork,
+        ):
             with redirect_stdout(io.StringIO()):
                 code = run_module.main(
                     ["--fork", "run-src", "--run-id", "run-new", "same question"]
@@ -215,8 +229,9 @@ class MainWiringTestCase(unittest.TestCase):
         self.assertIs(self.build_call.call_args.kwargs["replay"], False)
 
     def test_resume_of_a_missing_run_exits_2(self) -> None:
-        with patch.object(run_module, "build_runtime") as build, patch(
-            "lens.agent.runstore.read_manifest", return_value=None
+        with (
+            patch.object(run_module, "build_runtime") as build,
+            patch("lens.agent.runstore.read_manifest", return_value=None),
         ):
             with redirect_stdout(io.StringIO()):
                 code = run_module.main(["--resume", "missing"])

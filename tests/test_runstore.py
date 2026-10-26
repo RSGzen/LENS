@@ -193,11 +193,13 @@ class RunStoreTestCase(unittest.TestCase):
             "unreferenced", encoding="utf-8"
         )
         events = [
-            {"step_idx": 0, "call_type": "chat",
-             "completion_ref": "sha256:" + digest_a},
-            {"step_idx": 0, "call_type": "tool",
-             "args_ref": "sha256:" + digest_b,
-             "result_ref": "sha256:" + digest_a},
+            {"step_idx": 0, "call_type": "chat", "completion_ref": "sha256:" + digest_a},
+            {
+                "step_idx": 0,
+                "call_type": "tool",
+                "args_ref": "sha256:" + digest_b,
+                "result_ref": "sha256:" + digest_a,
+            },
         ]
         (run_dir / "trajectory.jsonl").write_text(
             "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8"

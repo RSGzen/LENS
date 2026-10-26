@@ -214,9 +214,11 @@ class ExecClientTestCase(unittest.TestCase):
             captured["method"] = request.get_method()
             return Response()
 
-        with patch("urllib.request.urlopen", fake_urlopen), patch(
-            "sys.stdin", io.StringIO("print(1 + 1)")
-        ), patch("sys.stdout", new_callable=io.StringIO) as out:
+        with (
+            patch("urllib.request.urlopen", fake_urlopen),
+            patch("sys.stdin", io.StringIO("print(1 + 1)")),
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
             self.assertEqual(exec_client.main(["exec_client.py", "exec"]), 0)
 
         self.assertEqual(captured["method"], "POST")
@@ -230,9 +232,11 @@ class ExecClientTestCase(unittest.TestCase):
 
         from lens.sandbox import exec_client
 
-        with patch("urllib.request.urlopen", side_effect=OSError("refused")), patch(
-            "sys.stdin", io.StringIO("print(1)")
-        ), patch("sys.stdout", new_callable=io.StringIO) as out:
+        with (
+            patch("urllib.request.urlopen", side_effect=OSError("refused")),
+            patch("sys.stdin", io.StringIO("print(1)")),
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
             self.assertEqual(exec_client.main(["exec_client.py", "exec"]), 0)
 
         body = json.loads(out.getvalue())

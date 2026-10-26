@@ -87,8 +87,9 @@ class BuildMessagesTest(unittest.TestCase):
 
 class ParseSegmentationJsonTest(unittest.TestCase):
     def test_bare_json(self) -> None:
-        self.assertEqual(parse_segmentation_json(good_json())["objectives"],
-                         ["improve long-context aggregation"])
+        self.assertEqual(
+            parse_segmentation_json(good_json())["objectives"], ["improve long-context aggregation"]
+        )
 
     def test_fenced_json(self) -> None:
         fenced = "```json\n" + good_json() + "\n```"
@@ -106,8 +107,9 @@ class NormalizeBucketsTest(unittest.TestCase):
         self.assertEqual(out, {name: [] for name in BUCKET_ORDER})
 
     def test_scalar_becomes_single_item_list(self) -> None:
-        self.assertEqual(normalize_buckets({"objectives": "improve Y"})["objectives"],
-                         ["improve Y"])
+        self.assertEqual(
+            normalize_buckets({"objectives": "improve Y"})["objectives"], ["improve Y"]
+        )
 
     def test_strips_and_drops_empty_clauses(self) -> None:
         out = normalize_buckets({"problems": ["  p1 ", "", "   ", "p2"]})

@@ -274,16 +274,26 @@ class RuntimeTestCase(unittest.TestCase):
         # A previous process logged one turn and died before the next chat.
         ctx = TraceCtx(trace_id="run-test", step_idx=0, actor="root")
         prompt_ref = self.trajectory.store_blob(
-            json.dumps({"messages": [{"role": "system", "content": "sys"},
-                                     {"role": "user", "content": "earlier question"}]})
+            json.dumps(
+                {
+                    "messages": [
+                        {"role": "system", "content": "sys"},
+                        {"role": "user", "content": "earlier question"},
+                    ]
+                }
+            )
         )
         self.trajectory.log_event(
-            trace_ctx=ctx, call_type="chat", action="chat.completion",
+            trace_ctx=ctx,
+            call_type="chat",
+            action="chat.completion",
             prompt_ref=prompt_ref,
             completion_ref=self.trajectory.store_blob("```python\nprint('earlier')\n```"),
         )
         self.trajectory.log_event(
-            trace_ctx=ctx, call_type="exec", action="exec.block",
+            trace_ctx=ctx,
+            call_type="exec",
+            action="exec.block",
             code_ref=self.trajectory.store_blob("print('earlier')"),
             stdout_ref=self.trajectory.store_blob("earlier\n"),
         )
@@ -310,20 +320,28 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertIn("earlier question", joined)
         self.assertIn("earlier", joined)
         # History is appended to, never rewritten.
-        actions = [json.loads(line).get("action") for line in
-                   self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines() if line]
+        actions = [
+            json.loads(line).get("action")
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
         self.assertIn("run.resume", actions)
         # Budget snapshots are bookkeeping and may follow the last chat; what must
         # not change is that the resume note comes first and new turns follow it.
-        self.assertTrue(all(a not in {"run.resume"} for a in actions[actions.index("run.resume") + 1:]))
-        self.assertIn("chat.completion", actions[actions.index("run.resume"):])
+        self.assertTrue(
+            all(a not in {"run.resume"} for a in actions[actions.index("run.resume") + 1 :])
+        )
+        self.assertIn("chat.completion", actions[actions.index("run.resume") :])
 
     def test_replay_serves_the_recorded_tool_result(self) -> None:
         ref = self.trajectory.store_blob(json.dumps({"echo": "hi"}))
         self.trajectory.log_event(
             trace_ctx=TraceCtx(trace_id="run-test", step_idx=0, actor="tool"),
-            call_type="tool", action="tool.dispatch", tool="echo",
-            args_hash=args_hash({"text": "hi"}), result_ref=ref,
+            call_type="tool",
+            action="tool.dispatch",
+            tool="echo",
+            args_hash=args_hash({"text": "hi"}),
+            result_ref=ref,
         )
         response = self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
         self.assertTrue(response["ok"])
@@ -384,7 +402,7 @@ class RuntimeRegressionTestCase(unittest.TestCase):
         # ModelSpec is a dataclass and would break json.dump; ids only.
         self.assertEqual(manifest.models["root"], "openai/gpt-5")
         self.assertEqual(manifest.models["jev"], "typesafe/jev-1.13")
-        self.assertIsNone(manifest.created_by["commit"])   # unknown, never 0
+        self.assertIsNone(manifest.created_by["commit"])  # unknown, never 0
         self.assertTrue(manifest.caps)
 
     def test_bad_rpc_payload_is_a_structured_error(self) -> None:
@@ -394,9 +412,17 @@ class RuntimeRegressionTestCase(unittest.TestCase):
 
     def test_replay_off_calls_the_tool(self) -> None:
         runtime = Runtime(
-            "q", "run-reg", client=self.client, trajectory=self.trajectory,
-            conn=None, embedder=None, reranker=None, extractor=None,
-            sandbox=self.sandbox, registry=self.registry, budget=Budget(),
+            "q",
+            "run-reg",
+            client=self.client,
+            trajectory=self.trajectory,
+            conn=None,
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=self.sandbox,
+            registry=self.registry,
+            budget=Budget(),
             replay=False,
         )
         response = runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
