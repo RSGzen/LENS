@@ -1,4 +1,4 @@
-r"""Contract tests for M7 KG (no DB, no key, zero cost).
+r"""Contract tests for KG (no DB, no key, zero cost).
 
 The pure graph helpers are tested directly; ``build_kg`` is exercised with a
 ``FakeExtractor`` and ``fetch_chunks`` patched (the DB row shape is not the point).

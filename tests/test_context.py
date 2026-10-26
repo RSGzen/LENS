@@ -13,9 +13,9 @@ from lens.agent import context
 
 
 class ToolBindingTestCase(unittest.TestCase):
-    """The tools must be callable as the manifest prints them (LOG-115).
+    """The tools must be callable as the manifest prints them.
 
-    The M9 smoke failed with ``NameError: shallow_match is not defined`` on every
+    The smoke failed with ``NameError: shallow_match is not defined`` on every
     turn: the prompt shows ``shallow_match(buckets: ...)`` but only
     ``rlm_api.tool()`` existed, so the model reported "retrieval unavailable" and
     never retrieved anything.
@@ -78,10 +78,10 @@ class ToolBindingTestCase(unittest.TestCase):
         self.assertIn("rlm_api.tool(", prompt)
 
     def test_prompt_states_payload_shapes_and_variable_search(self) -> None:
-        # The S6 smoke: gpt-5 lost turns to `TypeError: string indices must be
+        # The smoke: gpt-5 lost turns to `TypeError: string indices must be
         # integers` (guessing return shapes) and then concluded "no chunk contains
         # OOLONG" while 88 retrieved chunks did — it had searched its printed digest
-        # instead of the namespace variable (LOG-117).
+        # instead of the namespace variable.
         prompt = context.build_system_prompt("1. shallow_match(buckets)", {}, {})
 
         self.assertIn("Payload shapes", prompt)
@@ -112,7 +112,7 @@ class ContextTestCase(unittest.TestCase):
 
     def test_answer_after_the_fence_counts(self) -> None:
         # The opposite failure: code + a real answer used to be discarded, so the
-        # run looped to the iteration cap with an empty answer.md (LOG-115).
+        # run looped to the iteration cap with an empty answer.md.
         text = "```python\nprint('ran')\n```\nFINAL_ANSWER: The answer is [1]."
         self.assertEqual(context.extract_final_answer(text), "The answer is [1].")
 
@@ -167,7 +167,7 @@ class ContextTestCase(unittest.TestCase):
             self.assertTrue(paths["tools.md"].is_file())
             self.assertTrue(paths["budget.md"].is_file())
             self.assertTrue(paths["AGENTS.md"].is_file())
-            # query.json is M6's file (write_query_json), not this module's:
+            # query.json is 's file (write_query_json), not this module's:
             # one writer per file or the artifact drifts from the context.
             self.assertNotIn("query.json", paths)
 
@@ -218,7 +218,7 @@ class ContextTestCase(unittest.TestCase):
         self.assertIn("cost", warning)
 
     def test_budget_warning_counts_input_plus_output_tokens(self) -> None:
-        # The cap is total work (LOG-96): 50 + 35 = 85 % of 100.
+        # The cap is total work : 50 + 35 = 85 % of 100.
         snapshot = {"limits": {"tokens": 100}, "used": {"tokens_in": 50, "tokens_out": 35}}
         self.assertIn("85%", context.budget_warning(snapshot) or "")
 

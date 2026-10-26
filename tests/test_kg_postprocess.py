@@ -1,4 +1,4 @@
-r"""Contract tests for the M7.1 KG post-process (no DB, no key, zero cost).
+r"""Contract tests for the KG post-process (no DB, no key, zero cost).
 
 Pure functions only. Run:
   .\.venv\Scripts\python.exe -m unittest discover -s tests -v

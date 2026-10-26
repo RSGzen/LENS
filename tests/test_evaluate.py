@@ -43,7 +43,7 @@ class EvaluateTestCase(unittest.TestCase):
 
     def test_groundedness_question_carries_bounded_evidence(self) -> None:
         # An id alone cannot be verified: without the chunk text the gate rejected
-        # a correct, cited answer on every call until the iteration cap (LOG-117).
+        # a correct, cited answer on every call until the iteration cap.
         question = build_groundedness_question(
             "The sky is blue [chunk-a].", ["chunk-a"], {"chunk-a": "x" * 5000}
         )
@@ -56,12 +56,12 @@ class EvaluateTestCase(unittest.TestCase):
 
     def test_gated_stages_map_only_stage_completing_tools(self) -> None:
         # shallow_match / rerank_papers return ids only: gating them asked JEV
-        # whether a list of arxiv_ids was "sufficient" (G1).
+        # whether a list of arxiv_ids was "sufficient".
         self.assertEqual(set(GATED_STAGES), {"rerank_chunks", "build_kg"})
         self.assertEqual(set(GATED_STAGES.values()), {"retrieval", "kg"})
 
     def test_gate_disabled_returns_none_without_a_client(self) -> None:
-        # The M11 ablation arm: no verdict, no JEV call, no `gate` key.
+        # The ablation arm: no verdict, no JEV call, no `gate` key.
         with patch.object(config, "GATE_ENABLED", False):
             verdict = evaluate_stage(
                 "retrieval",
@@ -148,7 +148,7 @@ class EvaluateTierTestCase(unittest.TestCase):
         # The real JEV shape for a noul question is {"type": "noul", "noul": 0.03}
         # — no `answer` key. Reading only `answer`/`value`/`verdict` made every
         # verdict `uncertain`, and only `fail` rejects, so the final gate accepted
-        # a template answer that cited nothing (LOG-115).
+        # a template answer that cited nothing.
         low = evaluate_stage(
             "final",
             {"score": None, "summary": {"answer": "see above", "citations": []}},

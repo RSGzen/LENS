@@ -1,4 +1,4 @@
-r"""Contract tests for M7.3 / Phase 1.5 (span filter, coref, direction verifier)."""
+r"""Contract tests for / Phase 1.5 (span filter, coref, direction verifier)."""
 
 from __future__ import annotations
 

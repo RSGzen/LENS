@@ -1,4 +1,4 @@
-r"""Contract tests for the K-04/K-05 gold-sample helpers (no DB, no key)."""
+r"""Contract tests for the / gold-sample helpers (no DB, no key)."""
 
 from __future__ import annotations
 
