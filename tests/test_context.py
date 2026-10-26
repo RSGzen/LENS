@@ -53,8 +53,10 @@ class ToolBindingTestCase(unittest.TestCase):
 
         self.assertEqual(
             calls,
-            [("shallow_match", {"buckets": {"q": 1}, "k": 50}),
-             ("shallow_match", {"buckets": {"q": 2}})],
+            [
+                ("shallow_match", {"buckets": {"q": 1}, "k": 50}),
+                ("shallow_match", {"buckets": {"q": 2}}),
+            ],
         )
 
     def test_too_many_positionals_is_a_clear_type_error(self) -> None:
@@ -179,7 +181,7 @@ class ContextTestCase(unittest.TestCase):
             )
             self.assertTrue(target.is_dir())
             agents = paths["AGENTS.md"].read_text(encoding="utf-8")
-            self.assertIn("FINAL_ANSWER:", agents)   # not an empty placeholder file
+            self.assertIn("FINAL_ANSWER:", agents)  # not an empty placeholder file
 
     def test_truncate_observation_leaves_short_text_alone(self) -> None:
         # Prefixing "Truncated:" to text that fits is a lie the model would read.

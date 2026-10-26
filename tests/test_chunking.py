@@ -96,13 +96,15 @@ class ExtractSectionsTest(unittest.TestCase):
         self.assertNotIn("ref", joined)
 
     def test_strips_citation_markers_keeps_reference_labels(self) -> None:
-        tei = """<?xml version="1.0" encoding="UTF-8"?>
-<TEI xmlns="http://www.tei-c.org/ns/1.0"><text><body>
-  <div><head n="1">Introduction</head>
-    <p>The foundation is here<ref type="bibr" target="#b13">[14]</ref>. Equation <ref type="formula" target="#formula_7">6</ref> holds.</p>
-  </div>
-</body></text></TEI>
-"""
+        tei = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<TEI xmlns="http://www.tei-c.org/ns/1.0"><text><body>\n'
+            '  <div><head n="1">Introduction</head>\n'
+            "    <p>The foundation is here"
+            '<ref type="bibr" target="#b13">[14]</ref>. Equation '
+            '<ref type="formula" target="#formula_7">6</ref> holds.</p>\n'
+            "  </div>\n</body></text></TEI>\n"
+        )
         path = Path(self._dir.name) / "refs.tei.xml"
         path.write_text(tei, encoding="utf-8")
 
@@ -116,7 +118,9 @@ class ExtractSectionsTest(unittest.TestCase):
 class SegmentSectionTest(unittest.TestCase):
     def test_under_threshold_is_single_chunk(self) -> None:
         section = Section("Background Study", ("one two three", "four five"))
-        self.assertEqual(segment_section(section, WORDS, threshold=10), ["one two three\n\nfour five"])
+        self.assertEqual(
+            segment_section(section, WORDS, threshold=10), ["one two three\n\nfour five"]
+        )
 
     def test_packs_whole_paragraphs(self) -> None:
         section = Section("Methodology", ("aa bb", "cc dd", "ee ff"))

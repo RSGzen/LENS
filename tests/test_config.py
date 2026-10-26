@@ -85,7 +85,9 @@ class RequirePathTestCase(unittest.TestCase):
 
     def test_missing_directory_exits_with_the_path(self) -> None:
         with self.assertRaises(SystemExit) as ctx:
-            config.require_path("LENS_GROBID_XML_DIR", str(Path(tempfile.gettempdir()) / "nope-xyz"))
+            config.require_path(
+                "LENS_GROBID_XML_DIR", str(Path(tempfile.gettempdir()) / "nope-xyz")
+            )
         self.assertIn("nope-xyz", str(ctx.exception))
 
     def test_valid_path_returns_a_path(self) -> None:

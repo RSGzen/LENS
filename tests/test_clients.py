@@ -51,9 +51,7 @@ def chat_payload(model: str = "openai/gpt-5-20260101", provider: str = "OpenAI")
         "id": "gen-1",
         "model": model,
         "provider": provider,
-        "choices": [
-            {"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}
-        ],
+        "choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 12, "completion_tokens": 3, "cost": 0.00042},
     }
 
@@ -89,12 +87,16 @@ class LensClientTestCase(unittest.TestCase):
         return (self.traj.blobs_dir / ref.split(":", 1)[1]).read_text(encoding="utf-8")
 
     def _client(self, session: FakeSession, **kwargs) -> LensClient:
-        return LensClient(self.traj, api_key="test-key", session=session, sleeper=lambda _s: None, **kwargs)
+        return LensClient(
+            self.traj, api_key="test-key", session=session, sleeper=lambda _s: None, **kwargs
+        )
 
     # ------------------------------------------------------------------ chat
     def test_chat_returns_result_fields(self) -> None:
         session = FakeSession([FakeResponse(200, chat_payload())])
-        result = self._client(session).chat("root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx)
+        result = self._client(session).chat(
+            "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
+        )
         self.assertEqual(result.text, "hi")
         self.assertEqual(result.model, "openai/gpt-5")
         self.assertEqual(result.model_snapshot, "openai/gpt-5-20260101")
@@ -179,8 +181,12 @@ class LensClientTestCase(unittest.TestCase):
         self.assertEqual(body["seed"], 42)
 
     def test_chat_retries_then_succeeds(self) -> None:
-        session = FakeSession([FakeResponse(429, {"error": "rate"}), FakeResponse(200, chat_payload())])
-        result = self._client(session).chat("root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx)
+        session = FakeSession(
+            [FakeResponse(429, {"error": "rate"}), FakeResponse(200, chat_payload())]
+        )
+        result = self._client(session).chat(
+            "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
+        )
         self.assertEqual(result.text, "hi")
         self.assertEqual(len(session.calls), 2)
         self.assertTrue(any("error" in e for e in self._events()))
@@ -202,7 +208,9 @@ class LensClientTestCase(unittest.TestCase):
     # ------------------------------------------------------------------- jev
     def test_jev_returns_result_and_logs(self) -> None:
         session = FakeSession([FakeResponse(200, jev_payload())])
-        questions = {"bucket": Question(type="choice", instructions="Which?", criteria={"a": "A", "b": "B"})}
+        questions = {
+            "bucket": Question(type="choice", instructions="Which?", criteria={"a": "A", "b": "B"})
+        }
         result = self._client(session).jev("some clause", questions, trace_ctx=self.ctx)
         self.assertEqual(result.answers["bucket"]["choice"], "objective")
         self.assertEqual(result.model, "typesafe/jev-1.13-20260917")
@@ -214,7 +222,9 @@ class LensClientTestCase(unittest.TestCase):
 
     def test_jev_request_body_shape(self) -> None:
         session = FakeSession([FakeResponse(200, jev_payload())])
-        questions = {"bucket": Question(type="choice", instructions="Which?", criteria={"a": "A", "b": "B"})}
+        questions = {
+            "bucket": Question(type="choice", instructions="Which?", criteria={"a": "A", "b": "B"})
+        }
         self._client(session).jev("some clause", questions, trace_ctx=self.ctx)
         body = json.loads(session.calls[0]["data"])
         self.assertEqual(body["model"], "typesafe/jev-1.13")

@@ -99,7 +99,7 @@ class BudgetTestCase(unittest.TestCase):
         # The 120 s cap is per block (the runner enforces it), so cumulative
         # sandbox time must not end a run early with budget left.
         for _ in range(8):
-            self.budget.record_exec(25.0)   # 200 s total, well past 120 s
+            self.budget.record_exec(25.0)  # 200 s total, well past 120 s
         self.assertTrue(self.budget.can_continue())
         self.assertIsNone(self.budget.stop_reason())
         assert self.budget.snapshot()["used"]["exec_seconds"] == 200.0
@@ -111,9 +111,7 @@ class BudgetTestCase(unittest.TestCase):
         self.budget.record_iteration()
         self.budget.record_chat(make_result(tokens_in=500, tokens_out=500, cost=5.0))
         snap = self.budget.snapshot()
-        self.assertEqual(
-            set(snap["left"]), {"iterations", "tokens", "cost_usd", "backtracks"}
-        )
+        self.assertEqual(set(snap["left"]), {"iterations", "tokens", "cost_usd", "backtracks"})
         self.assertNotIn("exec_block_s", snap["left"])
         for value in snap["left"].values():
             self.assertGreaterEqual(value, 0)

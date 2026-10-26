@@ -21,9 +21,7 @@ class ArmFingerprintTestCase(unittest.TestCase):
 
         # It is written into manifest.json, so it must serialise unchanged.
         self.assertEqual(json.loads(json.dumps(arm)), arm)
-        self.assertEqual(
-            set(arm), {"retrieval", "kg", "gate", "mode", "models"}
-        )
+        self.assertEqual(set(arm), {"retrieval", "kg", "gate", "mode", "models"})
         self.assertEqual(arm["retrieval"]["k"], config.RETRIEVAL_K)
         self.assertEqual(arm["retrieval"]["c"], config.RETRIEVAL_C_TOP)
         self.assertEqual(arm["mode"]["recorded"], True)
@@ -58,9 +56,7 @@ class ModelOverrideTestCase(unittest.TestCase):
     def test_override_other_vendor_drops_pins(self) -> None:
         # A pin is a vendor slug: keeping ("openai",) on a qwen id would pin the
         # wrong vendor and fail at the transport with a confusing empty response.
-        overridden = config._model_override(
-            config.MODEL_REGISTRY["root"], "qwen/qwen3-coder"
-        )
+        overridden = config._model_override(config.MODEL_REGISTRY["root"], "qwen/qwen3-coder")
 
         self.assertEqual(overridden.id, "qwen/qwen3-coder")
         self.assertEqual(overridden.provider_only, ())
