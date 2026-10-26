@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 165" width="900" height="330" role="img" aria-label="LENS">
+  <rect width="100%" height="100%" rx="8" fill="#191919" />
+  <g font-family="&#39;JetBrains Mono&#39;, &#39;Fira Code&#39;, &#39;SF Mono&#39;, &#39;Cascadia Code&#39;, &#39;Consolas&#39;, &#39;Courier New&#39;, monospace" font-size="20" fill="#d97757" style="white-space: pre;" transform="translate(20, 34)">
+    <text x="0" y="0" xml:space="preserve">██╗     ███████╗███╗   ██╗███████╗</text>
+    <text x="0" y="23" xml:space="preserve">██║     ██╔════╝████╗  ██║██╔════╝</text>
+    <text x="0" y="46" xml:space="preserve">██║     █████╗  ██╔██╗ ██║███████╗</text>
+    <text x="0" y="69" xml:space="preserve">██║     ██╔══╝  ██║╚██╗██║╚════██║</text>
+    <text x="0" y="92" xml:space="preserve">███████╗███████╗██║ ╚████║███████║</text>
+    <text x="0" y="115" xml:space="preserve">╚══════╝╚══════╝╚═╝  ╚═══╝╚══════╝</text>
+  </g>
+</svg>

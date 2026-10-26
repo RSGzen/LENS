@@ -1,4 +1,4 @@
-![LENS](docs/images/lens-wordmark.svg)
+![LENS](docs/images/banner.svg)
 
 LENS is an agentic pipeline for systematic literature reviews over a
 GROBID-structured arXiv corpus. It takes a research question, retrieves evidence
