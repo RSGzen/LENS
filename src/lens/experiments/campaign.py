@@ -12,7 +12,6 @@ Contract tests: ``tests/test_campaign.py``.
 from __future__ import annotations
 
 import json
-
 from pathlib import Path
 from typing import Any
 
@@ -78,16 +77,12 @@ def build_jobs(campaign: dict[str, Any]) -> list[dict[str, Any]]:
                 suffix = f".r{repeat + 1}" if repeats > 1 else ""
                 jobs.append(
                     {
-                        "run_id": (
-                            f"{campaign['name']}.{arm['name']}.{query['id']}{suffix}"
-                        ),
+                        "run_id": (f"{campaign['name']}.{arm['name']}.{query['id']}{suffix}"),
                         "arm": arm["name"],
                         "query_id": query["id"],
                         "query": query["text"],
                         "expect": query.get("expect"),
-                        "env": {
-                            str(k): str(v) for k, v in (arm.get("env") or {}).items()
-                        },
+                        "env": {str(k): str(v) for k, v in (arm.get("env") or {}).items()},
                     }
                 )
 

@@ -63,9 +63,7 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
             "allow_sql": config.ALLOW_SQL,
             "resume": config.RESUME,
         },
-        "models": {
-            role: spec.id for role, spec in config.MODEL_REGISTRY.items()
-        }
+        "models": {role: spec.id for role, spec in config.MODEL_REGISTRY.items()}
         | {"jev": config.JEV_MODEL_ID},
     }
 
