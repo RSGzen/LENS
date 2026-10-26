@@ -1,140 +1,363 @@
-# LENS
+```
+  _      ______ _   _  _____
+ | |    |  ____| \ | |/ ____|
+ | |    | |__  |  \| | (___
+ | |    |  __| | . ` |\___ \
+ | |____| |____| |\  |____) |
+ |______|______|_| \_|_____/
+```
 
-Literature Evidence & Narrative Synthesis — an agentic systematic-literature-review
-harness over a GROBID-structured arXiv cs.AI corpus.
-
-> **Status (26 Oct 2026):** – built ( = harness E2E, 5-query smoke, Tier-1
-> anchor, portable bundles). ** UI filled** : `ui/data.py` and
-> `ui/app.py` are implemented and tested offline (`ui_app` self-skips without the
-> extra). Review rounds 1–2 applied : local display names, reasoning
-> first then collapsed code then the full message, and the pages are **Recorded
-> Runs** / **Live Query**. Suite: **487 tests — 486 pass, 1 skip**.
-
-> ** invariants that are easy to break:** the sandbox workspace is
-> `<run_dir>/work` (the run artifacts — `trajectory.jsonl`, `tasks.json`,
-> `manifest.json`, `resume.json`, `answer.md` — live one level up and are *never*
-> mounted); the caps are **derived and ordered** (8 iterations · 40k context ·
-> 300k tokens · **$1.00**, raised from $0.50 on 26 Oct 2026 —, and
-> recordings still carry $0.50 in their manifest, with an 80 % wrap-up nudge); a
-> reported `$/query` comes from `Trajectory.totals()`, not from `Budget`;
-> `emit()` returns a **container** path; the KG traversal helpers ship into the
-> image as `kg_query`.
->
-> ** invariants:** **the log is the session** — root messages, budget
-> counters and the emit map are folded from `trajectory.jsonl`
-> (`Trajectory.rebuild`), never duplicated; `manifest.json` is identity/index,
-> `resume.json` is a cache; resume **rebuilds** (fresh container, variables from
-> emit blobs only) and appends `run.resume`; a fork starts a **fresh** log;
-> `--list` / `--show` build no runtime.
->
-> **+ invariants:** the demo is **mode A — scrubbed playback** of a recorded
-> run (no GPU/DB/key), never presented as a live run; `replay_turns()` groups by
-> `step_idx` and distinguishes the **observation the model saw** from the full
-> stdout; blobs live in one global deduplicated store, so a portable run is a
-> `<run_id>.lens` **bundle** (`--export`/`--import`, only referenced blobs,
-> hash-verified). `args_ref` must exist in the log **before** a run is recorded
-> for the demo.
-
-## Layout
+LENS is an agentic pipeline for systematic literature reviews over a
+GROBID-structured arXiv corpus. It takes a research question, retrieves evidence
+in two stages, optionally builds a knowledge graph over the retrieved chunks, and
+runs a recursive language model loop inside a Docker sandbox that writes and
+executes Python against that evidence. The output is a synthesised answer in
+which every claim carries a `chunk_uuid` that resolves back to the retrieved text.
 
 ```text
-src/lens/
-  config.py · models.py · clients.py · embeddings.py · reranking.py · kg_*.py
-  dataset/        M1 manifest · M3 papers · M4 chunks
-  db/             M2 connect · schema
-  observability/  trajectory · run_logging
-  tools/          retrieval · kg · evaluate · sql
-  agent/          segmentation (M6) · runtime/context/budget/ledger/tool_* (M8)
-  sandbox/        runner · rlm_api · Dockerfile · requirements.txt (M8)
-  ui/             data (read-only) · app (Streamlit) (M10)
-  run.py          CLI entry (M8/M9)
-tests/            no-key unit/contract tests
-tests/DESTRUCTIVE_db_tests/   WIPES papers/chunks — run only on purpose
-scripts/          live/setup/probe scripts
-docs/             ontology · ARCHITECTURE
+      question
+         |
+   segmentation (one JSON call -> objectives / problems / constraints / requirements)
+         |
+   shallow_match        HNSW over abstracts            k = 100 candidates
+   rerank_papers        cross-encoder                  n = 20 papers
+   deep_match           HNSW over chunks in those n    C = 100 candidates
+   rerank_chunks        cross-encoder                  c = 100 chunks (+ paper rows)
+         |
+   build_kg             GLiNER + GLiREL over those chunks -> networkx variable
+         |
+   RLM loop             root model writes Python, sandbox runs it,
+                        host tools answer over RPC, observation comes back
+         |
+   answer.md + sources.md + trajectory.jsonl + manifest.json
 ```
 
-## Setup
+## Contents
 
-- Python **3.12** via `uv`; venv at `.venv`.
-- Runtime data outside the repo: `D:\lens-data` (runs, manifests, cache).
-- Secrets: `OPENROUTER_API_KEY` in the OS environment (or a gitignored `.env`).
-  Never commit keys.
-- DB: `pgvector/pgvector:pg16` on host port **5433** (native PG17 owns 5432);
-  named volume `lens-pgdata`.
-- Sandbox: `lens-repl` image built from `src/lens/sandbox/Dockerfile`.
+- [What it does](#what-it-does)
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Recorded runs](#recorded-runs)
+- [The viewer](#the-viewer)
+- [Screenshots](#screenshots)
+- [Project layout](#project-layout)
+- [Tests](#tests)
+- [Safety properties](#safety-properties)
+- [Limitations](#limitations)
+- [Credits](#credits)
+- [License](#license)
+
+## What it does
+
+Most retrieval systems answer a query. LENS is built around a *review*: the unit
+of work is a question that needs several sources compared, and the artefact is an
+answer whose evidence can be audited afterwards.
+
+A run is recorded as it happens. Every model call, tool call, code block and
+budget snapshot is appended to `trajectory.jsonl`, and every payload is stored
+content-addressed, so the run can be replayed turn by turn later without a GPU, a
+database, or an API key. That makes the system inspectable after the fact rather
+than only while it runs.
+
+The retrieval funnel and the recursion are both bounded on purpose: the question
+under test is whether orchestration over structured chunks beats a flat prompt at
+the same token budget, not whether a bigger context window helps.
+
+## Features
+
+- Two-stage retrieval with a hard cap at every step: `k=100` candidates,
+  `n=20` papers, `C=100` chunk candidates, `c=100` chunks into the answer path.
+- A cross-encoder at both stages, so abstracts and chunks are ranked by the same
+  notion of relevance.
+- A query-time knowledge graph over the retrieved chunks only. Entities and
+  relations are extracted with GLiNER and GLiREL, post-processed (span filter,
+  conservative coreference, relation-slot typing, directionality), and handed to
+  the model as a `networkx` variable instead of being pasted into the context.
+- A Docker sandbox with no network, no API key and no database driver. The model's
+  Python runs there; every effect it has is an RPC to the host.
+- Per-query caps enforced in one place: 8 iterations, 300,000 tokens, 1.00 USD,
+  120 seconds per code block, 3 retries.
+- An optional decision layer (JEV) that gates stage output and the final answer.
+  It is switched off in one configuration flag for the ablation arm.
+- Every run is replayable: manifest, JSONL trajectory, content-addressed blobs, and
+  a portable `.lens` bundle whose blobs are re-hashed on import.
+- A Streamlit viewer with two pages: recorded playback of a finished run, and a
+  live query box. The playback page needs no GPU, database or key.
+
+## How it works
+
+### Retrieval
+
+`tools/retrieval.py` implements the funnel as four tools the model can call. Each
+stage narrows the candidate set, and the chunk cap is global rather than per paper,
+so a single long paper cannot fill the answer context.
+
+### The loop
+
+`agent/runtime.py` owns the loop. The root model receives a system prompt, the
+query, the segmentation buckets and a manifest of available tools. It replies with
+Python. The code is sent to `lens-repl`, a container whose only job is to execute
+blocks and keep the namespace between them. When the code calls a tool, the call
+travels from the container through a relay to the host, where the tool runs against
+the corpus; the result is summarised and returned. The model then sees a compact
+observation and writes the next block.
+
+The loop ends at a live budget cap, at an explicit `FINAL_ANSWER:` sentinel, or at
+a groundedness rejection that persists to the iteration cap. In every case the run
+is finalised with a labelled stop reason, so a partial answer is reported as a
+partial answer.
+
+### The sandbox boundary
+
+The container has `internal: true` networking, a read-only root filesystem, and no
+credentials. It reaches the host through `lens-relay`, a process whose only job is
+to forward one hard-coded port. The workspace it mounts is `<run_dir>/work`, so the
+run artifacts, which live one directory up, are not writable from inside the
+sandbox: a generated block cannot rewrite its own evidence.
+
+## Requirements
+
+- Python 3.12 and [uv](https://docs.astral.sh/uv/)
+- Docker Desktop (the corpus database and the sandbox run in containers)
+- An OpenRouter API key (the models are called through OpenRouter)
+- The arXiv cs.AI corpus: a metadata JSON dump and one GROBID TEI XML file per paper
+- A CUDA GPU is needed for the embedding, reranking and NER models. The viewer does
+  not need one.
+
+## Installation
 
 ```powershell
+git clone https://github.com/RSGzen/LENS.git
+cd LENS
 uv sync
+```
+
+Start the database and apply the schema:
+
+```powershell
 docker compose up -d lens-pg
+python scripts/setup_db.py
 ```
 
-> **One-time migration:** stop/remove the old manual `lens-pg` container before
-> compose starts; the `lens-pgdata` volume preserves data.
+Copy `.env.example` to `.env` and fill in the key and the database passwords. It
+also documents the corpus paths, which have no defaults:
 
-## Tests
+```text
+OPENROUTER_API_KEY=...
+LENS_DB_PASSWORD=...
+LENS_DB_RO_PASSWORD=...
+LENS_ARXIV_METADATA=D:\path\to\arxiv-metadata.json
+LENS_GROBID_XML_DIR=D:\path\to\grobid\xml
+```
+
+Runtime data (runs, logs, cache, manifests) goes to `LENS_DATA_ROOT`, which
+defaults to the platform data directory.
+
+Build the corpus, in this order:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+python scripts/load_papers.py          # embed every manifest abstract -> papers
+python scripts/load_chunks.py          # chunk + embed every paper -> chunks
+python scripts/build_indexes.py        # HNSW indexes, after the bulk load
 ```
 
- scaffold fill order (run the matching test file after each):
+`manifest.json` (the filtered list of papers whose TEI parses) is produced by
+`lens.dataset.manifest.build_manifest`, which streams the metadata dump once and
+checks each candidate against the TEI directory. Run it from Python, or call it
+from your own loader:
 
-1. `agent/budget.py` — `tests.test_budget`
-2. `agent/ledger.py` — `tests.test_ledger`
-3. `agent/context.py` — `tests.test_context`
-4. `agent/tool_registry.py` — `tests.test_tool_registry`
-5. `agent/tool_server.py` — `tests.test_tool_server`
-6. `sandbox/rlm_api.py` — `tests.test_rlm_api`
-7. `sandbox/runner.py` — `tests.test_runner`
-8. `agent/sandbox_session.py` — `tests.test_sandbox_session`
-9. `agent/runtime.py` — `tests.test_runtime`
-10. `run.py` — live smoke
-11. `tools/evaluate.py` / `tools/sql.py` — `tests.test_evaluate` / `tests.test_sql`
+```python
+from lens.dataset.manifest import build_manifest
 
-Then:
+build_manifest(
+    metadata_path=...,   # the arXiv metadata dump
+    xml_dir=...,         # the GROBID TEI directory
+    manifest_path=...,   # where to write manifest.json
+    checkpoint_path=..., # resumable progress records
+)
+```
+
+## Usage
+
+Run one review:
 
 ```powershell
-python scripts/verify_sandbox.py   # health, persistence, timeout, mount, no key
-python -m lens.run "<query>"       # one live query (M8/M9 verify)
+python -m lens.run "How is long-context aggregation evaluated on OOLONG?"
 ```
 
-## Contracts
+The command prints the answer, then the run id, cost, iteration count and stop
+reason, then the artifact paths.
 
-- Host-driven, sandbox-executed: `agent/runtime.py` owns the loop; `sandbox/runner.py`
-  is a **passive persistent executor**; `sandbox/rlm_api.py` is the façade.
-- Sandbox holds **no API key and no DB driver**; every effect is an RPC to the host.
-- One `lens-repl` container per session; workspace-only RW mount.
-- Depth 1: `sub_call` is a plain GPT-5-mini call; **no recursion**.
-- Final answer = explicit `FINAL_ANSWER:` sentinel.
-- T3 `query(sql)` is dev-only: off by default, forced off when recorded.
-- Trajectory: `runs/<run_id>/trajectory.jsonl` + content-addressed blobs.
+Inspect a finished run without touching the database:
 
-Full host/sandbox contracts: `docs/ARCHITECTURE.md` and
-`G:\My Drive\SyncOpenCode\AURA\Drafts\ /.
+```powershell
+python -m lens.run --list
+python -m lens.run --show <run_id>
+python scripts/check_run.py <run_id>        # asserts the run's contract
+python scripts/run_report.py <run_id>       # writes a static Markdown report
+```
 
-## UI
+Resume an interrupted run, or start a child run that records its parent:
 
-Two pages over the same artifacts ( ):
+```powershell
+python -m lens.run --resume <run_id>
+python -m lens.run --fork <run_id> --run-id ui-20261026-1200 "the same question"
+```
 
-- **Recorded Runs** — read-only recorded playback: run list → turn timeline →
-  meters → answer + resolved citations. Needs **no GPU, no DB, no key**: it is mode
-  A (scrubbed playback of a recording), and the page says so.
-- **Live Query** — the live path: shells out to `python -m lens.run` and streams
-  stdout. Needs the workstation stack (GPU, DB, Docker, key).
+Move a run to another machine as a single directory:
 
-Runs can be renamed locally (`aliases.json` beside the blob store — a viewer label,
-never run identity).
+```powershell
+python -m lens.run --export <run_id> --destination D:\demo
+python -m lens.run --import D:\demo\<run_id>.lens
+```
+
+## Recorded runs
+
+Each run lives in `runs/<run_id>/`:
+
+| File | Contents |
+|---|---|
+| `manifest.json` | identity, status, models, caps, totals, provenance |
+| `trajectory.jsonl` | every chat, tool, code, emit and budget event, append-only |
+| `tasks.json` | the ledger the model writes while it works |
+| `answer.md` | the answer, in the model's own words |
+| `sources.md` | the citation trace, generated from the recorded payloads |
+| `resume.json` | cache: emitted variables and workspace hashes |
+| `work/` | the sandbox workspace for this run |
+| `<run_id>.lens` | optional portable bundle (export) |
+
+Blobs are shared across runs in `runs/blobs/`, named by the SHA-256 of their
+contents. A bundle contains only the blobs its own events reference, and importing
+one re-hashes every blob against its filename before installing anything, so an
+edited or truncated bundle is refused rather than rendered.
+
+## The viewer
 
 ```powershell
 uv sync --extra ui
 streamlit run src/lens/ui/app.py
-
-# demo laptop: point at an imported bundle instead
-$env:LENS_RUNS_ROOT='D:\lens-data\runs-import'; streamlit run src/lens/ui/app.py
 ```
 
-`src/lens/ui/data.py` is the read-only data layer (no Streamlit import, tested by
-`tests.test_ui_data`); `src/lens/ui/app.py` is the page, filled in units U1–U9 in
-the roadmap's order. The UI adds **no pipeline logic** : every number comes
-from `manifest.json`, `trajectory.jsonl`, `answer.md` and the blobs.
+To view recordings on a machine with no corpus, no database and no key, point the
+viewer at a directory of imported runs:
+
+```powershell
+$env:LENS_RUNS_ROOT='D:\lens-data\runs-import'
+streamlit run src/lens/ui/app.py
+```
+
+The two pages are deliberately different in what they can do:
+
+- **Recorded Runs** replays a finished run from its own trajectory: run list, turn
+  timeline with the code and tool calls, an evidence panel that fills as playback
+  advances, and the answer with its resolved citations. It has no live controls at
+  all, and every view is captioned as a recording.
+- **Live Query** runs the pipeline for real and streams the CLI output into the
+  page. It needs the GPU, database, Docker and key.
+
+Runs can be renamed in the viewer. The name is stored in `aliases.json` next to the
+run store and never enters the run's own artifacts, so a label cannot change what
+the run recorded.
+
+## Screenshots
+
+| View | File |
+|---|---|
+| Recorded Runs: run list, recorded-playback caption, run header | `docs/images/01-recorded-runs.png` |
+| One turn: reasoning, collapsed code, tool call with latency and gate | `docs/images/02-turn.png` |
+| Full payload of a `rerank_chunks` call, with the chunk ids the answer cites | `docs/images/03-payload.png` |
+| Answer with the resolved-citation table | `docs/images/04-answer.png` |
+| Context and cost meters next to the growing evidence panel | `docs/images/05-meters.png` |
+| Live Query: the CLI streamed into the page | `docs/images/06-live-query.png` |
+
+## Project layout
+
+```text
+src/lens/
+  config.py          settings, path resolution, model registry, caps
+  models.py          typed request/response objects
+  clients.py         OpenRouter transport (chat + decision layer)
+  embeddings.py      nomic-embed-text wrapper
+  reranking.py       bge-reranker cross-encoder wrapper
+  chunking.py        GROBID TEI -> section-typed chunks
+  kg_*.py            knowledge-graph extraction, post-processing, querying
+  dataset/           manifest, papers, chunks (corpus build)
+  db/                connection layer and pgvector schema
+  tools/             retrieval funnel, knowledge graph, gated SQL, evaluation
+  agent/             loop, budget, ledger, tools, sandbox session, segmentation
+  sandbox/           container image, executor, RPC façade, relay
+  observability/     trajectory, replay, citation resolution
+  experiments/       arm fingerprints and campaign matrices
+  ui/                Streamlit viewer and its read-only data layer
+  run.py             command line entry point
+scripts/             corpus loads, probes, gates and reports
+tests/               no-key unit and contract tests
+docs/                architecture, ontology, image rebuild notes
+```
+
+## Tests
+
+```powershell
+uv run ruff check .
+uv run ruff format --check .
+python -m unittest discover -s tests
+```
+
+The suite needs no API key, no database and no Docker. Tests that touch the
+database are excluded from discovery and live in `tests/DESTRUCTIVE_db_tests/`;
+they drop the `papers` and `chunks` tables, so run them only against a throwaway
+database.
+
+Two checks need the stack running:
+
+```powershell
+python scripts/verify_sandbox.py   # container boundary: health, egress, persistence, mount
+python scripts/check_run.py <run_id>
+```
+
+## Safety properties
+
+These are enforced by tests rather than by convention:
+
+- The sandbox holds no API key and no database driver, and general egress from it
+  fails.
+- The run artifacts are not visible inside the sandbox.
+- The per-query caps are enforced in one place and reported by name.
+- The reported cost is read from the event log, not from the in-memory counter.
+- The answer's citations are resolved against recorded payloads; an id that no
+  payload explains is listed as unresolved rather than counted as supported.
+
+## Limitations
+
+- The corpus is arXiv cs.AI with GROBID XML. Papers without parseable TEI are
+  skipped, and scanned PDFs are out of scope.
+- The retrieval funnel is linear in `k`, so a larger candidate set costs
+  proportionally more time.
+- The decision-layer thresholds ship empty, which means its first tier is skipped
+  until a calibration curve exists. The gate then reports `uncertain` and the
+  orchestrator decides.
+- The viewer is single-user and runs one live query at a time.
+- Entity resolution in the knowledge graph is exact-string only. Fuzzy matching is
+  not implemented.
+
+## Credits
+
+LENS stands on these projects:
+
+- [GROBID](https://github.com/kermitt2/grobid) for structured full text
+- [pgvector](https://github.com/pgvector/pgvector) for vector search in Postgres
+- [nomic-embed-text](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5) for
+  embeddings
+- [bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) for
+  cross-encoder ranking
+- [GLiNER](https://github.com/urchade/GLiNER) and
+  [GLiREL](https://github.com/jackboyla/GLiREL) for entity and relation extraction
+- [Streamlit](https://streamlit.io/) for the viewer
+- [OpenRouter](https://openrouter.ai/) for model access
+
+## License
+
+GNU General Public License v3.0. See [LICENSE](LICENSE).

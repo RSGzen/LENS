@@ -1,10 +1,10 @@
-r"""runner — chunk + embed the full manifest into ``chunks``.
+r"""Chunk and embed the full manifest into ``chunks``.
 
 Wiring only: read the manifest, build the nomic token counter + embedder, and
 call :func:`lens.dataset.chunks.load_chunks`. All stdout — including the
 per-batch timing lines printed by ``dataset/chunks.py`` — is mirrored to a
-timestamped log file under ``config.LENS_LOGS_ROOT_PATH`` for evidence
-.
+timestamped log file under ``config.LENS_LOGS_ROOT_PATH`` so a load can be
+audited afterwards.
 
 Prereqs:
   * ``lens-pg`` running with the schema applied (``python scripts/setup_db.py``);

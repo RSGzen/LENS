@@ -1,4 +1,4 @@
-r"""runner — one sample query through the full funnel (``k -> n -> C -> c``).
+r"""One sample query through the full retrieval funnel (``k -> n -> C -> c``).
 
 Wiring only: connect **read-only** (``lens_ro``), build the nomic ``Embedder`` +
 bge ``Reranker``, then run

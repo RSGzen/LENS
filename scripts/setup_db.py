@@ -1,4 +1,4 @@
-"""runner — apply the pgvector schema to the local LENS database.
+"""Apply the pgvector schema to the local LENS database.
 
 Wiring only (no logic): open an admin connection and call :func:`apply_schema`.
 

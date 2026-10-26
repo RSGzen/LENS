@@ -1,4 +1,4 @@
-r"""/ runner — (re)build the pgvector HNSW indexes after a bulk load.
+r"""(Re)build the pgvector HNSW indexes after a bulk load.
 
 Wiring only. pgvector recommends creating HNSW indexes **after** loading the
 data: it keeps row inserts fast during the load and the one-shot build is

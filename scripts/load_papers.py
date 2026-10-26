@@ -1,4 +1,4 @@
-"""runner — load the full manifest into ``papers``.
+"""Load the full manifest into ``papers``.
 
 Wiring only: read the manifest, embed every abstract, upsert. All stdout —
 including the per-chunk timing lines printed by ``dataset/papers.py`` — is
