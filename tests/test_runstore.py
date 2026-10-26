@@ -271,7 +271,7 @@ class RunStoreTestCase(unittest.TestCase):
 
 
 class RunStoreRegressionTestCase(unittest.TestCase):
-    """Paths the contracts cannot see (LOG-109)."""
+    """Paths the contracts cannot see."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

@@ -66,7 +66,7 @@ class TrajectoryTestCase(unittest.TestCase):
     def test_blob_bytes_hash_to_their_own_name(self) -> None:
         # The filename **is** the promise: sha256(file bytes) == name. A text-mode
         # write translated "\n" to "\r\n" on Windows, so the file no longer hashed to
-        # its name and bundle verification rejected real bundles (M9 S5, LOG-116).
+        # its name and bundle verification rejected real bundles.
         ref = self.traj.store_blob("line one\nline two\n")
         blob = self.traj.blobs_dir / ref.split(":", 1)[1]
 
@@ -174,7 +174,7 @@ class TrajectoryTestCase(unittest.TestCase):
     def test_totals_does_not_count_a_retried_attempt_as_a_call(self) -> None:
         # clients._post logs each failed attempt as `chat.retry` WITH an `error`.
         # Only the successful completion is a billable call, so a flaky network
-        # must not inflate "calls per query" in the H3 table.
+        # must not inflate "calls per query" in the cost table.
         ctx = TraceCtx(trace_id="t1", step_idx=0, actor="root")
         self.traj.log_event(
             trace_ctx=ctx,

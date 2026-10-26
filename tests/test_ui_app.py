@@ -1,9 +1,9 @@
-r"""Smoke test for the M10 Streamlit page (skipped when the ``ui`` extra is absent).
+r"""Smoke test for the Streamlit page (skipped when the ``ui`` extra is absent).
 
 ``tests/test_ui_data.py`` covers the read path. This covers the *page*: it must
 start, render a recorded run, step the cursor, and open a payload — with zero
 exceptions. A syntax error or a renamed field in ``app.py`` would otherwise be
-found only when the demo is opened in front of an examiner.
+found only when the demo is opened in front of an.
 
 Streamlit is an **extra** (``uv sync --extra ui``), so the whole module skips
 when it is not installed: the no-key suite must stay green on a core install.

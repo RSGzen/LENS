@@ -156,7 +156,7 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertTrue(result.answer_path.is_file())
 
     def test_a_turn_can_run_code_and_answer(self) -> None:
-        # The M9 smoke failure mode: gpt-5-mini ran a block and appended a real
+        # The smoke failure mode: gpt-5-mini ran a block and appended a real
         # FINAL_ANSWER after the fence on every turn; "code wins" discarded all of
         # them and the run ended at the iteration cap with an empty answer.md.
         self.runtime.client = FakeClient(
@@ -201,7 +201,7 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertFalse((self.runtime.workspace / "answer.md").exists())
 
     def test_log_is_rebuildable_after_a_run(self) -> None:
-        # M8.5: the root context must be a fold of the log, not a second copy.
+        # : the root context must be a fold of the log, not a second copy.
         self.runtime.run()
         state = self.trajectory.rebuild()
         self.assertGreaterEqual(state.last_seq, 1)
@@ -224,8 +224,8 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertAlmostEqual(manifest.totals["cost_usd"], result.cost_usd)
 
     def test_manifest_records_the_arm(self) -> None:
-        # E-04/M11: a run whose k/n/KG/gate flags are unknown is unattributable
-        # months later, so the arm travels with the manifest (M9).
+        # /: a run whose k/n/KG/gate flags are unknown is unattributable
+        # months later, so the arm travels with the manifest.
         self.runtime.run()
         from lens.agent import runstore
 
@@ -364,7 +364,7 @@ class RuntimeTestCase(unittest.TestCase):
 
 
 class RuntimeRegressionTestCase(unittest.TestCase):
-    """Behaviour the nine contracts do not pin (LOG-110)."""
+    """Behaviour the nine contracts do not pin."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

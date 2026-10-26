@@ -79,7 +79,7 @@ class ToolRegistryTestCase(unittest.TestCase):
             self.registry.register("echo", echo)
 
     def test_parameters_lists_positional_names_in_call_order(self) -> None:
-        # The sandbox binding maps positional args onto these names (LOG-115).
+        # The sandbox binding maps positional args onto these names.
         def funnel(buckets: dict, k: int = 100, *, note: str | None = None) -> list:
             """Do the thing."""
             return list(buckets)
@@ -92,7 +92,7 @@ class ToolRegistryTestCase(unittest.TestCase):
     def test_a_db_type_does_not_break_the_dispatch(self) -> None:
         # fetch_papers returns rows with a ``date``; json.dumps used to raise and
         # the whole turn was lost ("Object of type date is not JSON serializable",
-        # M9 smoke, LOG-115). The blob and the envelope narrow with str.
+        # smoke, ). The blob and the envelope narrow with str.
         from datetime import date
 
         def paper_row(arxiv_id: str) -> dict:

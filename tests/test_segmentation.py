@@ -1,4 +1,4 @@
-r"""Contract tests for M6 segmentation (no API key, no network, zero cost).
+r"""Contract tests for segmentation (no API key, no network, zero cost).
 
 A ``FakeClient`` replaces ``LensClient``, so these tests never leave the machine.
 The segmenter is implemented; these are contract tests.
