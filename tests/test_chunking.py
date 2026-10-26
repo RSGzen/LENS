@@ -1,4 +1,4 @@
-r"""Contract tests for M4 section classification + structural chunking.
+r"""Contract tests for section classification + structural chunking.
 
 No key, zero cost, no DB, no torch — ``count_tokens`` is injected as
 ``lambda s: len(s.split())``. These are contract tests for the implemented
@@ -24,7 +24,6 @@ from lens.chunking import (
 )
 
 WORDS = lambda s: len(s.split())  # noqa: E731 — test token counter
-
 
 TEI_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <TEI xmlns="http://www.tei-c.org/ns/1.0">

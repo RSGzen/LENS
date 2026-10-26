@@ -1,4 +1,4 @@
-r"""Contract tests for the M8 budget (no key, no network, zero cost).
+r"""Contract tests for the budget (no key, no network, zero cost).
 
 Run:  .\.venv\Scripts\python.exe -m unittest tests.test_budget -v
 """

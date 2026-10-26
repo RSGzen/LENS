@@ -1,4 +1,4 @@
-r"""Contract tests for the arm fingerprint (M9) - no key, no DB, no Docker.
+r"""Contract tests for the arm fingerprint - no key, no DB, no Docker.
 
 Run:  .\.venv\Scripts\python.exe -m unittest tests.test_arm -v
 """
@@ -44,7 +44,7 @@ class ArmFingerprintTestCase(unittest.TestCase):
 
 
 class ModelOverrideTestCase(unittest.TestCase):
-    """``LENS_ROOT_MODEL`` changes the id without breaking provider pinning (M9)."""
+    """``LENS_ROOT_MODEL`` changes the id without breaking provider pinning."""
 
     def test_override_same_vendor_keeps_pins(self) -> None:
         spec = config.MODEL_REGISTRY["root"]

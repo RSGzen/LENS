@@ -1,4 +1,4 @@
-r"""Contract tests for citation resolution (M9) - no key, no DB, no Docker.
+r"""Contract tests for citation resolution - no key, no DB, no Docker.
 
 Run:  .\.venv\Scripts\python.exe -m unittest tests.test_citations -v
 """
@@ -100,7 +100,7 @@ class CitationTestCase(unittest.TestCase):
         self.assertEqual(report.unresolved, ["2601.99999"])
 
     def test_cited_ids_dedupes_and_keeps_order(self) -> None:
-        # The final gate needs the ids the answer actually names (LOG-115).
+        # The final gate needs the ids the answer actually names.
         text = f"First {CHUNK}, then 2512.24601, then {CHUNK} and {GHOST}."
 
         self.assertEqual(cited_ids(text), [CHUNK, "2512.24601", GHOST])

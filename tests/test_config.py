@@ -1,4 +1,4 @@
-r"""Contract tests for path resolution (M8.0) — no key, no DB, no Docker.
+r"""Contract tests for path resolution — no key, no DB, no Docker.
 
 The point is portability: nothing in `config.py` may be an absolute literal, and
 a machine without the corpus must still be able to import the harness and run
@@ -19,7 +19,7 @@ from lens import config
 
 
 class StageThresholdsTestCase(unittest.TestCase):
-    """``LENS_STAGE_THRESHOLDS`` parsing (LOG-113).
+    """``LENS_STAGE_THRESHOLDS`` parsing.
 
     Empty is the honest default (tier 1 skipped); a malformed entry must raise,
     because a typo that silently drops a threshold makes the gate *look* calibrated.

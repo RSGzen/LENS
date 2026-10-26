@@ -1,4 +1,4 @@
-r"""Tests for campaign matrix expansion (M9) - no key, no DB, no Docker.
+r"""Tests for campaign matrix expansion - no key, no DB, no Docker.
 
 The matrix is what decides how many billable runs a campaign launches, so a wrong
 expansion is a money bug: two cells collapsing into one run id spends the budget
@@ -53,7 +53,7 @@ class CampaignMatrixTestCase(unittest.TestCase):
         self.assertIn("smoke.base.q1.r3", {job["run_id"] for job in jobs})
 
     def test_arm_env_is_stringified(self) -> None:
-        # compose env: an int raises on Windows (LOG-107).
+        # compose env: an int raises on Windows.
         jobs = build_jobs(_campaign(arms=[{"name": "a", "env": {"LENS_GATE": 0}}]))
 
         self.assertEqual(jobs[0]["env"], {"LENS_GATE": "0"})
