@@ -25,6 +25,7 @@ from pathlib import Path
 from lens import config
 from lens.chunking import chunk_tei
 from lens.dataset.manifest import load_manifest
+from lens.dataset.paths import require_xml_corpus, resolve_corpus
 from lens.embeddings import Embedder
 
 SAMPLE_SIZE = 200
@@ -45,7 +46,8 @@ def main() -> None:
         return len(tokenizer.encode(text, add_special_tokens=False, truncation=False))
 
     # --- parse + chunk (CPU) ------------------------------------------------
-    xml_dir = config.require_path("LENS_GROBID_XML_DIR", config.GROBID_XML_DIR_PATH)
+    xml_dir, tei_count = require_xml_corpus(resolve_corpus())
+    print(f"corpus: {tei_count} TEI file(s) in {xml_dir}")
     t0 = time.perf_counter()
     chunks = []
     for entry in sample:

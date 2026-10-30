@@ -26,6 +26,7 @@ from lens.dataset.manifest import load_manifest
 from lens.dataset.papers import load_papers
 from lens.db.connect import connect
 from lens.embeddings import Embedder
+from lens.preflight import CORPUS, DB, METADATA, require_environment
 
 
 class _StreamLogger:
@@ -87,6 +88,8 @@ def _setup_logging() -> logging.Logger:
 
 def main() -> None:
     _setup_logging()
+
+    require_environment(need=(DB, CORPUS, METADATA))
 
     manifest_path = Path(config.LENS_MANIFESTS_ROOT_PATH) / config.MANIFEST_FILENAME
     manifest = load_manifest(manifest_path)

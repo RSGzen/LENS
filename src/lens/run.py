@@ -35,6 +35,7 @@ from lens.db.connect import connect
 from lens.embeddings import Embedder
 from lens.kg_extract import GlinerExtractor
 from lens.observability.trajectory import Trajectory
+from lens.preflight import API_KEY, DB, require_environment
 from lens.reranking import Reranker
 from lens.tools.kg import build_kg
 from lens.tools.retrieval import (
@@ -356,6 +357,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     # ------------------------------------------------------------------ a run
+    # Everything below needs the whole stack; everything above is read-only over
+    # the run store, so the check sits exactly on the boundary.
+    require_environment(need=(API_KEY, DB))
+
     resume = args.resume is not None
     fork_source = args.fork
 

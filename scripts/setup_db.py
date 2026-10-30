@@ -11,12 +11,17 @@ from __future__ import annotations
 
 from lens.db.connect import connect
 from lens.db.schema import apply_schema, tables_exist
+from lens.preflight import CORPUS, DB, require_environment
 
 
 def main() -> None:
+    """Apply the schema, after checking that the database settings and a corpus are present."""
+    require_environment(need=(DB, CORPUS))
+
     with connect(autocommit=True) as conn:
         apply_schema(conn)
         state = tables_exist(conn)
+
     print(f"schema applied: {state}")
 
 

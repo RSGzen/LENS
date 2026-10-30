@@ -25,9 +25,11 @@ from pathlib import Path
 from lens import config
 from lens.dataset.chunks import load_chunks
 from lens.dataset.manifest import load_manifest
+from lens.dataset.paths import require_xml_corpus, resolve_corpus
 from lens.db.connect import connect
 from lens.embeddings import Embedder
 from lens.observability.run_logging import setup_file_logging
+from lens.preflight import CORPUS, DB, require_environment
 
 
 def _build_token_counter(embedder: Embedder):
@@ -71,8 +73,13 @@ def _filter_loaded(conn, entries):
 def main() -> None:
     setup_file_logging("lens.load_chunks", "load_chunks")
 
+    require_environment(need=(DB, CORPUS))
+
     manifest_path = Path(config.LENS_MANIFESTS_ROOT_PATH) / config.MANIFEST_FILENAME
     manifest = load_manifest(manifest_path)
+
+    xml_dir, tei_count = require_xml_corpus(resolve_corpus())
+    print(f"corpus: {tei_count} TEI file(s) in {xml_dir}")
 
     entries = manifest["papers"]
     if config.PAPERS_LIMIT:
@@ -96,7 +103,7 @@ def main() -> None:
         papers, chunks = load_chunks(
             conn=conn,
             entries=entries,
-            xml_dir=config.require_path("LENS_GROBID_XML_DIR", config.GROBID_XML_DIR_PATH),
+            xml_dir=xml_dir,
             count_tokens=count_tokens,
             embedder=embedder,
             papers_per_batch=config.PAPERS_PER_BATCH,
