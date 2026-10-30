@@ -1,0 +1,48 @@
+{
+  "name": "m11-w3",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Treatment. For the bridge (document) instances, set LENS_MODE=document and LENS_DOCUMENTS=<file> per instance; the arm block is otherwise unchanged."
+    },
+    {
+      "name": "naive-flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      },
+      "note": "Baseline: the same evidence set, one call."
+    }
+  ],
+  "queries": [
+    {
+      "id": "cag-25-001",
+      "expect": "answerable",
+      "text": "How many of the papers in the evidence set evaluate on a dataset whose name contains QA? Answer with a single integer.",
+      "note": "Placeholder. Generate the real query list from experiments/instruments/*.jsonl so ids match the gold file, and score with scripts/score_instruments.py."
+    },
+    {
+      "id": "cag-25-002",
+      "expect": "answerable",
+      "text": "Which evaluation metric is most common in the evidence set, and in how many papers does it appear?",
+      "note": "Placeholder."
+    },
+    {
+      "id": "bridge-001",
+      "expect": "answerable",
+      "text": "Aggregate the records in the document and answer the question it poses. Answer with the exact label.",
+      "note": "Placeholder. Bridge instances keep the benchmark's own question text verbatim; this line is replaced by the converter."
+    }
+  ]
+}

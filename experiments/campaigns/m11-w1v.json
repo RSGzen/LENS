@@ -1,0 +1,40 @@
+{
+  "name": "m11-w1v",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Variance check: the same arm three times, so run-to-run spread is measured instead of assumed."
+    },
+    {
+      "name": "naive-flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      },
+      "note": "The baseline is included because its spread is the number the treatment must clear."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?"
+    },
+    {
+      "id": "single-fact",
+      "expect": "answerable",
+      "text": "Which paper introduces the OOLONG long-context aggregation benchmark, and what task does its trec_coarse subset use?"
+    }
+  ]
+}

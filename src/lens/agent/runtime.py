@@ -1169,6 +1169,7 @@ class Runtime:
                 iterations=self.budget.iterations,
                 last_seq=self._step_idx,
                 artifacts=artifacts,
+                stop_reason=stop_reason,
             )
         finally:
             # Never leave a container behind, even when the manifest write failed.

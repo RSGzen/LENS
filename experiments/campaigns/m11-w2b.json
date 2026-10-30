@@ -1,0 +1,36 @@
+{
+  "name": "m11-w2b",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "s0-default",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_RETRIEVAL_K": "100",
+        "LENS_RETRIEVAL_N": "20"
+      },
+      "note": "The operating point in force today. Six runs total = 2 settings x 3 repeats."
+    },
+    {
+      "name": "s-opt",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_RETRIEVAL_K": "100",
+        "LENS_RETRIEVAL_N": "20"
+      },
+      "note": "Replace k/n with the point the retrieval grid selects before this campaign runs. Leaving the defaults here would compare a setting with itself."
+    }
+  ],
+  "queries": [
+    {
+      "id": "median-query",
+      "expect": "answerable",
+      "text": "Which of the retrieved methods report a human evaluation, and what do they measure with it?",
+      "note": "Pre-registered by rule: the Tier-2 query whose default-config nDCG@10 is the median of the judged set. Replace the text with that query; never pick a query because it looked sensitive."
+    }
+  ]
+}

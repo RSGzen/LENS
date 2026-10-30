@@ -102,6 +102,13 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
     totals = (manifest.totals if manifest else None) or {}
     counts = resolve_citations(job["run_id"]).counts if manifest else {}
     cost = float(totals.get("cost_usd") or 0.0)
+    tokens_in = int(totals.get("tokens_in") or 0)
+    tokens_out = int(totals.get("tokens_out") or 0)
+    # Both are **subsets** of the token counts, so they never change a cap; they
+    # are recorded because a cost comparison between arms with different cache
+    # behaviour or reasoning effort is not like-for-like without them.
+    cached = int(totals.get("cached_tokens") or 0)
+    reasoning = int(totals.get("reasoning_tokens") or 0)
 
     return {
         "campaign_arm": job["arm"],
@@ -111,8 +118,13 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
         "exit_code": exit_code,
         "status": manifest.status if manifest else "missing",
         "iterations": manifest.iterations if manifest else 0,
-        "tokens_in": totals.get("tokens_in") or 0,
-        "tokens_out": totals.get("tokens_out") or 0,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "cached_tokens": cached,
+        "reasoning_tokens": reasoning,
+        "cached_share": round(cached / tokens_in, 4) if tokens_in else 0.0,
+        "reasoning_share": round(reasoning / tokens_out, 4) if tokens_out else 0.0,
+        "stop_reason": (manifest.stop_reason if manifest else "") or "",
         "cost_usd": round(cost, 6),
         # The 5.5 % credit-load fee is part of the reported $/query.
         "cost_usd_with_fee": round(cost * 1.055, 6),

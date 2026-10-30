@@ -114,6 +114,11 @@ class RunManifest:
     created_by: dict[str, Any] = field(default_factory=dict)
     iterations: int = 0
     last_seq: int = 0
+    # Why the loop stopped. ``iterations``/``tokens``/``cost``/``backtracks`` are
+    # the cap that bound it, ``flat`` means the baseline had no loop to bound, and
+    # ``error`` means it failed. A report needs this next to any accuracy number:
+    # a cap-bound run is a different result from a finished one.
+    stop_reason: str | None = None
     # name -> path relative to run_dir (answer.md, trajectory.jsonl, ...)
     artifacts: dict[str, str] = field(default_factory=dict)
     notes: str | None = None

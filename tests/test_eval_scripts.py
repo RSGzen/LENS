@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,6 +30,7 @@ score_retrieval = _load("score_retrieval")
 score_instruments = _load("score_instruments")
 judge_answers = _load("judge_answers")
 freeze_manifest = _load("freeze_manifest")
+run_campaign = _load("run_campaign")
 
 
 class RetrievalMetricTests(unittest.TestCase):
@@ -235,6 +237,46 @@ class FreezeTests(unittest.TestCase):
             hashes = freeze_manifest.instrument_hashes(Path(tmp))
 
             self.assertEqual(set(hashes), {"cag.jsonl"})
+
+
+class CampaignRowTests(unittest.TestCase):
+    """The CSV is the campaign's only durable output, so its columns are tested."""
+
+    def test_cached_and_reasoning_tokens_are_reported_as_shares(self) -> None:
+        manifest = SimpleNamespace(
+            status="partial",
+            iterations=3,
+            stop_reason="iterations",
+            totals={
+                "cost_usd": 0.25,
+                "tokens_in": 1000,
+                "tokens_out": 400,
+                "cached_tokens": 750,
+                "reasoning_tokens": 200,
+            },
+        )
+        citations = SimpleNamespace(counts={"cited": 3, "resolved": 3, "unresolved": 0})
+        job = {"arm": "a", "query_id": "q", "expect": "answerable", "run_id": "r1"}
+
+        with (
+            patch.object(run_campaign.runstore, "read_manifest", return_value=manifest),
+            patch.object(run_campaign, "resolve_citations", return_value=citations),
+        ):
+            row = run_campaign._row(job, 0, 1.5)
+
+        self.assertEqual(row["cached_share"], 0.75)
+        self.assertEqual(row["reasoning_share"], 0.5)
+        self.assertEqual(row["stop_reason"], "iterations")
+        self.assertAlmostEqual(row["cost_usd_with_fee"], 0.25 * 1.055, places=6)
+
+    def test_a_missing_run_still_produces_a_row(self) -> None:
+        job = {"arm": "a", "query_id": "q", "expect": "", "run_id": "r1"}
+
+        with patch.object(run_campaign.runstore, "read_manifest", return_value=None):
+            row = run_campaign._row(job, 1, 0.2)
+
+        self.assertEqual(row["status"], "missing")
+        self.assertEqual(row["cached_share"], 0.0)
 
 
 if __name__ == "__main__":

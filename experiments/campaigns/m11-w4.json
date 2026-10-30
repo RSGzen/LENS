@@ -1,0 +1,42 @@
+{
+  "name": "m11-w4",
+  "repeats": 1,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "0",
+        "LENS_GATE": "1"
+      },
+      "note": "Guardrail runs answer one fact; the KG adds cost without a mechanism for this task, so it is off in both arms."
+    },
+    {
+      "name": "naive-flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      },
+      "note": "Baseline for the same needles."
+    }
+  ],
+  "queries": [
+    {
+      "id": "doc-needle-001",
+      "expect": "answerable",
+      "text": "What is the access code for project atlas?",
+      "note": "Placeholder. The document needles are generated with their document; the query list comes from experiments/instruments/doc-needle-*.jsonl."
+    },
+    {
+      "id": "corpus-needle-001",
+      "expect": "answerable",
+      "text": "In 2511.02817, what benchmark subset does trec_coarse use?",
+      "note": "Placeholder. Corpus needles name the paper so the test is retrieval plus reading, not guessing."
+    }
+  ]
+}

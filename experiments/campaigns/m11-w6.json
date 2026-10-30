@@ -1,0 +1,111 @@
+{
+  "name": "m11-w6",
+  "repeats": 1,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1",
+        "LENS_KG_POSTPROCESS": "1",
+        "LENS_KG_ROLE_FILTER": "1"
+      },
+      "note": "Reference arm: every ablation is read as a difference from this row."
+    },
+    {
+      "name": "rlm-depth0",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "0",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Recursion removed at the route."
+    },
+    {
+      "name": "kg-off",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "0",
+        "LENS_GATE": "1"
+      },
+      "note": "Knowledge graph absent, not merely idle."
+    },
+    {
+      "name": "gate-off",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "0"
+      },
+      "note": "Decision layer off: no JEV call and no gate key at all."
+    },
+    {
+      "name": "kg-raw",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1",
+        "LENS_KG_POSTPROCESS": "0",
+        "LENS_KG_VERIFY": "0"
+      },
+      "note": "Quality layer off: typing, directionality and the verifier are not applied."
+    },
+    {
+      "name": "kg-role-off",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1",
+        "LENS_KG_POSTPROCESS": "1",
+        "LENS_KG_ROLE_FILTER": "0"
+      },
+      "note": "Only the benchmark/task role filter is removed, so its effect is separable."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?"
+    },
+    {
+      "id": "single-fact",
+      "expect": "answerable",
+      "text": "Which paper introduces the OOLONG long-context aggregation benchmark, and what task does its trec_coarse subset use?"
+    },
+    {
+      "id": "comparison",
+      "expect": "answerable",
+      "text": "Compare how two of the retrieved systems bound the cost or runtime of their recursive calls."
+    },
+    {
+      "id": "negative",
+      "expect": "not-answerable",
+      "text": "What ablations does the LENS harness itself report for its knowledge-graph verifier budget?"
+    },
+    {
+      "id": "compound",
+      "expect": "answerable",
+      "text": "I am reviewing long-context evidence synthesis for a literature review. Which approaches decompose the query before retrieval, what constraints do they place on the evidence they keep, and what do they report about faithfulness of the citations they produce?"
+    }
+  ]
+}
