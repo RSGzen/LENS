@@ -128,15 +128,52 @@ class ContextTestCase(unittest.TestCase):
         prompt = context.build_system_prompt(
             tool_manifest="- shallow_match(...)",
             query_buckets={"problems": ["aggregate long contexts"]},
-            budget_snapshot={"left": {"iterations": 10}},
+            budget_limits={"iterations": 8, "tokens": 300000, "cost_usd": 1.0},
         )
         self.assertIn("shallow_match", prompt)
         self.assertIn("aggregate long contexts", prompt)
         self.assertIn("FINAL_ANSWER:", prompt)
+        self.assertIn("8 iterations per query", prompt)
         # Every placeholder must be gone: a prompt shipped to gpt-5 with a raw
-        # `<<BUDGET>>` is a silent quality bug, not a crash.
+        # `<<BUDGET_LIMITS>>` is a silent quality bug, not a crash.
         self.assertNotIn("<<", prompt)
         self.assertNotIn(">>", prompt)
+
+    def test_the_system_prompt_is_identical_across_turns(self) -> None:
+        # The whole point of moving live usage out of the instruction block: the
+        # first bytes of every request must not change, or the provider cannot
+        # cache the conversation behind them.
+        limits = {"iterations": 8, "tokens": 300000, "cost_usd": 1.0}
+
+        first = context.build_system_prompt(
+            tool_manifest="- t()", query_buckets={"q": ["x"]}, budget_limits=limits
+        )
+        later = context.build_system_prompt(
+            tool_manifest="- t()", query_buckets={"q": ["x"]}, budget_limits=limits
+        )
+
+        self.assertEqual(first, later)
+
+    def test_budget_usage_line_reports_the_burn(self) -> None:
+        snapshot = {
+            "limits": {"iterations": 8, "tokens": 300000, "cost_usd": 1.0, "backtracks": 3},
+            "used": {
+                "iterations": 3,
+                "tokens_in": 9000,
+                "tokens_out": 3000,
+                "cost_usd": 0.1234,
+                "backtracks": 1,
+            },
+        }
+
+        line = context.budget_usage_line(snapshot)
+
+        self.assertIn("turn 3/8", line)
+        self.assertIn("12,000/300,000", line)
+        self.assertIn("in 9,000 + out 3,000", line)
+        self.assertIn("$0.1234/$1.00", line)
+        self.assertIn("backtracks 1/3", line)
+        self.assertLess(len(line), 200)
 
     def test_build_messages_starts_with_system(self) -> None:
         messages = context.build_messages(

@@ -76,7 +76,10 @@ Query buckets (query.json)
 <<QUERY_JSON>>
 
 Budget (read-only)
-<<BUDGET>>
+<<BUDGET_LIMITS>>
+- Your current usage is appended to each turn as a ``[budget]`` line. It is not
+  part of this instruction block, so the block itself never changes and the
+  provider can cache it.
 
 Output contract
 1. Reply with exactly one fenced ```python block per turn, or with a final answer.
@@ -118,19 +121,86 @@ Guardrails
 def build_system_prompt(
     tool_manifest: str,
     query_buckets: Mapping[str, Any],
-    budget_snapshot: Mapping[str, Any],
+    budget_limits: Mapping[str, Any],
 ) -> str:
-    """Fill ``SYSTEM_PROMPT_TEMPLATE`` without interpreting JSON braces."""
+    """Fill ``SYSTEM_PROMPT_TEMPLATE`` without interpreting JSON braces.
+
+    ``budget_limits`` is the **constant** half of the budget snapshot (the caps),
+    never the live usage: this string is the first bytes of every request, so a
+    field that changes per turn would invalidate the provider's prefix cache on
+    every turn. Live usage travels in the per-turn tail
+    (:func:`budget_usage_line`).
+    """
     prompt = (
         SYSTEM_PROMPT_TEMPLATE.replace("<<TOOL_MANIFEST>>", tool_manifest)
         .replace("<<QUERY_JSON>>", json.dumps(query_buckets, ensure_ascii=False, indent=2))
-        .replace("<<BUDGET>>", json.dumps(budget_snapshot, ensure_ascii=False, indent=2))
+        .replace("<<BUDGET_LIMITS>>", _format_limits(budget_limits))
     )
 
     if "<<" in prompt or ">>" in prompt:
         raise ValueError("unfilled placeholder in the system prompt")
 
     return prompt
+
+
+def _format_limits(limits: Mapping[str, Any]) -> str:
+    """Render the caps as a short, stable list (identical for the whole run)."""
+    iterations = limits.get("iterations")
+    tokens = limits.get("tokens")
+    cost = limits.get("cost_usd")
+    block_s = limits.get("exec_block_s")
+    backtracks = limits.get("backtracks")
+
+    return "\n".join(
+        [
+            f"- {iterations:,} iterations per query"
+            if isinstance(iterations, int)
+            else "- iterations: not set",
+            f"- {tokens:,} tokens per query (input + output)"
+            if isinstance(tokens, int)
+            else "- tokens: not set",
+            f"- ${float(cost):.2f} per query" if cost is not None else "- cost: not set",
+            f"- {float(block_s):.0f} s per code block (not a run total)"
+            if block_s is not None
+            else "- block time: not set",
+            f"- {backtracks} backtracking retries"
+            if isinstance(backtracks, int)
+            else "- backtracks: not set",
+        ]
+    )
+
+
+def budget_usage_line(snapshot: Mapping[str, Any]) -> str:
+    """Return the per-turn usage line that rides at the **end** of the prompt.
+
+    Two reasons it is a tail line and not part of the system prompt: the numbers
+    change after every call, and a changing system prompt means no provider can
+    reuse the prefix (measured on a recording: 80 % of the input was the same
+    re-sent prefix, and none of it was billed as cached).
+
+    Everything is read from ``snapshot()``; ``left`` is ignored because it is
+    clamped and hides an overshoot.
+    """
+    limits = snapshot.get("limits") or {}
+    used = snapshot.get("used") or {}
+
+    iterations = int(used.get("iterations") or 0)
+    max_iterations = int(limits.get("iterations") or 0)
+    tokens_in = int(used.get("tokens_in") or 0)
+    tokens_out = int(used.get("tokens_out") or 0)
+    max_tokens = int(limits.get("tokens") or 0)
+    cost = float(used.get("cost_usd") or 0.0)
+    max_cost = float(limits.get("cost_usd") or 0.0)
+    backtracks = int(used.get("backtracks") or 0)
+    max_backtracks = int(limits.get("backtracks") or 0)
+
+    return (
+        f"[budget] turn {iterations}/{max_iterations} · "
+        f"tokens {tokens_in + tokens_out:,}/{max_tokens:,} "
+        f"(in {tokens_in:,} + out {tokens_out:,}) · "
+        f"cost ${cost:.4f}/${max_cost:.2f} · "
+        f"backtracks {backtracks}/{max_backtracks}"
+    )
 
 
 def build_messages(

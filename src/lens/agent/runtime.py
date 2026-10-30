@@ -51,6 +51,7 @@ from typing import Any, Mapping
 from lens import config
 from lens.agent.budget import Budget
 from lens.agent.context import (
+    budget_usage_line,
     budget_warning,
     build_messages,
     build_system_prompt,
@@ -663,25 +664,32 @@ class Runtime:
         state — dropping the *code* that built a variable must not make the model
         believe the variable is gone.
 
-        Also append :func:`lens.agent.context.budget_warning` when it returns
-        text: one system line asking for ``FINAL_ANSWER`` before a cap bites.
-        With no warning, the prompt stays byte-identical so the static prefix
-        remains cacheable.
+        Also append :func:`lens.agent.context.budget_usage_line` (the live counters)
+        and :func:`lens.agent.context.budget_warning` when it returns text (the
+        wrap-up nudge). Both ride at the **end**, never inside the system prompt:
+        they change every turn, and a changing system prompt would invalidate the
+        provider's prefix cache for the whole conversation.
         """
         system_prompt = build_system_prompt(
-            self.registry.manifest(), self._query_buckets, self.budget.snapshot()
+            self.registry.manifest(),
+            self._query_buckets,
+            self.budget.snapshot()["limits"],
         )
         messages = build_messages(system_prompt=system_prompt, memory=self._messages)
         messages = compact_messages(messages)
 
-        # Appended as the **last** message, never into the system prompt: editing
-        # the system message would change the cached prefix on every warning.
+        # The tail, always: the usage line (it changes every turn, which is why it
+        # must not live in the system prompt) and, near a cap, the wrap-up nudge.
+        # Both are appended rather than merged into history, so the prompt up to
+        # this point is the previous turn's prompt plus what that turn produced —
+        # exactly what a provider can cache.
+        tail = [{"role": "user", "content": budget_usage_line(self.budget.snapshot())}]
         warning = budget_warning(self.budget.snapshot())
 
         if warning:
-            messages = [*messages, {"role": "user", "content": warning}]
+            tail.append({"role": "user", "content": warning})
 
-        return messages
+        return [*messages, *tail]
 
     def _run_loop(self) -> tuple[str, bool, str | None]:
         """Return ``(answer, partial, stop_reason)``.
