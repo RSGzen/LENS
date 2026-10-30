@@ -1,0 +1,46 @@
+{
+  "created_at": "2026-10-30T13:02:59+00:00",
+  "commit": "d0c4bac3a535d7387615fe56e38e00d0870c8f83",
+  "branch": "main",
+  "git_dirty": false,
+  "models": {
+    "root": "openai/gpt-5",
+    "sub": "openai/gpt-5-mini",
+    "dev": "qwen/qwen3-coder",
+    "jev": "typesafe/jev-1.13"
+  },
+  "jev": "typesafe/jev-1.13",
+  "caps": {
+    "iterations": 8,
+    "tokens": 300000,
+    "cost_usd": 1.0,
+    "context_tokens": 40000,
+    "exec_block_s": 120.0
+  },
+  "embedding": "nomic-embed-text-v1.5@512-halfvec",
+  "reranker": "BAAI/bge-reranker-v2-m3",
+  "retrieval": {
+    "k": 100,
+    "n": 20,
+    "C": 100,
+    "c": 100,
+    "ef_search": 40
+  },
+  "python": "3.12.14",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "prompt": "full",
+  "run_mode": "rlm",
+  "sub_calls": true,
+  "kg_enabled": true,
+  "gate_enabled": true,
+  "stage_thresholds": {},
+  "sandbox_image": "lens-repl:0.1.0",
+  "sandbox_digest": "sha256:402b07ed7f09e4f31743854b269bb844af33ef018191035d31cb489ec3c7e38e",
+  "uv": "uv 0.13.5 (46776a95d 2026-10-21 x86_64-pc-windows-msvc)",
+  "certifi": "2026.10.19",
+  "corpus": {
+    "papers": 166704,
+    "chunks": 4681955
+  },
+  "instruments": {}
+}
