@@ -128,49 +128,79 @@ cd LENS
 uv sync
 ```
 
-Start the database and apply the schema:
-
-```powershell
-docker compose up -d lens-pg
-python scripts/setup_db.py
-```
-
-Copy `.env.example` to `.env` and fill in the key and the database passwords. It
-also documents the corpus paths, which have no defaults:
+Copy `.env.example` to `.env` and fill in the key and the database passwords. The
+corpus paths have sensible defaults (`<data_root>/corpus`), so set them only to
+reuse a corpus that already exists elsewhere.
 
 ```text
 OPENROUTER_API_KEY=...
 LENS_DB_PASSWORD=...
 LENS_DB_RO_PASSWORD=...
-LENS_ARXIV_METADATA=D:\path\to\arxiv-metadata.json
-LENS_GROBID_XML_DIR=D:\path\to\grobid\xml
 ```
 
-Runtime data (runs, logs, cache, manifests) goes to `LENS_DATA_ROOT`, which
-defaults to the platform data directory.
-
-Build the corpus, in this order:
+Check the environment before anything else runs. Every pipeline script runs the same
+check itself, so this is also a way to see what it will report:
 
 ```powershell
+python scripts/check_env.py                       # everything
+python scripts/check_env.py --need api_key,db     # just what a live run needs
+```
+
+It reports where `.env` was found and whether each requirement is present, with the
+API key reduced to a fingerprint. The exit status is 2 when something is missing, so
+it also works as a preflight in a shell chain or a CI step.
+
+Runtime data (runs, logs, cache, manifests, and by default the corpus) goes to
+`LENS_DATA_ROOT`, which defaults to the platform data directory.
+
+### Build or reuse a corpus
+
+The corpus is not redistributed here: arXiv's terms forbid serving third-party full
+text, and most papers carry the non-exclusive licence rather than a permissive one.
+What the repository ships is the recipe.
+
+Download the metadata dump from
+[Kaggle: Cornell-University/arxiv](https://www.kaggle.com/datasets/Cornell-University/arxiv)
+(`arXiv-metadata-oai-snapshot.json`, one JSON object per line, roughly 4 GB), then
+either put it at `<data_root>/corpus/metadata.jsonl` or point
+`LENS_ARXIV_METADATA` at it. Start GROBID once, and let the script do the rest:
+
+```powershell
+docker run -d --restart unless-stopped --init -m 12g `
+    -e JAVA_OPTS=-Xmx7G -p 8070:8070 lfoppiano/grobid:0.8.0
+
+python scripts/fetch_corpus.py status                       # what is already on disk
+python scripts/fetch_corpus.py fetch --limit 100 --dry-run  # count, download nothing
+python scripts/fetch_corpus.py fetch                        # download, convert, burn
+python scripts/fetch_corpus.py manifest                     # metadata + TEI -> manifest.json
+```
+
+`fetch` streams the dump, keeps `cs.AI` papers in the id-year window
+(`--years`, default 15-26), downloads each PDF from the public arXiv mirror,
+converts it with GROBID, writes `<arxiv_id><version>.tei.xml`, and deletes the PDF.
+It is safe to re-run: a paper with a TEI file is skipped, and a PDF without one is
+converted instead of downloaded again. Permanent failures go to
+`<pdf_dir>/failed_papers.txt`, and a retry rewrites that file with what is still
+failing:
+
+```powershell
+python scripts/fetch_corpus.py retry
+```
+
+If you already have PDFs, `python scripts/fetch_corpus.py grobid --pdf-dir <dir>`
+converts them without touching the network. Names must be
+`<arxiv_id><version>.pdf`: that stem is the join key between the manifest, the TEI
+directory and every chunk row.
+
+Then load the corpus, and create the schema (the schema step refuses to run while
+the corpus directory is empty, so that a wrong path is caught before any loading):
+
+```powershell
+docker compose up -d lens-pg
+python scripts/setup_db.py             # schema; checks the corpus first
 python scripts/load_papers.py          # embed every manifest abstract -> papers
 python scripts/load_chunks.py          # chunk + embed every paper -> chunks
 python scripts/build_indexes.py        # HNSW indexes, after the bulk load
-```
-
-`manifest.json` (the filtered list of papers whose TEI parses) is produced by
-`lens.dataset.manifest.build_manifest`, which streams the metadata dump once and
-checks each candidate against the TEI directory. Run it from Python, or call it
-from your own loader:
-
-```python
-from lens.dataset.manifest import build_manifest
-
-build_manifest(
-    metadata_path=...,  # the arXiv metadata dump
-    xml_dir=...,  # the GROBID TEI directory
-    manifest_path=...,  # where to write manifest.json
-    checkpoint_path=...,  # resumable progress records
-)
 ```
 
 ## Usage
@@ -310,7 +340,7 @@ src/lens/
   experiments/       arm fingerprints and campaign matrices
   ui/                Streamlit viewer and its read-only data layer
   run.py             command line entry point
-scripts/             corpus loads, probes, gates and reports
+scripts/             corpus build and loads, probes, gates and reports
 tests/               no-key unit and contract tests
 docs/                architecture, ontology, image rebuild notes
 ```
@@ -333,6 +363,7 @@ Two checks need the stack running:
 ```powershell
 python scripts/verify_sandbox.py   # container boundary: health, egress, persistence, mount
 python scripts/check_run.py <run_id>
+python scripts/check_env.py        # secrets, database credentials, corpus location
 ```
 
 ## Safety properties
