@@ -70,11 +70,19 @@ class ToolServer:
         host: str = config.HOST_RPC_BIND,
         port: int = config.HOST_RPC_PORT,
         token: str,
+        sub_calls: bool | None = None,
     ) -> None:
         self.runtime = runtime
         self.host = host
         self.port = port
         self.token = token
+        # Recursion-off arm: the route is **absent**, so the sandbox gets a 404.
+        # Leaving it present and merely not mentioning it would measure whether
+        # the model obeys an instruction, not what happens without sub-calls.
+        enabled = config.SUB_CALLS_ENABLED if sub_calls is None else sub_calls
+        self.routes: dict[str, frozenset[str]] = {
+            path: methods for path, methods in _ROUTES.items() if enabled or path != "/sub_call"
+        }
         self._httpd: Any | None = None
         self._thread: Any | None = None
 
@@ -158,7 +166,7 @@ class ToolServer:
                 "error": {"type": "Unauthorized", "message": "bad or missing token"},
             }
 
-        allowed = _ROUTES.get(path)
+        allowed = self.routes.get(path)
         if allowed is None:
             return 404, {
                 "ok": False,

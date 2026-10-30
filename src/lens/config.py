@@ -373,6 +373,60 @@ LENS_RECORDED = os.environ.get("LENS_RECORDED", "0").strip().lower() not in {
 # The root's final answer is explicit, so the loop never has to guess.
 FINAL_ANSWER_MARKER = "FINAL_ANSWER:"
 
+# ------------------------------------------------------- experimental arms
+# Which harness the process runs. ``rlm`` is the system under test; ``naive`` is
+# the flat-prompt baseline (one chat call over the same retrieved chunks, no
+# loop, no tools); ``document`` runs the RLM over a supplied evidence file
+# instead of the corpus, so the retrieval funnel is not used at all.
+RUN_MODE = os.environ.get("LENS_MODE", "rlm").strip().lower()
+RUN_MODES = ("rlm", "naive", "document")
+
+# Which system prompt the root sees. ``full`` is the system under test. The
+# variants differ **only** in the instruction block: the task text stays
+# byte-identical, or the comparison would measure prompt crafting. A mode that is
+# not ``rlm`` implies its own prompt, so the two cannot disagree by accident.
+PROMPT_VARIANT = (
+    os.environ.get("LENS_PROMPT_VARIANT", RUN_MODE if RUN_MODE in ("naive", "document") else "full")
+    .strip()
+    .lower()
+)
+PROMPT_VARIANTS = ("full", "naive", "document")
+
+# ``0`` removes the ``/sub_call`` route instead of merely not mentioning it: an
+# arm that must not recurse has to be unable to, otherwise it measures prompt
+# obedience.
+SUB_CALLS_ENABLED = os.environ.get("LENS_SUB_CALLS", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+
+# Evidence file for ``document`` mode (JSONL: one object per record). Copied
+# into the run workspace so the sandbox reads it as a file; the records never
+# pass through the prompt. No default: a document run without one is a mistake.
+DOCUMENTS_PATH: str | None = os.environ.get("LENS_DOCUMENTS") or None
+
+
+def _check_run_mode() -> None:
+    """Fail at import on an unknown mode or variant, naming the accepted set."""
+    if RUN_MODE not in RUN_MODES:
+        raise ValueError(f"bad LENS_MODE {RUN_MODE!r} (expected one of {RUN_MODES})")
+
+    if PROMPT_VARIANT not in PROMPT_VARIANTS:
+        raise ValueError(f"bad LENS_PROMPT_VARIANT {PROMPT_VARIANT!r} (one of {PROMPT_VARIANTS})")
+
+    if RUN_MODE in ("naive", "document") and PROMPT_VARIANT != RUN_MODE:
+        raise ValueError(
+            f"LENS_MODE={RUN_MODE} needs LENS_PROMPT_VARIANT={RUN_MODE}, not {PROMPT_VARIANT!r}"
+        )
+
+    if RUN_MODE == "document" and not DOCUMENTS_PATH:
+        raise ValueError("LENS_MODE=document needs LENS_DOCUMENTS=<path.jsonl>")
+
+
+_check_run_mode()
+
 # ------------------------------------------------------------------ sandbox
 # One ``lens-repl`` container per query session.
 SANDBOX_IMAGE = os.environ.get("LENS_SANDBOX_IMAGE", "lens-repl:0.1.0")

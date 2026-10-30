@@ -31,7 +31,8 @@ You are the root RLM in LENS, a literature-evidence synthesis harness.
 Role
 - Answer the research query from the arXiv cs.AI corpus.
 - You write Python. The code runs in a persistent sandbox namespace.
-- Use the host tools for retrieval and the knowledge graph. Do not invent evidence.
+- Use the host tools for retrieval<<BEGIN:kg>>
+  and the knowledge graph<<END:kg>>. Do not invent evidence.
 - The sandbox has no shell, no network, and no API key.
 
 Tools
@@ -44,9 +45,11 @@ Calling tools
   Keyword arguments bind by name; an omitted argument uses the tool's default.
 
 Sandbox modules
+<<BEGIN:kg>>
 - ``kg_query`` — KG traversal on the graph variable you build from build_kg():
   kg_neighbors(G, entity, relation=None, direction="out|in|both"),
   kg_triples(G, head=None, relation=None, tail=None), kg_subgraph(G, entities).
+<<END:kg>>
 - ``networkx``, ``numpy``, ``pandas`` are importable. There is no shell, no
   network, and no database driver.
 
@@ -86,8 +89,8 @@ Output contract
 2. Print a compact summary of what you learned — at most ~15 lines. Large values
    belong in a variable or in rlm_api.emit(value, label=...); never print whole
    papers or raw tool payloads.
-3. **Retrieve first.** Run the funnel (`shallow_match` → `rerank_chunks`, and
-   `build_kg` when relations matter) and keep the returned chunks in a variable.
+3. **Retrieve first.** Run the funnel (`shallow_match` → `rerank_chunks`<<BEGIN:kg>>, and
+   `build_kg` when relations matter<<END:kg>>) and keep the returned chunks in a variable.
    Answering from memory is a failure: cite the real `chunk_uuid` + `arxiv_id` for
    every claim. "See the retrieved evidence" or "[above]" is not a citation.
 4. **A negative finding is a claim too.** If you conclude "no retrieved chunk
@@ -111,29 +114,130 @@ Output contract
    result; an over-budget run is not.
 
 Guardrails
+<<BEGIN:subcall>>
 - No recursion: rlm_api.sub_call() is a plain GPT-5-mini call and cannot use tools.
   Use it for long summarisation — root output tokens are the expensive ones.
+<<END:subcall>>
 - Stay inside the budget. If a cap is reached, return the best partial answer and
   list what is still unsupported.
 """
+
+
+NAIVE_SYSTEM_PROMPT = """\
+You answer one research question from a fixed evidence set.
+
+You have no tools, no code, and no second turn: read the evidence, then answer.
+
+Rules
+- Answer only from the evidence below. Background knowledge may not add facts the
+  evidence does not contain.
+- Cite the id of every item a claim comes from, in square brackets, next to the
+  claim: [<id>]. A claim without an id is not evidence.
+- If the evidence does not answer the question, say so, and state how many items
+  you inspected and what you looked for. Never invent an answer or an id.
+- Reply with the answer only: no preamble, no description of method.
+"""
+
+DOCUMENT_SYSTEM_PROMPT = """\
+You are the root RLM in a literature-evidence harness, working on a fixed document.
+
+Role
+- Answer the research question from the records in the evidence file.
+- You write Python. The code runs in a persistent sandbox namespace.
+- There is no retrieval tool: the whole evidence set is in the file, and the job
+  is to read it and aggregate it correctly.
+
+Tools
+<<TOOL_MANIFEST>>
+
+Evidence file
+- ``documents.jsonl`` in the workspace: one JSON object per line, with ``id``,
+  ``text`` and ``label``. Read it with ``pandas.read_json("documents.jsonl",
+  lines=True)`` or the standard library.
+- Count explicitly. When the question asks for an aggregate, compute it in code
+  and print the aggregate **and** what it was computed over (records inspected,
+  labels counted, ids matched).
+
+Query buckets (query.json)
+<<QUERY_JSON>>
+
+Budget (read-only)
+<<BUDGET_LIMITS>>
+
+Output contract
+1. Reply with exactly one fenced ```python block per turn, or with a final answer.
+2. Print a compact summary — at most ~15 lines. Large values stay in a variable.
+3. **Every count is a claim.** State the number, the field counted, and how many
+   records were inspected.
+4. To finish, output a line beginning with ``FINAL_ANSWER:`` followed by the answer.
+   A normal assistant message without code is NOT a final answer.
+5. Never print ``FINAL_ANSWER:`` inside a ```python block.
+6. When asked to wrap up, answer from what you already have and list what is still
+   unsupported.
+"""
+
+_TEMPLATES: dict[str, str] = {
+    "full": SYSTEM_PROMPT_TEMPLATE,
+    "naive": NAIVE_SYSTEM_PROMPT,
+    "document": DOCUMENT_SYSTEM_PROMPT,
+}
+
+# Marked, optional blocks. ``build_system_prompt`` keeps or drops them from what
+# the run actually registered, so the instructions can never advertise a tool the
+# harness does not have.
+_BLOCK = re.compile(r"<<BEGIN:(\w+)>>\n?(?P<body>.*?)\n?<<END:\1>>", re.DOTALL)
+
+
+def _render_blocks(template: str, keep: Mapping[str, bool]) -> str:
+    """Keep or drop every ``<<BEGIN:name>>…<<END:name>>`` block, then strip markers."""
+
+    def replace(match: re.Match[str]) -> str:
+        return match.group("body") if keep.get(match.group(1), True) else ""
+
+    text = _BLOCK.sub(replace, template)
+
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+
+    return text
 
 
 def build_system_prompt(
     tool_manifest: str,
     query_buckets: Mapping[str, Any],
     budget_limits: Mapping[str, Any],
+    *,
+    variant: str | None = None,
+    kg: bool | None = None,
+    sub_calls: bool | None = None,
 ) -> str:
-    """Fill ``SYSTEM_PROMPT_TEMPLATE`` without interpreting JSON braces.
+    """Fill the template for ``variant`` (default: the configured one).
 
     ``budget_limits`` is the **constant** half of the budget snapshot (the caps),
     never the live usage: this string is the first bytes of every request, so a
-    field that changes per turn would invalidate the provider's prefix cache on
-    every turn. Live usage travels in the per-turn tail
-    (:func:`budget_usage_line`).
+    field that changes per turn would invalidate the provider's prefix cache.
+    Live usage travels in the per-turn tail (:func:`budget_usage_line`).
+
+    ``kg`` and ``sub_calls`` default to the configured flags, so the instruction
+    block describes the harness that exists. Replacement is ``str.replace``, not
+    ``str.format``: the payloads contain JSON braces.
     """
+    chosen = (variant or config.PROMPT_VARIANT).strip().lower()
+
+    if chosen not in _TEMPLATES:
+        raise ValueError(f"unknown prompt variant {chosen!r} (one of {sorted(_TEMPLATES)})")
+
+    text = _render_blocks(
+        _TEMPLATES[chosen],
+        {
+            "kg": config.KG_ENABLED if kg is None else kg,
+            "subcall": config.SUB_CALLS_ENABLED if sub_calls is None else sub_calls,
+        },
+    )
+
     prompt = (
-        SYSTEM_PROMPT_TEMPLATE.replace("<<TOOL_MANIFEST>>", tool_manifest)
-        .replace("<<QUERY_JSON>>", json.dumps(query_buckets, ensure_ascii=False, indent=2))
+        text.replace("<<TOOL_MANIFEST>>", tool_manifest)
+        .replace("<<QUERY_JSON>>", json.dumps(dict(query_buckets), ensure_ascii=False, indent=2))
         .replace("<<BUDGET_LIMITS>>", _format_limits(budget_limits))
     )
 

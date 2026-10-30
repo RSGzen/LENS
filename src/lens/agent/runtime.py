@@ -56,6 +56,7 @@ from lens.agent.context import (
     build_messages,
     build_system_prompt,
     compact_messages,
+    count_tokens,
     extract_final_answer,
     extract_python_block,
     tool_bindings,
@@ -214,7 +215,9 @@ class Runtime:
             # The namespace is restored in ``_seed_workspace`` instead, because it
             # needs a running container.
             self._restore_state()
-        else:
+        elif config.RUN_MODE != "document":
+            # A document run has no corpus to retrieve from, so segmentation has
+            # nothing to feed: the question is the whole input.
             self._segment_query()
 
         self._register_runtime_tools()
@@ -233,6 +236,115 @@ class Runtime:
             partial, stop_reason = True, "error"
 
         return self._finalize(answer, partial=partial, stop_reason=stop_reason)
+
+    # ------------------------------------------------------- flat baseline
+    def run_flat(self) -> RunResult:
+        """Run the flat-prompt baseline: one retrieval, one model turn, no loop.
+
+        This is the orchestration-off arm, not a degraded run. It uses the same
+        query segmentation and the same retrieval funnel as the RLM arm — so the
+        evidence set is identical — then answers in a single chat call with the
+        chunks inline. The funnel dispatches through the tool registry, so the
+        trajectory records the same hydrating payload and citations resolve
+        against it.
+
+        ``stop_reason`` is ``"flat"``: no cap bound the run, and reporting
+        ``"iterations"`` would make the baseline look like a loop that ran out.
+        """
+        self._open_manifest()
+        answer = ""
+
+        try:
+            self._segment_query()
+            chunks, _dropped = self._flat_evidence()
+            answer = self._flat_answer(chunks)
+        except Exception as exc:  # noqa: BLE001 - a crash must still finalize
+            self._note(f"run failed: {type(exc).__name__}: {exc}")
+            return self._finalize(
+                answer or f"Run failed before an answer was produced: {exc}",
+                partial=True,
+                stop_reason="error",
+            )
+
+        return self._finalize(answer, partial=False, stop_reason="flat")
+
+    def _dispatch_flat(self, name: str, args: dict[str, Any]) -> Any:
+        """Dispatch one funnel tool for the flat arm and return its result."""
+        outcome = self.registry.dispatch(
+            name,
+            args,
+            trace_ctx=TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"),
+            trajectory=self.trajectory,
+        )
+
+        if not outcome.ok:
+            error = outcome.error or {}
+            raise RuntimeError(f"{name} failed: {error.get('message') or error}")
+
+        return outcome.result
+
+    def _flat_evidence(self) -> tuple[list[dict[str, Any]], int]:
+        """Return ``(chunks, dropped)`` for the flat prompt.
+
+        The same four funnel calls the RLM arm runs, in the same order, so the
+        baseline is handed the same evidence. A chunk that would push the prompt
+        past the context limit is dropped **and counted** — never silently cut.
+        """
+        buckets = self._query_buckets or {"query": self.query}
+
+        ids = self._dispatch_flat("shallow_match", {"buckets": buckets})
+        papers = self._dispatch_flat("rerank_papers", {"arxiv_ids": ids, "buckets": buckets})
+        arxiv_ids = [row["arxiv_id"] for row in papers if row.get("arxiv_id")]
+        chunk_ids = self._dispatch_flat("deep_match", {"arxiv_ids": arxiv_ids, "buckets": buckets})
+        bundle = self._dispatch_flat("rerank_chunks", {"chunk_ids": chunk_ids, "buckets": buckets})
+
+        chunks: list[dict[str, Any]] = []
+        dropped = 0
+        budget = config.CONTEXT_TOKEN_LIMIT
+
+        for row in bundle.get("chunks") or []:
+            cost = count_tokens(str(row.get("chunk_text") or "")) + 8
+
+            if cost > budget:
+                dropped += 1
+                continue
+
+            budget -= cost
+            chunks.append(row)
+
+        self._note(f"flat evidence: {len(chunks)} chunks, {dropped} dropped for size")
+
+        return chunks, dropped
+
+    def _flat_answer(self, chunks: list[dict[str, Any]]) -> str:
+        """One root call over the inline evidence; return the completion text."""
+        system_prompt = build_system_prompt(
+            self.registry.manifest(),
+            {},
+            self.budget.snapshot()["limits"],
+            variant="naive",
+        )
+        evidence = "\n\n".join(
+            f"[{row.get('chunk_uuid')}] {row.get('chunk_text') or ''}" for row in chunks
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Evidence ({len(chunks)} items):\n\n{evidence}\n\nQuestion: {self.query}"
+                ),
+            },
+        ]
+        result = self.client.chat(
+            "root",
+            messages,
+            trace_ctx=TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="root"),
+        )
+        self.budget.record_iteration()
+        self.budget.record_chat(result)
+
+        return result.text
 
     # ------------------------------------------------------------------ RPC
     def handle_rpc(self, endpoint: str, payload: Mapping[str, Any]) -> dict[str, Any]:

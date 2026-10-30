@@ -59,6 +59,12 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
             "replay": replay,
             "allow_sql": config.ALLOW_SQL,
             "resume": config.RESUME,
+            # The arm *is* the environment: a run that changed its harness must
+            # record which harness it changed to, or two arms look identical.
+            "run": config.RUN_MODE,
+            "prompt": config.PROMPT_VARIANT,
+            "sub_calls": config.SUB_CALLS_ENABLED,
+            "documents": bool(config.DOCUMENTS_PATH),
         },
         "models": {role: spec.id for role, spec in config.MODEL_REGISTRY.items()}
         | {"jev": config.JEV_MODEL_ID},

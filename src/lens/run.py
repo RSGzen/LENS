@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import argparse
 import secrets
+import shutil
 import sys
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from lens import config
@@ -172,9 +174,25 @@ def build_runtime(
     workspace = trajectory.run_dir / "work"
     client = LensClient(trajectory=trajectory)
 
-    conn = connect()
-    embedder, reranker = Embedder(), Reranker()
-    extractor = GlinerExtractor()
+    # ``document`` mode reads a supplied evidence file, so there is no corpus: no
+    # connection, no encoder and no retrieval tool. Building them anyway would
+    # spend a minute loading torch to register tools the run must not have — and
+    # a manifest entry the model cannot use costs turns.
+    retrieve = config.RUN_MODE != "document"
+    conn = connect() if retrieve else None
+    embedder, reranker = (Embedder(), Reranker()) if retrieve else (None, None)
+    extractor = GlinerExtractor() if retrieve else None
+
+    if not retrieve:
+        if not config.DOCUMENTS_PATH:
+            raise ValueError("LENS_MODE=document needs LENS_DOCUMENTS=<path.jsonl>")
+
+        source = Path(config.DOCUMENTS_PATH).expanduser()
+        if not source.is_file():
+            raise FileNotFoundError(f"LENS_DOCUMENTS not found: {source}")
+
+        workspace.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, workspace / "documents.jsonl")
 
     registry = ToolRegistry()
 
@@ -206,13 +224,16 @@ def build_runtime(
         """Build the knowledge graph for the selected chunks (node-link payload)."""
         return build_kg(conn, chunk_ids, extractor)
 
-    registry.register("shallow_match", shallow_match_tool)
-    registry.register("rerank_papers", rerank_papers_tool)
-    registry.register("deep_match", deep_match_tool)
-    registry.register("rerank_chunks", rerank_chunks_tool)
-    registry.register("fetch_papers", fetch_papers_tool)
-    registry.register("fetch_chunks", fetch_chunks_tool)
-    registry.register("build_kg", build_kg_tool)
+    if retrieve:
+        registry.register("shallow_match", shallow_match_tool)
+        registry.register("rerank_papers", rerank_papers_tool)
+        registry.register("deep_match", deep_match_tool)
+        registry.register("rerank_chunks", rerank_chunks_tool)
+        registry.register("fetch_papers", fetch_papers_tool)
+        registry.register("fetch_chunks", fetch_chunks_tool)
+
+        if config.KG_ENABLED:
+            registry.register("build_kg", build_kg_tool)
 
     if sql_is_allowed(recorded=recorded, allow_sql=allow_sql):
         sql_conn = connect(readonly=True, autocommit=False)
@@ -358,8 +379,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # ------------------------------------------------------------------ a run
     # Everything below needs the whole stack; everything above is read-only over
-    # the run store, so the check sits exactly on the boundary.
-    require_environment(need=(API_KEY, DB))
+    # the run store, so the check sits exactly on the boundary. A document run
+    # never touches the corpus, so it does not need the database.
+    require_environment(need=(API_KEY,) if config.RUN_MODE == "document" else (API_KEY, DB))
 
     resume = args.resume is not None
     fork_source = args.fork
@@ -401,7 +423,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     try:
-        result = runtime.run()
+        result = runtime.run_flat() if config.RUN_MODE == "naive" else runtime.run()
     finally:
         # The port and the DB connection are per-process resources; the sandbox is
         # stopped by ``Runtime._finalize``. Exceptions propagate — the caller sees
