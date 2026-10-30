@@ -36,12 +36,22 @@ def _fence(text: str, language: str = "") -> str:
     return f"{marker}{language}\n{body}\n{marker}"
 
 
+def _pct(part: int | None, whole: int | None) -> str:
+    """Return ``part`` as a percentage of ``whole``, or ``n/a`` when ``whole`` is 0."""
+    if not whole:
+        return "n/a"
+
+    return f"{100 * (part or 0) / whole:.0f} %"
+
+
 def _turn_block(turn: Turn) -> list[str]:
     """Render one turn: completion, code, tool calls, observation, meters."""
     lines = [f"### Turn {turn.turn}", ""]
     meters = [
-        f"tokens_in {turn.tokens_in or 0}",
-        f"tokens_out {turn.tokens_out or 0}",
+        f"tokens_in {turn.tokens_in or 0}"
+        + (f" ({turn.cached_tokens} cached)" if turn.cached_tokens else ""),
+        f"tokens_out {turn.tokens_out or 0}"
+        + (f" ({turn.reasoning_tokens} reasoning)" if turn.reasoning_tokens else ""),
         f"cost ${(turn.cost_usd or 0.0) + (turn.jev_cost_usd or 0.0):.6f}",
         f"latency {turn.latency_ms or 0} ms",
     ]
@@ -122,6 +132,11 @@ def write_report(run_id: str) -> Path:
         f"| calls | {totals.get('calls') or 0} billable · {totals.get('tool_calls') or 0} tool |",
         f"| tokens | in {totals.get('tokens_in') or 0} · out {totals.get('tokens_out') or 0} "
         f"· gate {summary['jev_tokens_in']} |",
+        f"| cache | {summary['cached_tokens']} of {summary['tokens_in']} chat input "
+        f"tokens ({_pct(summary['cached_tokens'], summary['tokens_in'])}) served from the "
+        "provider cache |",
+        f"| reasoning | {summary['reasoning_tokens']} of {summary['tokens_out']} chat output "
+        f"tokens ({_pct(summary['reasoning_tokens'], summary['tokens_out'])}) |",
         f"| turns | {summary['turns']} |",
         f"| citations | cited {citations.counts['cited']} · "
         f"resolved {citations.counts['resolved']} · "

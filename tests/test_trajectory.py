@@ -143,6 +143,8 @@ class TrajectoryTestCase(unittest.TestCase):
             action="chat.completion",
             tokens_in=100,
             tokens_out=10,
+            cached_tokens=80,
+            reasoning_tokens=6,
             cost_usd=0.001,
         )
         self.traj.log_event(
@@ -166,6 +168,10 @@ class TrajectoryTestCase(unittest.TestCase):
         self.assertEqual(totals["tool_calls"], 1)
         self.assertEqual(totals["tokens_in"], 150)
         self.assertEqual(totals["tokens_out"], 10)
+        # Subsets of the two above, kept for the cost model: the cached part of the
+        # prompt and the reasoning part of the output. Neither moves a cap.
+        self.assertEqual(totals["cached_tokens"], 80)
+        self.assertEqual(totals["reasoning_tokens"], 6)
         self.assertAlmostEqual(totals["cost_usd"], 0.0012)
         # by_action keeps every action visible; its buckets count `events`.
         self.assertEqual(totals["by_action"]["tool.dispatch"]["events"], 1)

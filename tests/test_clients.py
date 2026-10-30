@@ -52,7 +52,13 @@ def chat_payload(model: str = "openai/gpt-5-20260101", provider: str = "OpenAI")
         "model": model,
         "provider": provider,
         "choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
-        "usage": {"prompt_tokens": 12, "completion_tokens": 3, "cost": 0.00042},
+        "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 3,
+            "cost": 0.00042,
+            "prompt_tokens_details": {"cached_tokens": 10},
+            "completion_tokens_details": {"reasoning_tokens": 2},
+        },
     }
 
 
@@ -103,6 +109,30 @@ class LensClientTestCase(unittest.TestCase):
         self.assertEqual(result.provider, "OpenAI")
         self.assertEqual((result.tokens_in, result.tokens_out), (12, 3))
         self.assertAlmostEqual(result.cost_usd, 0.00042)
+
+    def test_chat_records_cached_and_reasoning_tokens(self) -> None:
+        # The two numbers the cost model is checked with: how much of the prompt
+        # the provider served from cache, and how much of the output was reasoning.
+        session = FakeSession([FakeResponse(200, chat_payload())])
+        result = self._client(session).chat(
+            "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
+        )
+
+        self.assertEqual(result.cached_tokens, 10)
+        self.assertEqual(result.reasoning_tokens, 2)
+
+        event = self._events()[0]
+        self.assertEqual(event["cached_tokens"], 10)
+        self.assertEqual(event["reasoning_tokens"], 2)
+
+    def test_usage_defaults_to_zero_when_the_details_are_absent(self) -> None:
+        client = self._client(FakeSession([]))
+
+        usage = client._usage({"usage": {"prompt_tokens": 5, "completion_tokens": 1}})
+
+        self.assertEqual(usage["cached_tokens"], 0)
+        self.assertEqual(usage["reasoning_tokens"], 0)
+        self.assertEqual(usage["tokens_in"], 5)
 
     def test_chat_logs_one_event_with_refs(self) -> None:
         session = FakeSession([FakeResponse(200, chat_payload())])

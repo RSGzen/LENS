@@ -152,6 +152,8 @@ class Trajectory:
         tool: str | None = None,
         tokens_in: int | None = None,
         tokens_out: int | None = None,
+        cached_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
         latency_ms: int | None = None,
         cost_usd: float | None = None,
         stage: str | None = None,
@@ -199,6 +201,8 @@ class Trajectory:
             "tool": tool,
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
+            "cached_tokens": cached_tokens,
+            "reasoning_tokens": reasoning_tokens,
             "latency_ms": latency_ms,
             "cost_usd": cost_usd,
             "stage": stage,
@@ -224,6 +228,8 @@ class Trajectory:
               "cost_usd":   <float>,   # sum over every event (tools add 0)
               "tokens_in":  <int>,     # idem
               "tokens_out": <int>,
+              "cached_tokens":    <int>,  # subset of tokens_in, billed cheaper
+              "reasoning_tokens": <int>,  # subset of tokens_out (reasoning models)
               "calls":      <int>,     # BILLABLE model calls: chat|jev, no "error"
               "tool_calls": <int>,     # call_type == "tool"
               "by_action":  {<action>: {"events": <int>, "cost_usd": <float>,
@@ -262,6 +268,8 @@ class Trajectory:
             "cost_usd": 0.0,
             "tokens_in": 0,
             "tokens_out": 0,
+            "cached_tokens": 0,
+            "reasoning_tokens": 0,
             "calls": 0,
             "tool_calls": 0,
             "by_action": {},
@@ -302,6 +310,11 @@ class Trajectory:
                 cur_cost = float(data.get("cost_usd", 0.0))
                 totals_dict["tokens_in"] += int(data.get("tokens_in") or 0)
                 totals_dict["tokens_out"] += int(data.get("tokens_out") or 0)
+                # Both are subsets of tokens_in / tokens_out, kept separately so the
+                # cost model can be checked (cache hit rate, reasoning share) rather
+                # than assumed. Budget caps stay on the totals they belong to.
+                totals_dict["cached_tokens"] += int(data.get("cached_tokens") or 0)
+                totals_dict["reasoning_tokens"] += int(data.get("reasoning_tokens") or 0)
 
                 totals_dict["cost_usd"] = math.fsum([totals_dict["cost_usd"], cur_cost])
 

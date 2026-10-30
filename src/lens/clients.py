@@ -165,7 +165,10 @@ class LensClient:
 
         answer_text = response_json["choices"][0]["message"]["content"]
 
-        tokens_in, tokens_out, cost = self._usage(response_json)
+        usage = self._usage(response_json)
+        tokens_in = usage["tokens_in"]
+        tokens_out = usage["tokens_out"]
+        cost = usage["cost_usd"]
 
         latency_ms = int((time.perf_counter() - start_timer) * 1000)
 
@@ -182,6 +185,8 @@ class LensClient:
             completion_ref=completion_ref,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            cached_tokens=usage["cached_tokens"],
+            reasoning_tokens=usage["reasoning_tokens"],
             latency_ms=latency_ms,
             cost_usd=cost,
         )
@@ -196,6 +201,8 @@ class LensClient:
             tokens_out=tokens_out,
             latency_ms=latency_ms,
             cost_usd=cost,
+            cached_tokens=usage["cached_tokens"],
+            reasoning_tokens=usage["reasoning_tokens"],
         )
 
         return call_result
@@ -245,7 +252,10 @@ class LensClient:
         latency_ms = int((time.perf_counter() - start_timer) * 1000)
 
         answers = response_json.get("answers", {})
-        tokens_in, tokens_out, cost = self._usage(response_json)
+        usage = self._usage(response_json)
+        tokens_in = usage["tokens_in"]
+        tokens_out = usage["tokens_out"]
+        cost = usage["cost_usd"]
 
         completion_ref = self.trajectory.store_blob(json.dumps(response_json))
 
@@ -402,18 +412,39 @@ class LensClient:
             attempts=attempts_made,
         ) from last_exc
 
-    def _usage(self, response: Mapping[str, Any]) -> tuple[int, int, float]:
-        """Extract ``(tokens_in, tokens_out, cost_usd)`` from an OpenRouter response.
+    def _usage(self, response: Mapping[str, Any]) -> dict[str, int | float]:
+        """Extract the billing fields from an OpenRouter response.
 
-        Chat uses ``usage.prompt_tokens`` / ``usage.completion_tokens``; JEV uses
-        ``usage.input_tokens`` / ``usage.output_tokens``; ``cost_usd`` is
+        Chat uses ``usage.prompt_tokens`` / ``usage.completion_tokens``; the decision
+        layer uses ``usage.input_tokens`` / ``usage.output_tokens``; ``cost_usd`` is
         ``usage.cost`` in both. Missing values default to ``0`` / ``0.0``.
+
+        Two details are read when the provider reports them, because they are the
+        only way to check the cost model afterwards:
+
+        - ``prompt_tokens_details.cached_tokens`` is the part of the prompt that hit
+          the provider's prefix cache and is billed at a lower rate. The design
+          assumes a stable system prompt makes this most of the input, so it has to
+          be measured rather than believed.
+        - ``completion_tokens_details.reasoning_tokens`` is the reasoning half of the
+          output (gpt-5 bills it as output). On a recorded run it is the largest
+          single cost item.
         """
 
-        usage = response.get("usage", {})
-        # Chat uses prompt_tokens/completion_tokens; JEV uses input_tokens/output_tokens.
-        tokens_in = usage.get("prompt_tokens", usage.get("input_tokens", 0))
-        tokens_out = usage.get("completion_tokens", usage.get("output_tokens", 0))
-        cost = usage.get("cost", 0.0)
+        usage = response.get("usage") or {}
+        tokens_in = usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0
+        tokens_out = usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0
+        cost = usage.get("cost", 0.0) or 0.0
 
-        return (tokens_in, tokens_out, cost)
+        prompt_details = usage.get("prompt_tokens_details") or {}
+        completion_details = usage.get("completion_tokens_details") or {}
+        cached = prompt_details.get("cached_tokens", 0) or 0
+        reasoning = completion_details.get("reasoning_tokens", 0) or 0
+
+        return {
+            "tokens_in": int(tokens_in),
+            "tokens_out": int(tokens_out),
+            "cost_usd": float(cost),
+            "cached_tokens": int(cached),
+            "reasoning_tokens": int(reasoning),
+        }

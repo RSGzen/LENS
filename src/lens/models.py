@@ -45,6 +45,10 @@ class CallResult:
     latency_ms: int
     cost_usd: float
     finish_reason: str | None = None
+    #: Part of ``tokens_in`` that hit the provider's prompt cache (billed cheaper).
+    cached_tokens: int = 0
+    #: Part of ``tokens_out`` spent on reasoning (gpt-5 bills it as output).
+    reasoning_tokens: int = 0
 
 
 @dataclass

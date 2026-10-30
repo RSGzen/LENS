@@ -63,6 +63,12 @@ class Turn:
     provider: str | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
+    #: Subsets of the two above: the part of the prompt that hit the provider's
+    #: cache, and the reasoning half of the output. Kept per turn so the cost model
+    #: is checkable after the fact (a turn with a large ``cached_tokens`` is cheaper
+    #: per input token than one without).
+    cached_tokens: int | None = None
+    reasoning_tokens: int | None = None
     cost_usd: float | None = None
     latency_ms: int | None = None
     # The model's full message (reasoning + the ```python block).
@@ -209,6 +215,8 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
         # summary must still match ``Trajectory.totals()`` for the same log.
         turn.tokens_in = (turn.tokens_in or 0) + (event.get("tokens_in") or 0)
         turn.tokens_out = (turn.tokens_out or 0) + (event.get("tokens_out") or 0)
+        turn.cached_tokens = (turn.cached_tokens or 0) + (event.get("cached_tokens") or 0)
+        turn.reasoning_tokens = (turn.reasoning_tokens or 0) + (event.get("reasoning_tokens") or 0)
         turn.cost_usd = (turn.cost_usd or 0.0) + (event.get("cost_usd") or 0.0)
         turn.latency_ms = (turn.latency_ms or 0) + (event.get("latency_ms") or 0)
         turn.model = turn.model or event.get("model")
@@ -296,16 +304,21 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
 def replay_summary(turns: list[Turn]) -> dict[str, Any]:
     """Return the header numbers a viewer shows above the timeline.
 
-    Contract: ``{"turns", "tokens_in", "tokens_out", "jev_tokens_in", "cost_usd",
-    "chat_cost_usd", "tool_calls", "emits", "gates_passed", "gates_failed",
-    "missing_refs"}`` — all summed or counted from ``turns``, missing values
-    counted as zero.
+    Contract: ``{"turns", "tokens_in", "tokens_out", "cached_tokens",
+    "reasoning_tokens", "jev_tokens_in", "cost_usd", "chat_cost_usd", "tool_calls",
+    "emits", "gates_passed", "gates_failed", "missing_refs"}`` — all summed or
+    counted from ``turns``, missing values counted as zero.
 
     ``cost_usd`` (chat + gate calls) matches ``Trajectory.totals()["cost_usd"]``
     for the same log; ``chat_cost_usd`` and ``tokens_in/tokens_out`` stay chat-only
     because they drive the context-growth chart (a JEV call's input tokens are not
     the growing context). The two used to be one number, so a viewer's cost meter
     was short by the whole decision layer.
+
+    ``cached_tokens`` and ``reasoning_tokens`` are the cost-model numbers: the first
+    is the part of the prompt the provider served from its cache, the second the
+    reasoning half of the output. Both are subsets of ``tokens_in`` /
+    ``tokens_out`` and neither changes the caps.
     """
     gates = [tool.gate for turn in turns for tool in turn.tools if tool.gate]
 
@@ -313,6 +326,8 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
         "turns": len(turns),
         "tokens_in": sum(turn.tokens_in or 0 for turn in turns),
         "tokens_out": sum(turn.tokens_out or 0 for turn in turns),
+        "cached_tokens": sum(turn.cached_tokens or 0 for turn in turns),
+        "reasoning_tokens": sum(turn.reasoning_tokens or 0 for turn in turns),
         "jev_tokens_in": sum(turn.jev_tokens_in or 0 for turn in turns),
         # Total spend = chat + gate calls: the cost meter compares against the cap,
         # so it must not hide the decision layer. ``tokens_in`` stays chat-only
