@@ -1,0 +1,11 @@
+{
+  "version": "tier3_v1",
+  "frozen": "2026-10-30",
+  "verdicts": ["pass", "fail", "unknown"],
+  "facets": {
+    "coverage": "pass if the answer names the papers, methods or claims a domain reader would expect for this question, judged against the question alone; fail if it answers a narrower or different question; unknown if the question is not specific enough to expect anything",
+    "grounding": "pass if every factual claim carries a citation that the answer presents as a resolvable id or paper reference; fail if any factual claim has no citation, or cites something that does not support it; unknown if the answer contains no factual claims",
+    "scope_honesty": "pass if the answer states what it inspected and, where evidence was missing, describes that absence as limited to what was inspected; fail if it asserts a global absence, or implies it read material it did not; unknown if the answer makes no claim about scope",
+    "usability": "pass if the answer reads as a synthesis a reviewer could act on, in prose with per-claim citations; fail if it is a raw dump, tool narration, or a list of ids without claims; unknown if the answer is empty"
+  }
+}

@@ -11,6 +11,7 @@ import unittest
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import lens.observability.trajectory as trajectory_module
 from lens import config
@@ -471,6 +472,108 @@ class RuntimeRegressionTestCase(unittest.TestCase):
         # The static prefix must not change, or prefix caching stops hitting.
         self.assertNotIn(warning, messages[0]["content"])
         self.assertEqual(messages[-1]["content"], warning)
+
+
+class FlatBaselineTestCase(unittest.TestCase):
+    """The orchestration-off arm: one retrieval, one model turn, no loop."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig_root = trajectory_module.LENS_RUNS_ROOT_PATH
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._tmp.name
+        self.trajectory = Trajectory("flat-test")
+        self.sandbox = FakeSandbox(self.trajectory.run_dir / "work")
+        self.registry = ToolRegistry()
+
+        def shallow_match(buckets: object) -> list[str]:
+            """Stage A candidate ids."""
+            return ["p1"]
+
+        def rerank_papers(arxiv_ids: list[str], buckets: object) -> list[dict]:
+            """Stage A rows."""
+            return [{"arxiv_id": arxiv_ids[0]}]
+
+        def deep_match(arxiv_ids: list[str], buckets: object) -> list[str]:
+            """Stage B candidate chunk ids."""
+            return ["c1", "c2"]
+
+        def rerank_chunks(chunk_ids: list[str], buckets: object) -> dict:
+            """Stage B bundle."""
+            return {
+                "chunks": [
+                    {"chunk_uuid": chunk_ids[0], "chunk_text": "alpha"},
+                    {"chunk_uuid": chunk_ids[1], "chunk_text": "beta"},
+                ],
+                "papers": [],
+                "assets": {},
+            }
+
+        for name, func in (
+            ("shallow_match", shallow_match),
+            ("rerank_papers", rerank_papers),
+            ("deep_match", deep_match),
+            ("rerank_chunks", rerank_chunks),
+        ):
+            self.registry.register(name, func)
+
+        self.client = FakeClient(["The answer [c1]."], self.trajectory)
+        self.runtime = Runtime(
+            "how many datasets",
+            "flat-test",
+            client=self.client,  # type: ignore[arg-type]
+            trajectory=self.trajectory,
+            conn=None,
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=self.sandbox,  # type: ignore[arg-type]
+            registry=self.registry,
+            budget=Budget(),
+        )
+
+    def tearDown(self) -> None:
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._orig_root
+        self._tmp.cleanup()
+
+    def test_one_turn_and_no_loop(self) -> None:
+        result = self.runtime.run_flat()
+
+        self.assertEqual(result.stop_reason, "flat")
+        self.assertFalse(result.partial)
+        self.assertEqual(result.iterations, 1)
+        self.assertEqual(result.answer, "The answer [c1].")
+        self.assertEqual(len(self.client.chat_calls), 2)  # segmentation + one answer
+
+    def test_the_funnel_is_dispatched_so_citations_resolve(self) -> None:
+        self.runtime.run_flat()
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+        ]
+        tools = [event.get("tool") for event in events if event.get("action") == "tool.dispatch"]
+
+        self.assertEqual(tools, ["shallow_match", "rerank_papers", "deep_match", "rerank_chunks"])
+
+    def test_the_prompt_is_the_flat_variant_with_the_chunks_inline(self) -> None:
+        self.runtime.run_flat()
+
+        messages = self.client.chat_calls[-1]["messages"]
+        self.assertNotIn("shallow_match", messages[0]["content"])
+        self.assertIn("alpha", messages[1]["content"])
+        self.assertIn("beta", messages[1]["content"])
+
+    def test_an_over_size_chunk_is_dropped_and_counted(self) -> None:
+        with patch.object(config, "CONTEXT_TOKEN_LIMIT", 1):
+            self.runtime.run_flat()
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+        ]
+        notes = [event["extra"]["text"] for event in events if event.get("call_type") == "note"]
+
+        self.assertTrue(any("dropped for size" in text for text in notes))
 
 
 if __name__ == "__main__":
