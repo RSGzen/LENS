@@ -103,6 +103,16 @@ a groundedness rejection that persists to the iteration cap. In every case the r
 is finalised with a labelled stop reason, so a partial answer is reported as a
 partial answer.
 
+Each turn appends two messages to the context and nothing else: the model's reply,
+then one `user` message holding what the code printed (capped at 3,000 characters).
+Tool results and sandbox variables never enter the prompt, only what the model
+chooses to print. The instruction block is constant for the run and the live
+counters ride at the end of the turn, so the provider's prefix cache covers most of
+the input. On the reference query it served **75 %** of the input tokens from cache,
+and reasoning accounted for **49 %** of the output tokens; both numbers are recorded
+per call and reported in `report.md` so the cost model can be checked rather than
+assumed.
+
 ### The sandbox boundary
 
 The container has `internal: true` networking, a read-only root filesystem, and no
