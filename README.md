@@ -395,6 +395,8 @@ These are enforced by tests rather than by convention:
 
 LENS stands on these projects:
 
+- [arXiv](https://arxiv.org/), operated by Cornell University, for the papers the
+  corpus is built from and for the metadata dump that identifies them
 - [GROBID](https://github.com/kermitt2/grobid) for structured full text
 - [pgvector](https://github.com/pgvector/pgvector) for vector search in Postgres
 - [nomic-embed-text](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5) for
