@@ -22,19 +22,21 @@
         "LENS_PROMPT_VARIANT": "naive",
         "LENS_GATE": "0"
       },
-      "note": "The baseline is included because its spread is the number the treatment must clear."
+      "note": "The baseline is included because its spread is the denominator the treatment has to clear; a variance check on the treatment alone cannot say whether a gap is bigger than the noise."
     }
   ],
   "queries": [
     {
       "id": "aggregation",
       "expect": "answerable",
-      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?"
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Pre-registered repeat cell: the most tool calls and the widest cost spread of the five pilot queries, so it brackets the high end of the variance."
     },
     {
-      "id": "single-fact",
-      "expect": "answerable",
-      "text": "Which paper introduces the OOLONG long-context aggregation benchmark, and what task does its trec_coarse subset use?"
+      "id": "negative",
+      "expect": "not-answerable",
+      "text": "What ablations does the LENS harness itself report for its knowledge-graph verifier budget?",
+      "note": "Pre-registered repeat cell: the shortest run and the refusal path, so it brackets the low end. The two cells are chosen by rule before the runs; picking two of the twenty after seeing them would be selection."
     }
   ]
 }
