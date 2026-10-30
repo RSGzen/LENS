@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import secrets
-import shutil
 import sys
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -192,7 +191,13 @@ def build_runtime(
             raise FileNotFoundError(f"LENS_DOCUMENTS not found: {source}")
 
         workspace.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, workspace / "documents.jsonl")
+        # Strip a UTF-8 BOM on the way in: a file written by PowerShell or Excel
+        # carries one, and the first line then fails to parse as JSON — which
+        # silently drops a record and changes the aggregate.
+        raw = source.read_bytes()
+        (workspace / "documents.jsonl").write_bytes(
+            raw[3:] if raw.startswith(b"\xef\xbb\xbf") else raw
+        )
 
     registry = ToolRegistry()
 

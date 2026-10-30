@@ -157,12 +157,16 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertTrue(result.answer_path.is_file())
 
     def test_a_turn_can_run_code_and_answer(self) -> None:
-        # The smoke failure mode: gpt-5-mini ran a block and appended a real
-        # FINAL_ANSWER after the fence on every turn; "code wins" discarded all of
-        # them and the run ended at the iteration cap with an empty answer.md.
+        # Two failure modes meet here. First: a real FINAL_ANSWER after a fence
+        # used to be discarded on every turn, so the run ended with an empty
+        # answer. Second: accepting it immediately let the model answer a blind
+        # question — it had not seen the block's output, and reported the names of
+        # its own variables. So the block runs, the answer is deferred one turn,
+        # and the second turn's answer is the one kept.
         self.runtime.client = FakeClient(
             [
                 "```python\nprint('ran')\n```\nFINAL_ANSWER: The grounded answer.",
+                "FINAL_ANSWER: The grounded answer.",
             ],
             self.trajectory,
         )
@@ -171,8 +175,22 @@ class RuntimeTestCase(unittest.TestCase):
 
         self.assertFalse(result.partial)
         self.assertIn("The grounded answer", result.answer)
+        self.assertEqual(result.answer, "The grounded answer.")
         # The block still executed: evidence first, then the answer.
         self.assertIn("print('ran')", self.sandbox.executed)
+
+    def test_an_answer_written_before_its_own_block_is_not_final(self) -> None:
+        self.runtime.client = FakeClient(
+            [
+                "```python\nprint(4)\n```\nFINAL_ANSWER: method = count_method records",
+                "FINAL_ANSWER: method = 4 records, dataset = 2 records",
+            ],
+            self.trajectory,
+        )
+
+        result = self.runtime.run()
+
+        self.assertEqual(result.answer, "method = 4 records, dataset = 2 records")
 
     def test_a_sentinel_printed_from_code_does_not_end_the_run(self) -> None:
         self.runtime.client = FakeClient(

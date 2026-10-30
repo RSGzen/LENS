@@ -109,6 +109,23 @@ def _containers_running() -> bool | None:
     return bool(running & expected)
 
 
+def _event_shape(mode: str) -> tuple[int, frozenset[str] | None, bool]:
+    """Return ``(required_types, allowed_types, ledger_required)`` for a run mode.
+
+    The gate checks the shape the mode can produce. A flat run has no loop (so no
+    ``exec`` and no ledger) and a document run has no corpus (so no tool calls);
+    asserting the full loop's shape against either would fail every baseline run
+    for being a baseline.
+    """
+    shapes: dict[str, tuple[int, frozenset[str] | None, bool]] = {
+        "rlm": (REQUIRED_CALL_TYPES, None, True),
+        "naive": (2, frozenset({"chat", "tool", "note"}), False),
+        "document": (2, frozenset({"chat", "exec", "note"}), False),
+    }
+
+    return shapes.get(mode, shapes["rlm"])
+
+
 def check_run(run_id: str) -> bool:
     """Run every assertion; return True when the run passes the gate."""
     run_dir = runstore.runs_root() / run_id
@@ -135,6 +152,13 @@ def check_run(run_id: str) -> bool:
     report = resolve_citations(run_id)
     counts = report.counts
 
+    # The gate checks the shape the mode can produce; see ``_event_shape``.
+    mode = ((manifest.extra or {}).get("arm") or {}).get("mode", {}).get("run") or "rlm"
+    required_types, allowed, ledger_required = _event_shape(mode)
+    event_types = (
+        call_types if allowed is None else [name for name in call_types if name in allowed]
+    )
+
     if counts["cited"] == 0:
         # Not a FAIL: a negative-control query can legitimately cite nothing. The
         # campaign CSV carries the count, and an answerable query with 0 citations
@@ -148,11 +172,15 @@ def check_run(run_id: str) -> bool:
             f"status={manifest.status}",
         ),
         _check(
-            f"event types >= {REQUIRED_CALL_TYPES}",
-            len(call_types) >= REQUIRED_CALL_TYPES,
-            f"{len(call_types)}: {call_types}",
+            f"event types >= {required_types}",
+            len(event_types) >= required_types,
+            f"{len(event_types)}: {event_types}",
         ),
-        _check("ledger non-empty", ledger_size > 0, f"{ledger_size} task(s)"),
+        _check(
+            "ledger non-empty",
+            ledger_size > 0 if ledger_required else None,
+            f"{ledger_size} task(s)" if ledger_required else f"{mode} run: no ledger by design",
+        ),
         _check("answer.md written", bool(answer.strip()), f"{len(answer)} chars"),
         _check(
             "cost matches totals()",

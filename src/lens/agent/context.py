@@ -147,13 +147,19 @@ Role
 - There is no retrieval tool: the whole evidence set is in the file, and the job
   is to read it and aggregate it correctly.
 
+Question
+<<QUESTION>>
+
 Tools
 <<TOOL_MANIFEST>>
 
 Evidence file
-- ``documents.jsonl`` in the workspace: one JSON object per line, with ``id``,
-  ``text`` and ``label``. Read it with ``pandas.read_json("documents.jsonl",
-  lines=True)`` or the standard library.
+- The evidence file is ``<<WORKSPACE>>/documents.jsonl``: one JSON object per line,
+  with ``id``, ``text`` and ``label``. Read it with
+  ``pandas.read_json("<<WORKSPACE>>/documents.jsonl", lines=True)`` or the standard
+  library. ``WORKSPACE`` is also defined in the namespace.
+- The sandbox's working directory is **not** the workspace, so a bare
+  ``documents.jsonl`` will not open: use the absolute path.
 - Count explicitly. When the question asks for an aggregate, compute it in code
   and print the aggregate **and** what it was computed over (records inspected,
   labels counted, ids matched).
@@ -210,6 +216,7 @@ def build_system_prompt(
     variant: str | None = None,
     kg: bool | None = None,
     sub_calls: bool | None = None,
+    question: str = "",
 ) -> str:
     """Fill the template for ``variant`` (default: the configured one).
 
@@ -239,6 +246,8 @@ def build_system_prompt(
         text.replace("<<TOOL_MANIFEST>>", tool_manifest)
         .replace("<<QUERY_JSON>>", json.dumps(dict(query_buckets), ensure_ascii=False, indent=2))
         .replace("<<BUDGET_LIMITS>>", _format_limits(budget_limits))
+        .replace("<<WORKSPACE>>", config.SANDBOX_WORKSPACE_PATH.rstrip("/"))
+        .replace("<<QUESTION>>", question or "(not provided)")
     )
 
     if "<<" in prompt or ">>" in prompt:

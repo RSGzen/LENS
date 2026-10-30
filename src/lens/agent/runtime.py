@@ -786,6 +786,7 @@ class Runtime:
             self.registry.manifest(),
             self._query_buckets,
             self.budget.snapshot()["limits"],
+            question=self.query,
         )
         messages = build_messages(system_prompt=system_prompt, memory=self._messages)
         messages = compact_messages(messages)
@@ -849,6 +850,27 @@ class Runtime:
                 observation = self._execute_block(code)
                 self._messages.append({"role": "user", "content": observation})
 
+                if final is not None:
+                    # The answer was written in the same message as the block, so
+                    # it cannot have used that block's output: a model that
+                    # aggregates in code then answers blind reports the *names* of
+                    # its variables. Run the block, then ask for the answer again.
+                    # The blind text is kept as ``answer`` so a cap on the next turn
+                    # still leaves something labelled rather than nothing.
+                    answer = final
+                    self._messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "The block above ran. If its output answers the question, "
+                                "re-emit that answer now as FINAL_ANSWER: <the values, not "
+                                "the variable names>. Otherwise continue."
+                            ),
+                        }
+                    )
+                    self._after_turn()
+                    continue
+
             if final is None:
                 if code is None:
                     self._messages.append(
@@ -865,24 +887,36 @@ class Runtime:
                 continue
 
             citations = cited_ids(final)
-            verdict = self._evaluate(
-                "final",
-                {
-                    "score": None,
-                    "summary": {
-                        "answer": final,
-                        # Real ids: the gate was previously handed a hard-coded
-                        # empty list, so "is every claim supported by the cited
-                        # chunks" was asked about citations it never saw.
-                        "citations": citations,
-                        # And the *text* of those chunks: an id alone cannot be
-                        # verified, so every gate call came back "unsupported" and a
-                        # correct answer was rejected until the iteration cap.
-                        "evidence": self._citation_evidence(citations),
+
+            if config.RUN_MODE == "document":
+                # Document mode has no corpus behind it: the cited ids are record
+                # ids in a supplied file, so there is no chunk text to verify and
+                # the gate can only answer "unsupported". Skipping is logged, not
+                # silent — a correct aggregate must not be rejected eight times
+                # because the evidence source does not exist in this mode.
+                self._note(
+                    "final gate skipped: document mode has no corpus evidence to verify citations"
+                )
+                verdict = None
+            else:
+                verdict = self._evaluate(
+                    "final",
+                    {
+                        "score": None,
+                        "summary": {
+                            "answer": final,
+                            # Real ids: the gate was previously handed a hard-coded
+                            # empty list, so "is every claim supported by the cited
+                            # chunks" was asked about citations it never saw.
+                            "citations": citations,
+                            # And the *text* of those chunks: an id alone cannot be
+                            # verified, so every gate call came back "unsupported" and a
+                            # correct answer was rejected until the iteration cap.
+                            "evidence": self._citation_evidence(citations),
+                        },
                     },
-                },
-                trace_ctx=trace_ctx,
-            )
+                    trace_ctx=trace_ctx,
+                )
 
             answer = final
 

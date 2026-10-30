@@ -279,5 +279,38 @@ class CampaignRowTests(unittest.TestCase):
         self.assertEqual(row["cached_share"], 0.0)
 
 
+class CheckRunShapeTests(unittest.TestCase):
+    """The gate must assert the shape a mode can produce, not the loop's shape."""
+
+    def setUp(self) -> None:
+        self.check_run = _load("check_run")
+
+    def test_rlm_requires_the_full_loop(self) -> None:
+        required, allowed, ledger = self.check_run._event_shape("rlm")
+
+        self.assertEqual(required, 4)
+        self.assertIsNone(allowed)
+        self.assertTrue(ledger)
+
+    def test_flat_needs_no_exec_and_no_ledger(self) -> None:
+        required, allowed, ledger = self.check_run._event_shape("naive")
+
+        self.assertEqual(required, 2)
+        self.assertNotIn("exec", allowed or frozenset())
+        self.assertFalse(ledger)
+
+    def test_document_needs_no_tool_calls(self) -> None:
+        required, allowed, ledger = self.check_run._event_shape("document")
+
+        self.assertEqual(required, 2)
+        self.assertNotIn("tool", allowed or frozenset())
+        self.assertFalse(ledger)
+
+    def test_an_unknown_mode_falls_back_to_the_full_loop(self) -> None:
+        self.assertEqual(
+            self.check_run._event_shape("something-new"), self.check_run._event_shape("rlm")
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
