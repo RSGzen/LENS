@@ -126,8 +126,8 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
         "reasoning_share": round(reasoning / tokens_out, 4) if tokens_out else 0.0,
         "stop_reason": (manifest.stop_reason if manifest else "") or "",
         "cost_usd": round(cost, 6),
-        # The 5.5 % credit-load fee is part of the reported $/query.
-        "cost_usd_with_fee": round(cost * 1.055, 6),
+        # The credit-load fee is part of the reported $/query.
+        "cost_usd_with_fee": round(cost * config.CREDIT_FEE, 6),
         "cited": counts.get("cited") or 0,
         "resolved": counts.get("resolved") or 0,
         "unresolved": counts.get("unresolved") or 0,
@@ -192,7 +192,10 @@ def main(argv: list[str] | None = None) -> int:
     spent = sum(float(row["cost_usd"]) for row in rows)
     print("")
     print(f"wrote    {written}")
-    print(f"spent    ${spent:.4f} raw (${spent * 1.055:.4f} with the 5.5% credit fee)")
+    print(
+        f"spent    ${spent:.4f} raw "
+        f"(${spent * config.CREDIT_FEE:.4f} with the {config.CREDIT_FEE - 1:.1%} credit fee)"
+    )
 
     return 0 if all(row["exit_code"] == 0 for row in rows) else 1
 

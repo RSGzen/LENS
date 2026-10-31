@@ -329,6 +329,12 @@ MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
 # pipeline).
 MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "1.00"))
 
+# OpenRouter charges 5.5 % to load credit, so a reported "$/query" has two numbers:
+# the raw sum of ``usage.cost`` and that sum times this fee. Accounting never
+# applies it (``Budget`` books the real per-call cost); it exists for reporting,
+# which is why it belongs here and not in three modules.
+CREDIT_FEE = 1.055
+
 # Context assembly. Compaction triggers when the estimated root context exceeds
 # ``CONTEXT_COMPACT_RATIO * CONTEXT_TOKEN_LIMIT`` (= 30,000 tokens by default).
 # 40k is ~10% of gpt-5's window and ~15% of qwen3-coder's. A turn needs far less:

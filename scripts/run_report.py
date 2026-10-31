@@ -16,6 +16,7 @@ import json
 import sys
 from pathlib import Path
 
+from lens import config
 from lens.agent import runstore
 from lens.observability.citations import resolve_citations, write_sources_md
 from lens.observability.replay import Turn, replay_summary, replay_turns
@@ -128,7 +129,7 @@ def write_report(run_id: str) -> Path:
         f"| query | {(manifest.query if manifest else '')} |",
         f"| iterations | {manifest.iterations if manifest else 0} |",
         f"| cost | ${float(totals.get('cost_usd') or 0.0):.6f} raw "
-        f"(${float(totals.get('cost_usd') or 0.0) * 1.055:.6f} with the 5.5 % fee) |",
+        f"(${float(totals.get('cost_usd') or 0.0) * config.CREDIT_FEE:.6f} with the 5.5 % fee) |",
         f"| calls | {totals.get('calls') or 0} billable · {totals.get('tool_calls') or 0} tool |",
         f"| tokens | in {totals.get('tokens_in') or 0} · out {totals.get('tokens_out') or 0} "
         f"· gate {summary['jev_tokens_in']} |",

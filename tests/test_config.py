@@ -54,6 +54,14 @@ class PathAnchorTestCase(unittest.TestCase):
         self.assertTrue((config.REPO_ROOT / "pyproject.toml").is_file())
         self.assertEqual(config.SANDBOX_COMPOSE_FILE, config.REPO_ROOT / "docker-compose.yaml")
 
+    def test_credit_fee_is_defined_once(self) -> None:
+        # Reporting multiplies raw cost by this and nothing else may re-declare it:
+        # a second literal is how the campaign CSV and the report drift apart.
+        self.assertEqual(config.CREDIT_FEE, 1.055)
+        for module in ("ui/data.py", "ui/app.py"):
+            source = (config.REPO_ROOT / "src" / "lens" / module).read_text(encoding="utf-8")
+            self.assertNotIn("1.055", source, module)
+
     def test_data_root_override_is_used(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {"LENS_DATA_ROOT": tmp}):

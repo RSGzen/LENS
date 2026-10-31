@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from lens import config
 from lens.agent.runstore import (
     RunManifest,
     list_runs,
@@ -40,10 +41,10 @@ from lens.observability.citations import CitationReport, resolve_citations
 from lens.observability.replay import Turn, replay_summary, replay_turns
 from lens.observability.trajectory import Trajectory
 
-#: The 5.5 % OpenRouter credit-load fee. A *reported* ``$/query`` includes it;
-#: the trajectory's ``cost_usd`` is raw. Shown as a second column, never folded
-#: into the raw number the log holds.
-CREDIT_FEE = 1.055
+#: The 5.5 % OpenRouter credit-load fee, defined once in ``lens.config``. A
+#: *reported* ``$/query`` includes it; the trajectory's ``cost_usd`` is raw. Shown
+#: as a second column, never folded into the raw number the log holds.
+CREDIT_FEE = config.CREDIT_FEE
 
 #: Tools whose payload hydrates chunks. The same pair ``citations.py`` trusts: an
 #: id list from ``deep_match`` names candidates, not evidence the model could read.
