@@ -10,6 +10,7 @@ Run:  .\.venv\Scripts\python.exe -m unittest tests.test_runstore -v
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import tempfile
 import unittest
@@ -17,6 +18,7 @@ from pathlib import Path
 
 from lens.agent import runstore
 from lens.agent.runstore import RunManifest
+from lens.observability.trajectory import Trajectory
 
 
 class RunStoreTestCase(unittest.TestCase):
@@ -242,6 +244,13 @@ class RunStoreTestCase(unittest.TestCase):
         self.assertEqual(index["run_id"], "run-src")
         self.assertEqual(index["schema_version"], runstore.SCHEMA_VERSION)
         self.assertTrue(index["trajectory_sha256"])
+
+    def test_every_ref_field_log_event_writes_is_exported(self) -> None:
+        # A bundle carries only the refs REF_FIELDS names, so a ref field added to
+        # the schema without adding it here drops those blobs from every export.
+        parameters = inspect.signature(Trajectory.log_event).parameters
+        written = {name for name in parameters if name.endswith("_ref")}
+        self.assertEqual(written, set(runstore.REF_FIELDS))
 
     def test_the_segmentation_input_travels_inside_work(self) -> None:
         # query.json lives under work/, so the workspace copy carries it. Listing
