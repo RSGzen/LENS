@@ -378,6 +378,43 @@ class RuntimeTestCase(unittest.TestCase):
         )
         self.assertIn("chat.completion", actions[actions.index("run.resume") :])
 
+    def test_a_corrupt_query_json_is_noted_on_resume(self) -> None:
+        # The input file is the run's retrieval contract. Swallowing a parse error
+        # as {} would resume the run with no buckets and nothing saying so.
+        (self.runtime.workspace).mkdir(parents=True, exist_ok=True)
+        (self.runtime.workspace / "query.json").write_text("{not json", encoding="utf-8")
+
+        runtime = Runtime(
+            "test query",
+            "run-test",
+            client=self.client,
+            trajectory=self.trajectory,
+            conn=None,
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=self.sandbox,
+            registry=self.registry,
+            budget=Budget(),
+            resume=True,
+        )
+        runtime.run()
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        notes = [
+            (event.get("extra") or {}).get("text", "")
+            for event in events
+            if event.get("call_type") == "note"
+        ]
+        self.assertTrue(
+            any("query.json unreadable on resume" in text for text in notes),
+            notes,
+        )
+
     def test_replay_serves_the_recorded_tool_result(self) -> None:
         ref = self.trajectory.store_blob(json.dumps({"echo": "hi"}))
         self.trajectory.log_event(

@@ -522,12 +522,20 @@ class Runtime:
         # query.json is an input: read it, never re-segment (new buckets would
         # silently change the retrieval the run was built on).
         query_path = self.workspace / "query.json"
+        query_note: str | None = None
 
         if query_path.is_file():
             try:
-                self._query_buckets = json.loads(query_path.read_text(encoding="utf-8"))
-            except ValueError:
-                self._query_buckets = {}
+                buckets = json.loads(query_path.read_text(encoding="utf-8"))
+            except ValueError as exc:
+                # A corrupt input is not an empty one: silently continuing with {}
+                # would answer the run's query without the buckets it was built on.
+                query_note = (
+                    f"query.json unreadable on resume ({exc}); continuing without buckets, "
+                    "as re-segmenting would change the retrieval this run was built on"
+                )
+            else:
+                self._query_buckets = buckets
 
         used = (rebuilt.budget or {}).get("used") or {}
 
@@ -545,7 +553,9 @@ class Runtime:
         # ``query.json`` is an input, not a derivation: re-segmenting would spend a
         # call and could produce different buckets, silently changing retrieval the
         # run is already built on. A missing file is noted, never re-derived here.
-        if not (self.workspace / "query.json").is_file():
+        if query_note is not None:
+            self._note(query_note)
+        elif not query_path.is_file():
             self._note(
                 "query.json missing on resume; continuing without buckets "
                 "(re-segmenting would change the retrieval this run was built on)"
