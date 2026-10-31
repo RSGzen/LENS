@@ -312,5 +312,52 @@ class CheckRunShapeTests(unittest.TestCase):
         )
 
 
+class RegradeTests(unittest.TestCase):
+    """The regrade probe: old verdict from the log, new verdict from the current gate."""
+
+    def test_a_claim_failure_names_itself_in_the_row(self) -> None:
+        regrade = _load("regrade_gate")
+        one = "11111111-1111-5111-8111-111111111111"
+
+        class FakeClient:
+            def jev(self, state, questions, *, trace_ctx):
+                from lens.models import JevResult
+
+                return JevResult(
+                    answers={"gate": {"noul": 0.1}, "claim-01": {"noul": 0.92}},
+                    model="typesafe/jev-1.13",
+                    provider="TypeSafe",
+                    tokens_in=1,
+                    cost_usd=0.0,
+                    latency_ms=1,
+                )
+
+        answer = f"The method uses a sliding window [{one}]."
+        row = regrade.regrade_run(
+            "recorded-run",
+            client=FakeClient(),
+            conn=None,
+            arm="rlm-full",
+            query_id="q1",
+        )
+
+        # No run directory here, so the answer is empty and the row says so.
+        self.assertEqual(row["new"], "skipped")
+
+        # With an answer supplied, the claim is evaluated and named.
+        with (
+            patch.object(regrade, "read_answer", return_value=answer),
+            patch.object(regrade, "recorded_final_verdict", return_value=("fail", 0.4)),
+            patch.object(regrade, "evidence_for", return_value={one: "text"}),
+        ):
+            row = regrade.regrade_run(
+                "recorded-run", client=FakeClient(), conn=None, arm="rlm-full", query_id="q1"
+            )
+
+        self.assertEqual(row["old"], "fail")
+        self.assertEqual(row["new"], "fail")
+        self.assertIn("claim-01", row["criterion"])
+
+
 if __name__ == "__main__":
     unittest.main()
