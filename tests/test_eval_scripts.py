@@ -9,8 +9,11 @@ Run:  .\.venv\Scripts\python.exe -m unittest tests.test_eval_scripts -v
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -277,6 +280,61 @@ class CampaignRowTests(unittest.TestCase):
 
         self.assertEqual(row["status"], "missing")
         self.assertEqual(row["cached_share"], 0.0)
+
+
+class CampaignIdentityTests(unittest.TestCase):
+    """A campaign must name the image that produced its rows (S13 challenges)."""
+
+    def _invoke(self, *argv: str, digest: str | None = "sha256:" + "a" * 64) -> tuple[int, list]:
+        ran: list = []
+        campaign = {"name": "unit", "arms": [{}]}
+
+        with (
+            patch.object(run_campaign, "load_campaign", return_value=campaign),
+            patch.object(run_campaign, "build_jobs", return_value=[]),
+            patch.object(run_campaign, "image_digest", return_value=digest),
+            patch.object(run_campaign, "run_jobs", side_effect=lambda *a, **k: ran.append(k) or []),
+            redirect_stdout(io.StringIO()),
+            redirect_stderr(io.StringIO()),
+        ):
+            code = run_campaign.main(["campaign.json", *argv])
+
+        return code, ran
+
+    def test_a_campaign_without_a_digest_refuses_to_run(self) -> None:
+        # A tag is rebuilt in place, so rows with no digest cannot name the system.
+        code, ran = self._invoke(digest=None)
+
+        self.assertEqual(code, 2)
+        self.assertEqual(ran, [])
+
+    def test_the_override_is_allowed_and_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, ran = self._invoke("--allow-missing-digest", "--out", tmp, digest=None)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(len(ran), 1)
+
+            written = next(Path(tmp).iterdir())
+            payload = json.loads((written / "campaign.json").read_text(encoding="utf-8"))
+            self.assertTrue(payload["image"]["digest_missing"])
+            self.assertIsNone(payload["image"]["digest"])
+
+    def test_the_digest_is_written_into_campaign_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self._invoke("--out", tmp)
+
+            written = next(Path(tmp).iterdir())
+            payload = json.loads((written / "campaign.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["image"]["digest"], "sha256:" + "a" * 64)
+            self.assertFalse(payload["image"]["digest_missing"])
+
+    def test_a_dry_run_needs_no_digest(self) -> None:
+        # The matrix is printed before any money is spent; it must stay free.
+        code, ran = self._invoke("--dry-run", digest=None)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(ran), 1)
 
 
 class CheckRunShapeTests(unittest.TestCase):

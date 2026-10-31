@@ -17,6 +17,12 @@ Usage::
 validated before it costs money. Output: ``<DATA_ROOT>/campaigns/<name>-<ts>/``
 with ``campaign.json`` + ``campaign.csv``.
 
+A campaign **refuses to run without an image digest**: a tag is rebuilt in place,
+so two waves of the same tag can be two different systems, and a campaign file that
+cannot say which image produced its rows is not a measurement. ``--allow-missing-digest``
+is the escape hatch for a machine without Docker, and the override is written into
+``campaign.json`` so a reader sees it.
+
 The only "scoring hook" has is citation resolvability (a run either backs its
 citations or it does not); the OOLONG/nDCG metrics attach at against the same
 CSV rather than through a plug-in registry with one plug-in.
@@ -135,11 +141,30 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
     }
 
 
-def _write_output(rows: list[dict[str, Any]], campaign: dict[str, Any], out: Path) -> Path:
-    """Write ``campaign.json`` + ``campaign.csv``; return the directory."""
+def _write_output(
+    rows: list[dict[str, Any]],
+    campaign: dict[str, Any],
+    out: Path,
+    *,
+    digest: str | None,
+) -> Path:
+    """Write ``campaign.json`` + ``campaign.csv``; return the directory.
+
+    The image identity lives in the JSON header, not in every row: one campaign
+    ran on one image, and repeating it per row invites a row edited by hand.
+    """
     out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    payload = {"campaign": campaign["name"], "created_at": stamp, "rows": rows}
+    payload = {
+        "campaign": campaign["name"],
+        "created_at": stamp,
+        "image": {
+            "tag": config.SANDBOX_IMAGE,
+            "digest": digest,
+            "digest_missing": digest is None,
+        },
+        "rows": rows,
+    }
 
     (out / "campaign.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -158,6 +183,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("campaign", help="path to a campaign JSON file")
     parser.add_argument("--dry-run", action="store_true", help="print the matrix; spend nothing")
     parser.add_argument(
+        "--allow-missing-digest",
+        action="store_true",
+        help="run without an image digest (a machine without Docker); recorded in campaign.json",
+    )
+    parser.add_argument(
         "--out", default=None, help="output directory (default: DATA_ROOT/campaigns)"
     )
     args = parser.parse_args(argv)
@@ -175,6 +205,18 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"campaign {campaign['name']}: {len(jobs)} run(s), {len(campaign['arms'])} arm(s)")
     print(f"image    {config.SANDBOX_IMAGE} digest={digest}")
+
+    if digest is None and not args.dry_run and not args.allow_missing_digest:
+        # A tag is rebuilt in place. Without the digest the rows cannot name the
+        # system that produced them, so the wave is not a measurement.
+        print(
+            "\nrefusing to run: no image digest for "
+            f"{config.SANDBOX_IMAGE} (is Docker running?)\n"
+            "pass --allow-missing-digest to run anyway; the override is recorded",
+            file=sys.stderr,
+        )
+        return 2
+
     print("")
 
     rows = run_jobs(jobs, digest=digest, dry_run=args.dry_run)
@@ -187,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
         rows,
         campaign,
         out / f"{campaign['name']}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
+        digest=digest,
     )
 
     spent = sum(float(row["cost_usd"]) for row in rows)
