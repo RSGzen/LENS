@@ -57,6 +57,7 @@ class FakeClient:
                 "messages": messages,
                 "trace_ctx": trace_ctx,
                 "response_format": response_format,
+                "extra": kw.get("extra"),
             }
         )
         return chat_result(self._text)
@@ -152,6 +153,15 @@ class SegmentQueryTest(unittest.TestCase):
         self.assertEqual(call["trace_ctx"], self.ctx)
         self.assertEqual(call["messages"][1]["content"], "why is X slow?")
         self.assertEqual(buckets["objectives"], ["improve long-context aggregation"])
+
+    def test_the_call_is_tagged_as_segmentation(self) -> None:
+        # It logs at step_idx = 0 like a root turn; without the tag a reader cannot
+        # tell the one pre-loop call from the turns the model made.
+        client = FakeClient(good_json())
+
+        segment_query(client, "q", trace_ctx=self.ctx)
+
+        self.assertEqual(client.calls[0]["extra"], {"source": "segmentation"})
 
     def test_blank_query_rejected_without_calling(self) -> None:
         client = FakeClient(good_json())

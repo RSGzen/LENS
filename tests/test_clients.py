@@ -147,6 +147,18 @@ class LensClientTestCase(unittest.TestCase):
         self.assertAlmostEqual(event["cost_usd"], 0.00042)
         self.assertEqual(self._read_blob(event["completion_ref"]), "hi")
 
+    def test_extra_rides_on_the_chat_event(self) -> None:
+        # A caller that is not a loop turn tags its event; segmentation is the one
+        # caller that does, and an untagged event reads as a turn at step 0.
+        session = FakeSession([FakeResponse(200, chat_payload())])
+        self._client(session).chat(
+            "root",
+            [{"role": "user", "content": "hi"}],
+            trace_ctx=self.ctx,
+            extra={"source": "segmentation"},
+        )
+        self.assertEqual(self._events()[0]["extra"]["source"], "segmentation")
+
     def test_chat_pins_provider_from_root_spec(self) -> None:
         session = FakeSession([FakeResponse(200, chat_payload())])
         self._client(session).chat("root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx)

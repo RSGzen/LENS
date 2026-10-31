@@ -177,7 +177,9 @@ def segment_query(
       2. ``messages = build_segmentation_messages(query)``.
       3. ``result = client.chat(role="sub", messages=messages,
          trace_ctx=trace_ctx, response_format=SEGMENTATION_RESPONSE_FORMAT)``.
-         The transport logs ``usage.cost`` + the dated ``model`` snapshot.
+         The transport logs ``usage.cost`` + the dated ``model`` snapshot, tagged
+         ``extra["source"] = "segmentation"`` so the event is not mistaken for a
+         loop turn at ``step_idx = 0``.
       4. Return ``normalize_buckets(parse_segmentation_json(result.text))``.
 
     Returns the bucket mapping ready for ``retrieval.format_query`` / ``query.json``.
@@ -192,6 +194,9 @@ def segment_query(
         messages=messages,
         trace_ctx=trace_ctx,
         response_format=SEGMENTATION_RESPONSE_FORMAT,
+        # Segmentation is not a loop turn: it runs once, before the loop, and its
+        # tokens belong to no turn. The tag is what lets a reader or a fold tell.
+        extra={"source": "segmentation"},
     )
 
     result_json = parse_segmentation_json(result.text)

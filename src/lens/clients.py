@@ -97,6 +97,7 @@ class LensClient:
         tools: Sequence[Mapping[str, Any]] | None = None,
         response_format: Mapping[str, Any] | None = None,
         max_tokens: int | None = None,
+        extra: Mapping[str, Any] | None = None,
     ) -> CallResult:
         """One chat-completions call for ``role``; return a :class:`CallResult`.
 
@@ -119,6 +120,10 @@ class LensClient:
         7. Return ``CallResult`` (model = requested ``spec.id``; model_snapshot =
            the served ``response["model"]``; provider = ``response.get("provider")``
            or the first pinned provider, else ``"unknown"``).
+
+        ``extra`` rides on the event untouched. It is how a caller that is not a
+        loop turn — query segmentation is the one — says so in the log, instead of
+        looking like a turn at ``step_idx = 0``.
 
         ``result_ref`` is **not** used here (it is for host-tool / ``emit()`` outputs).
         """
@@ -189,6 +194,7 @@ class LensClient:
             reasoning_tokens=usage["reasoning_tokens"],
             latency_ms=latency_ms,
             cost_usd=cost,
+            extra=dict(extra) if extra else None,
         )
 
         call_result = CallResult(
