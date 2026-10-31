@@ -97,6 +97,48 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertEqual(set(GATED_STAGES), {"rerank_chunks", "build_kg"})
         self.assertEqual(set(GATED_STAGES.values()), {"retrieval", "kg"})
 
+    def test_truncated_evidence_adds_a_scope_question(self) -> None:
+        # When the evidence budget binds, "unsupported" and "not shown" are
+        # indistinguishable; the answer's own scope claim is the other signal.
+        client = _FakeJevClient({"gate": {"noul": 0.2}, "scope": {"noul": 0.9}})
+
+        evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": "no chunk contains X (of 12 inspected)",
+                    "citations": ["c1"],
+                    "evidence": {"c1": "text"},
+                    "evidence_truncated": True,
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        self.assertEqual(set(client.questions[0]), {"gate", "scope"})
+
+    def test_complete_evidence_asks_one_question(self) -> None:
+        client = _FakeJevClient({"gate": {"noul": 0.9}})
+
+        evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": "a claim [c1]",
+                    "citations": ["c1"],
+                    "evidence": {"c1": "text"},
+                    "evidence_truncated": False,
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        self.assertEqual(set(client.questions[0]), {"gate"})
+
     def test_gate_disabled_returns_none_without_a_client(self) -> None:
         # The ablation arm: no verdict, no JEV call, no `gate` key.
         with patch.object(config, "GATE_ENABLED", False):
@@ -118,11 +160,13 @@ class _FakeJevClient:
         self.answers = answers if answers is not None else {}
         self.exc = exc
         self.calls: list[tuple[str, dict]] = []
+        self.questions: list[dict] = []
 
     def jev(self, state, questions, *, trace_ctx):
         from lens.models import JevResult
 
         self.calls.append((state, questions))
+        self.questions.append(dict(questions))
 
         if self.exc is not None:
             raise self.exc

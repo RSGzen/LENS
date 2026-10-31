@@ -288,14 +288,54 @@ def _read_answer(answer: Mapping[str, Any]) -> tuple[Verdict, float | None, str 
     return verdict, confidence, str(criterion)[:300] if criterion else None
 
 
+def build_scope_question(answer: str) -> Question:
+    """Build the JEV ``noul`` question about **scope honesty** (final gate, truncated).
+
+    Asked only when the evidence budget bound before every cited chunk was shown.
+    A gate holding a third of the evidence cannot tell "unsupported" from "not
+    shown", so the second question judges the one thing that is still observable
+    from the answer alone: does it claim less than it can prove?
+
+    Its verdict is **recorded, not enforced**: the acceptance rule is the
+    groundedness verdict, and silently adding a second rejection rule would change
+    what the gate means without measuring it first.
+    """
+    excerpt = (answer or "").strip()
+
+    if len(excerpt) > ANSWER_MAX_CHARS:
+        excerpt = excerpt[:ANSWER_MAX_CHARS] + " …"
+
+    return Question(
+        type="noul",
+        instructions=(
+            "Decide whether this answer limits its claims of absence to the material "
+            "it says it inspected. Answer true if every 'not found' or 'no evidence' "
+            "statement is scoped to what was read ('in the 12 chunks inspected'); "
+            "answer false if it states a global absence ('nothing in the corpus', "
+            "'none of the papers') from a partial look, or offers no scope at all. "
+            f"Answer:\n{excerpt}"
+        ),
+        criteria={
+            "true": "the answer's absences are scoped to what it inspected",
+            "false": "the answer claims a global absence it cannot have checked",
+        },
+    )
+
+
 def _log_verdict(
-    client: LensClient, trace_ctx: TraceCtx, stage: str, verdict: StageVerdict
+    client: LensClient,
+    trace_ctx: TraceCtx,
+    stage: str,
+    verdict: StageVerdict,
+    *,
+    extra: Mapping[str, Any] | None = None,
 ) -> None:
     """Log one ``gate.verdict`` event (best-effort: observability must not decide).
 
     The JEV call itself is logged by the transport (``jev.decisions``); this event
     carries the **decision** — stage, verdict, confidence, tier — which is what the
-     report counts.
+     report counts. ``extra`` carries secondary signals (a scope verdict) that are
+     recorded but do not change the decision.
     """
     trajectory = getattr(client, "trajectory", None)
 
@@ -310,7 +350,11 @@ def _log_verdict(
             stage=stage,
             confidence=verdict.confidence,
             verdict=verdict.verdict,
-            extra={"tier": verdict.tier, "criterion": verdict.failing_criterion},
+            extra={
+                "tier": verdict.tier,
+                "criterion": verdict.failing_criterion,
+                **dict(extra or {}),
+            },
         )
     except Exception:  # noqa: BLE001 - a log failure must not change the verdict
         pass
@@ -385,8 +429,16 @@ def evaluate_stage(
         default=str,
     )
 
+    questions: dict[str, Question] = {"gate": question}
+
+    if stage == "final" and summary.get("evidence_truncated"):
+        # The groundedness verdict is being asked about evidence that is not all
+        # there, so the answer's own scope claim is the only other observable
+        # signal. Recorded, not enforced.
+        questions["scope"] = build_scope_question(str(summary.get("answer") or ""))
+
     try:
-        result = client.jev(state, {"gate": question}, trace_ctx=trace_ctx)
+        result = client.jev(state, questions, trace_ctx=trace_ctx)
     except Exception as exc:  # noqa: BLE001 - a dead decision layer must not end the run
         verdict = StageVerdict(
             verdict="uncertain",
@@ -413,7 +465,15 @@ def evaluate_stage(
         failing_criterion=criterion if verdict_value != "pass" else None,
         tier="jev",
     )
-    _log_verdict(client, trace_ctx, stage, verdict)
+    scope_extra: dict[str, Any] = {}
+
+    if "scope" in questions:
+        scope_verdict, scope_confidence, _criterion = _read_answer(
+            (getattr(result, "answers", None) or {}).get("scope") or {}
+        )
+        scope_extra = {"scope_verdict": scope_verdict, "scope_confidence": scope_confidence}
+
+    _log_verdict(client, trace_ctx, stage, verdict, extra=scope_extra)
 
     return verdict
 
@@ -423,6 +483,7 @@ __all__ = [
     "StageVerdict",
     "Verdict",
     "build_groundedness_question",
+    "build_scope_question",
     "build_sufficiency_question",
     "evaluate_stage",
 ]
