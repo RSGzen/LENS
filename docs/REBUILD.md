@@ -1,12 +1,12 @@
 # Rebuilding the LENS containers
 
-Run this after changing `src/lens/sandbox/Dockerfile` or
-`src/lens/sandbox/requirements.txt`, or when the base image / host toolchain has
-moved.
+Run this after changing `src/lens/sandbox/Dockerfile`,
+`src/lens/sandbox/requirements.txt` (then regenerate `requirements.lock` first), or
+when the base image / host toolchain has moved.
 
 **`lens-pgdata` is a named volume holding the loaded corpus and indexes.**
-`docker compose down -v` deletes it and the / loads have to run again.
-Never pass `-v` here.
+`docker compose down -v` deletes it and the loads have to run again.
+Never pass `-v` here, and never delete the volume's `postgres` directory.
 
 ## 1. Preconditions
 
@@ -83,15 +83,34 @@ Checks host-RPC reachability, that general egress is **blocked**, namespace
 persistence, the workspace mount, and that no API key or DB password is
 visible inside the container. Re-run after every rebuild.
 
+## Reproducibility of the image itself
+
+- **Base image pinned by digest** — `FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159`
+  (Debian slim, pulled 31 Oct 2026). A tag is republished in place, so the tag alone
+  was never an identity: two builds of one commit could compile against different
+  base layers. Bumping it is a deliberate edit plus a rebuild plus
+  `verify_sandbox.py`.
+- **Dependencies installed from a hashed lock** — `src/lens/sandbox/requirements.lock`
+  is generated with hashes and installed with `--require-hashes`, so a swapped or
+  re-uploaded wheel fails the build instead of being installed.
+  `requirements.txt` stays the readable spec. Regenerate after changing it:
+
+  ```powershell
+  uv pip compile src\lens\sandbox\requirements.txt --generate-hashes `
+      --python-platform x86_64-manylinux_2_28 --python-version 3.12 `
+      -o src\lens\sandbox\requirements.lock
+  ```
+
+  The platform flag matters: resolving on Windows would lock `win_amd64` wheels and
+  the Linux build would fail.
+
 ## Not done here (deliberate)
 
-- **Base image is not pinned by digest yet** — `FROM python:3.12-slim` still
-  floats. TODO owns it: pin `python:3.12-slim@sha256:...` and record the
-  digest in the log.
 - **The image's `ca-certificates` is not refreshed.** The sandbox has no egress
   (`sandbox-net: internal: true`) and reaches the host over plain HTTP, so it
   makes no TLS call at runtime. Revisit if the sandbox is ever given outbound
   TLS (e.g. web search), then add `apt-get update && apt-get upgrade
   ca-certificates` before the shell is deleted, or rebuild the base.
-- **`requirements.txt` is not hash-locked** (`--require-hashes`). The pip pin
-  closes the CA-trust gap; a lock file would close the supply-chain gap.
+- **The `requirements.lock` hashes are per-platform.** Regenerating it for another
+  architecture (e.g. arm64) needs the matching `--python-platform`, otherwise the
+  install fails on a hash mismatch — which is the correct failure, not a silent one.
