@@ -300,7 +300,14 @@ def kg_index_summary(graph: nx.MultiDiGraph) -> dict[str, Any]:
          "entity_types": {<type>: <count>, ...},
          "type_sources": {<source>: <count>, ...},
          "relations": {<relation>: <count>, ...},
+         "direction": {"verified": <int>, "unverified": <int>, "unknown": <int>},
          "top_entities": [{"entity": <str>, "type": <str>, "degree": <int>}, ...]}
+
+    ``direction`` is what the decision layer stood behind: ``verified`` edges had
+    their direction confirmed (``direction_verified: true``), ``unverified`` were
+    kept with a flag, and ``unknown`` never reached the verifier. The model needs
+    that split to decide how far to trust a walk, and without it the summary said
+    only how big the graph was.
 
     ``top_entities`` is the highest-degree entities, capped at
     :data:`config.KG_SUMMARY_TOP_ENTITIES` so the RLM sees the graph's hubs without
@@ -331,6 +338,18 @@ def kg_index_summary(graph: nx.MultiDiGraph) -> dict[str, Any]:
     entity_types = Counter(graph.nodes[n].get("type", "Concept") for n in graph)
     type_sources = Counter(graph.nodes[n].get("type_source", "model") for n in graph)
 
+    # How much of the graph the decision layer stood behind. Without this the
+    # summary says how big the graph is and nothing about how trustworthy, which is
+    # the question a model has to answer before it walks an edge.
+    direction = Counter()
+    for _u, _v, _key, data in graph.edges(data=True, keys=True):
+        if data.get("direction_verified") is True:
+            direction["verified"] += 1
+        elif data.get("direction_verified") is False:
+            direction["unverified"] += 1
+        else:
+            direction["unknown"] += 1
+
     summary_dict = {
         "ontology_version": ONTOLOGY_VERSION,
         "n_nodes": graph.number_of_nodes(),
@@ -338,6 +357,7 @@ def kg_index_summary(graph: nx.MultiDiGraph) -> dict[str, Any]:
         "entity_types": dict(entity_types),
         "type_sources": dict(type_sources),
         "relations": relations_dict,
+        "direction": dict(direction),
         "top_entities": top_entities,
     }
 

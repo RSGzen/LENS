@@ -46,9 +46,14 @@ Calling tools
 
 Sandbox modules
 <<BEGIN:kg>>
-- ``kg_query`` — KG traversal on the graph variable you build from build_kg():
-  kg_neighbors(G, entity, relation=None, direction="out|in|both"),
-  kg_triples(G, head=None, relation=None, tail=None), kg_subgraph(G, entities).
+- ``kg_neighbors``, ``kg_triples``, ``kg_subgraph`` are bound as plain functions in
+  the namespace (no import needed): ``kg_neighbors(graph, entity=...)``. They walk
+  the graph you get from ``build_kg`` — build it once, then read it.
+- Edges carry ``direction_verified`` / ``direction_confidence``. ``true`` means the
+  decision layer confirmed the direction of the relation; unverified edges were
+  kept but not confirmed, so do not state one as a fact.
+- ``kg_query`` is the same module, importable if you prefer
+  ``kg_query.kg_neighbors(...)``.
 <<END:kg>>
 - ``networkx``, ``numpy``, ``pandas`` are importable. There is no shell, no
   network, and no database driver.
@@ -660,6 +665,97 @@ in a persistent sandbox namespace, so variables survive between turns.
 """
 
 
+#: The KG traversal helpers and the signature each one is documented with.
+KG_HELPER_SIGNATURES: dict[str, str] = {
+    "kg_neighbors": '(graph, entity, relation=None, direction="both")',
+    "kg_triples": "(graph, head=None, relation=None, tail=None)",
+    "kg_subgraph": "(graph, entities)",
+}
+
+
+#: Appended to ``tools.md`` when the KG is enabled: the traversal helpers are not
+#: RPC tools, so without this block the only file the model is told to read for
+#: tools lists ``build_kg`` alone.
+KG_HELPERS_MD = """\
+# Knowledge graph (sandbox helpers)
+
+`build_kg(chunk_ids)` returns a payload whose `graph` is node-link JSON. Load it
+with `networkx.node_link_graph(payload["graph"])`; the helpers below are bound as
+plain functions in the namespace (importing `kg_query` works too):
+
+| helper | signature |
+|---|---|
+| `kg_neighbors` | `kg_neighbors(graph, entity, relation=None, direction="both")` |
+| `kg_triples` | `kg_triples(graph, head=None, relation=None, tail=None)` |
+| `kg_subgraph` | `kg_subgraph(graph, entities)` |
+
+Every edge carries `direction_verified` / `direction_confidence` /
+`direction_source`. `true` means the decision layer confirmed the direction of the
+relation; `jev_uncertain` and `unverified` mean the edge was kept but not
+confirmed. Prefer a confirmed edge when two claims disagree, and do not state an
+unverified relation as a fact.
+"""
+
+
+def kg_bindings() -> str:
+    """Return sandbox code that binds the KG helpers as plain functions.
+
+    Why this exists: the prompt told the model that ``kg_query`` was "KG traversal
+    on the graph variable", but the helpers were not bound like the host tools and
+    were absent from ``tools.md``, so ``kg_neighbors(G, "BERT")`` was a ``NameError``
+    and a model that read the tool list concluded the graph had one entry point:
+    build it, never read it.
+
+    Each wrapper also counts calls and **notes the first one** through
+    ``rlm_api.note``. That note is the use signal the KG on/off ablation was missing:
+    without it, "the graph was available" and "the graph was traversed" were
+    indistinguishable in the trajectory.
+
+    The import is guarded: an image without ``kg_query`` must still seed, because a
+    run that never touches the graph is legitimate.
+    """
+    signatures = ",\n".join(
+        f"    {name!r}: {signature!r}" for name, signature in KG_HELPER_SIGNATURES.items()
+    )
+
+    return "\n".join(
+        [
+            "try:",
+            "    import kg_query as _kg_query",
+            "except Exception:",
+            "    _kg_query = None",
+            "try:",
+            "    import rlm_api as _rlm_api",
+            "except Exception:",
+            "    _rlm_api = None",
+            "KG_HELPERS = {",
+            signatures,
+            "}",
+            "_KG_USED = {'count': 0}",
+            "",
+            "def _kg_bind(_name, _signature):",
+            "    _fn = getattr(_kg_query, _name)",
+            "",
+            "    def _call(*args, **kwargs):",
+            "        _KG_USED['count'] += 1",
+            "        if _KG_USED['count'] == 1 and _rlm_api is not None:",
+            "            try:",
+            "                _rlm_api.note('kg used: ' + _name)",
+            "            except Exception:",
+            "                pass",
+            "        return _fn(*args, **kwargs)",
+            "",
+            "    _call.__name__ = _name",
+            "    _call.__doc__ = 'KG helper ' + _name + _signature",
+            "    return _call",
+            "",
+            "if _kg_query is not None:",
+            "    for _name, _signature in KG_HELPERS.items():",
+            "        globals()[_name] = _kg_bind(_name, _signature)",
+        ]
+    )
+
+
 def tool_bindings(parameters: Mapping[str, Sequence[str]]) -> str:
     """Return the sandbox code that binds each host tool as a plain function.
 
@@ -714,12 +810,15 @@ def write_context_files(
     tool_manifest: str,
     budget_snapshot: Mapping[str, Any],
     ontology_summary: Mapping[str, Any] | None = None,
+    kg_helpers: bool = False,
 ) -> dict[str, Path]:
     """Write the sandbox context files and return their paths.
 
     Files: ``AGENTS.md`` (role + rules), ``tools.md`` (the manifest the prompt is
-    built from, so the RLM can re-read it from disk), ``budget.md``, and
-    ``ontology.md`` only when ``ontology_summary`` is given (KG enabled).
+    built from, so the RLM can re-read it from disk), ``budget.md``,
+    ``ontology.md`` only when ``ontology_summary`` is given (KG enabled), and a
+    "Knowledge graph (sandbox helpers)" section appended to ``tools.md`` when
+    ``kg_helpers`` is set.
 
     **Not** ``query.json``: owns that file
     (:func:`lens.agent.segmentation.write_query_json`) and writes it into the same
@@ -742,7 +841,10 @@ def write_context_files(
     paths["AGENTS.md"] = agents_path
 
     tools_path = root / "tools.md"
-    tools_path.write_text(tool_manifest, encoding="utf-8")
+    text = tool_manifest
+    if kg_helpers:
+        text = text.rstrip() + "\n\n" + KG_HELPERS_MD
+    tools_path.write_text(text, encoding="utf-8")
     paths["tools.md"] = tools_path
 
     def _fenced(payload: Mapping[str, Any]) -> str:

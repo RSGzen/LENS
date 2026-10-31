@@ -59,6 +59,7 @@ from lens.agent.context import (
     count_tokens,
     extract_final_answer,
     extract_python_block,
+    kg_bindings,
     tool_bindings,
     truncate_observation,
     write_context_files,
@@ -739,6 +740,7 @@ class Runtime:
             tool_manifest=self.registry.manifest(),
             budget_snapshot=self.budget.snapshot(),
             ontology_summary=self._ontology_summary,
+            kg_helpers=config.KG_ENABLED,
         )
 
         lines = [
@@ -764,6 +766,13 @@ class Runtime:
             # prints) — see context.tool_bindings.
             tool_bindings(self.registry.parameters())
         )
+
+        if config.KG_ENABLED:
+            # The traversal helpers are sandbox-side, so they are not in the tool
+            # manifest; binding them here is what makes the namespace match
+            # tools.md and what emits the "graph was used" note.
+            lines.append(kg_bindings())
+
         missing: list[str] = []
 
         if self.resume:

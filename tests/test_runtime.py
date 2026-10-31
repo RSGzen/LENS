@@ -415,6 +415,25 @@ class RuntimeTestCase(unittest.TestCase):
             notes,
         )
 
+    def test_the_seed_block_binds_the_kg_helpers(self) -> None:
+        # The helpers exist in the image but are not RPC tools, so nothing else
+        # puts them in the namespace: without this, tools.md lists build_kg and the
+        # model has no way to walk the graph.
+        self.runtime.run()
+
+        seed = next(code for code in self.sandbox.executed if "query = " in code)
+
+        for name in ("kg_neighbors", "kg_triples", "kg_subgraph"):
+            self.assertIn(name, seed)
+
+    def test_the_seed_block_skips_the_kg_helpers_when_the_kg_is_off(self) -> None:
+        with patch.object(config, "KG_ENABLED", False):
+            self.runtime.run()
+
+        seed = next(code for code in self.sandbox.executed if "query = " in code)
+
+        self.assertNotIn("kg_neighbors", seed)
+
     def test_replay_serves_the_recorded_tool_result(self) -> None:
         ref = self.trajectory.store_blob(json.dumps({"echo": "hi"}))
         self.trajectory.log_event(
