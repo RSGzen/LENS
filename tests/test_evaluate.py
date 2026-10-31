@@ -36,6 +36,30 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertEqual(set(question.criteria), {"true", "false"})
         self.assertIn("retrieval", question.instructions.lower())
 
+    def test_sufficiency_question_carries_the_query(self) -> None:
+        # "covering every objective and problem the query names" is unjudgeable
+        # when the question text does not say what the query is.
+        question = build_sufficiency_question(
+            "retrieval", {"score": None}, query="which methods aggregate long context?"
+        )
+
+        self.assertIn("which methods aggregate long context?", question.instructions)
+
+    def test_state_carries_the_query(self) -> None:
+        client = _FakeJevClient({"gate": {"noul": 0.9}})
+
+        evaluate_stage(
+            "retrieval",
+            {"score": None, "summary": {"chunks": 100}},
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+            query="which methods aggregate long context?",
+        )
+
+        state = json.loads(client.calls[0][0])
+        self.assertEqual(state["query"], "which methods aggregate long context?")
+        self.assertEqual(state["stage"], "retrieval")
+
     def test_groundedness_question_is_noul(self) -> None:
         question = build_groundedness_question("A claim [c1].", ["c1"])
         self.assertEqual(question.type, "noul")

@@ -91,13 +91,23 @@ class StageVerdict:
         }
 
 
-def build_sufficiency_question(stage: str, artifact: Mapping[str, Any]) -> Question:
+def build_sufficiency_question(
+    stage: str,
+    artifact: Mapping[str, Any],
+    *,
+    query: str | None = None,
+) -> Question:
     """Build the JEV ``noul`` question used by tier 2 for a **stage**.
 
     ``criteria`` must be exactly ``{"true": ..., "false": ...}`` (see
     :class:`lens.models.Question`). The question is about the *stage requirement*
     ("does this output satisfy what the stage was for?"), not about the stage's
     name — ``instructions`` names the stage so the verdict is auditable.
+
+    ``query`` is the research question the stage was working on. Without it the
+    retrieval requirement — "covering every objective and problem the query
+    names" — is a test of something the gate cannot see, so its verdict is
+    arbitrary by construction. Pass it.
 
     Keep the state small: it is built from ``artifact["summary"]``, never the raw
     payload (JEV has a 32 K cap).
@@ -117,11 +127,13 @@ def build_sufficiency_question(stage: str, artifact: Mapping[str, Any]) -> Quest
     }
     requirement = requirements.get(stage, f"the output fulfils the purpose of the {stage} stage")
     fields = len(artifact.get("summary") or {})
+    question_text = (query or "").strip() or "(not provided)"
 
     return Question(
         type="noul",
         instructions=(
-            f"Stage under review: {stage}. Decide whether {requirement}. "
+            f"Stage under review: {stage}. The research query is: {question_text}\n"
+            f"Decide whether {requirement}. "
             f"The state holds a bounded summary of the stage output ({fields} fields). "
             "Answer true only if the output clearly satisfies the stage requirement; "
             "answer false if something needed is missing, unrelated or unsupported, "
@@ -303,6 +315,7 @@ def evaluate_stage(
     trace_ctx: TraceCtx,
     threshold: float | None = None,
     budget: Any | None = None,
+    query: str | None = None,
 ) -> StageVerdict | None:
     """Run the three-tier gate and return a :class:`StageVerdict`.
 
@@ -318,6 +331,10 @@ def evaluate_stage(
     failing criterion; the orchestrator puts it in the envelope and the root's
     next turn is the judgment. Log ``stage``, ``confidence`` and ``verdict`` on
     the trajectory.
+
+    ``query`` is the research question the stage was working on, and it is put in
+    the **state** as well as the question: a sufficiency verdict about coverage
+    cannot be audited, or calibrated, if the state does not say what was asked.
 
     ``budget`` is optional and only used for accounting: the decision layer is
     cheap, not free, and H₃ counts it (:meth:`Budget.record_jev`).
@@ -351,9 +368,13 @@ def evaluate_stage(
             summary.get("evidence") or (),
         )
     else:
-        question = build_sufficiency_question(stage, artifact)
+        question = build_sufficiency_question(stage, artifact, query=query)
 
-    state = json.dumps({"stage": stage, "summary": summary}, ensure_ascii=False, default=str)
+    state = json.dumps(
+        {"query": (query or "").strip() or None, "stage": stage, "summary": summary},
+        ensure_ascii=False,
+        default=str,
+    )
 
     try:
         result = client.jev(state, {"gate": question}, trace_ctx=trace_ctx)

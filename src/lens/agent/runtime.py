@@ -1010,6 +1010,7 @@ class Runtime:
             client=self.client,
             trace_ctx=trace_ctx,
             budget=self.budget,
+            query=self.query,
         )
 
     def _dispatch_tool(
