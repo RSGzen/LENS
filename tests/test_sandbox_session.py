@@ -6,10 +6,12 @@ Run:  .\.venv\Scripts\python.exe -m unittest tests.test_sandbox_session -v
 from __future__ import annotations
 
 import json
+import os
 import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from lens import config
 from lens.agent.sandbox_session import ExecResult, SandboxSession
@@ -55,6 +57,22 @@ class SandboxSessionTestCase(unittest.TestCase):
         self.assertEqual(env["LENS_RUN_ID"], "run-1")
         # Forward slashes: the value goes into a "<host>:/workspace" volume spec.
         self.assertEqual(Path(env["LENS_RUN_WORKSPACE"]).as_posix(), self.workspace.as_posix())
+
+    def test_the_docker_child_never_inherits_the_key(self) -> None:
+        # ``subprocess`` passes the parent environment by default, so the child
+        # that starts the container inherited OPENROUTER_API_KEY even though the
+        # container itself never saw it. PATH must survive or docker is not found.
+        session = SandboxSession("run-1", self.workspace, token="t")
+        with mock.patch.dict(
+            os.environ,
+            {"OPENROUTER_API_KEY": "sk-secret", "LENS_DB_PASSWORD": "hunter2"},
+        ):
+            env = session._child_env()
+
+        self.assertNotIn("OPENROUTER_API_KEY", env)
+        self.assertNotIn("LENS_DB_PASSWORD", env)
+        self.assertIn("PATH", env)
+        self.assertEqual(env["LENS_RPC_TOKEN"], "t")
 
     def test_exec_sends_code_on_stdin_and_parses_result(self) -> None:
         envelope = {"ok": True, "stdout": "2\n", "stderr": "", "error": None}

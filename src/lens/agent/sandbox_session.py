@@ -24,6 +24,12 @@ from lens import config
 #:, so the host reaches it with ``docker compose exec``.
 EXEC_CLIENT = "/app/exec_client.py"
 
+#: Environment variables the ``docker compose`` child must never inherit. The
+#: compose file interpolates only what ``_compose_env`` lists, but the child gets
+#: the whole ambient environment by default — the API key included — and the
+#: container is only as isolated as the process that starts it.
+CHILD_ENV_SECRETS = ("OPENROUTER_API_KEY", "LENS_DB_PASSWORD")
+
 
 @dataclass
 class ExecResult:
@@ -289,6 +295,20 @@ class SandboxSession:
             "LENS_SANDBOX_STDOUT_MAX_CHARS": str(config.SANDBOX_STDOUT_MAX_CHARS),
         }
 
+    def _child_env(self) -> dict[str, str]:
+        """Return the environment for the ``docker compose`` child process.
+
+        The ambient environment minus the secrets, plus :meth:`_compose_env`.
+        ``PATH``/``DOCKER_HOST`` must survive or the ``docker`` lookup itself
+        fails; the key and the DB password must not, because the child inherits
+        whatever is passed and nothing it invokes needs them. Stripping here is
+        the only place that can do it: ``subprocess`` defaults to the full parent
+        environment.
+        """
+        env = {name: value for name, value in os.environ.items() if name not in CHILD_ENV_SECRETS}
+        env.update(self._compose_env())
+        return env
+
     def _run_compose(
         self,
         args: list[str],
@@ -298,9 +318,10 @@ class SandboxSession:
     ) -> subprocess.CompletedProcess[str]:
         """Run ``docker compose -f <file> <args>`` and return the completed process.
 
-        ``env`` is the ambient environment **plus** :meth:`_compose_env`, never
-        the latter alone: without ``PATH``/``DOCKER_HOST`` the ``docker`` lookup
-        itself fails. Failures are returned, not raised — the caller decides
+        ``env`` is :meth:`_child_env` — the ambient environment **minus the
+        secrets**, plus :meth:`_compose_env`, never the compose variables alone:
+        without ``PATH``/``DOCKER_HOST`` the ``docker`` lookup itself fails.
+        Failures are returned, not raised - the caller decides
         (``start`` raises, ``stop`` ignores).
 
         ``input`` feeds stdin, which is how code reaches
@@ -316,7 +337,7 @@ class SandboxSession:
         return subprocess.run(
             ["docker", "compose", "-f", str(self.compose_file), *args],
             cwd=config.REPO_ROOT,
-            env={**os.environ, **self._compose_env()},
+            env=self._child_env(),
             input=input,
             capture_output=True,
             text=True,
