@@ -20,6 +20,7 @@ cannot fail for the reason it exists to diagnose.
 from __future__ import annotations
 
 import os
+import platform
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,8 +36,9 @@ API_KEY = "api_key"
 DB = "db"
 CORPUS = "corpus"
 METADATA = "metadata"
+TRUST = "trust"
 
-ALL: tuple[str, ...] = (API_KEY, DB, CORPUS, METADATA)
+ALL: tuple[str, ...] = (API_KEY, DB, CORPUS, METADATA, TRUST)
 
 #: Shortest value accepted as a real key. A placeholder such as ``sk-or-v1-...``
 #: from ``.env.example`` is 12 characters, so this rejects copy-paste mistakes
@@ -159,11 +161,49 @@ def _check_metadata() -> Check:
     return Check(METADATA, True, f"{path} ({size_mb:.0f} MB)")
 
 
+def _check_trust() -> Check:
+    """Report the trust stores in play, not a pass/fail gate.
+
+    Every layer updates on its own schedule and Windows Update covers none of the
+    Python ones, so "which certificate bundle does this run trust" is a question
+    that has a different answer in the venv, in pip and in the container. It fails
+    only when the interpreter has no certificate bundle at all, which would break
+    every HTTPS call.
+    """
+    parts: list[str] = []
+    ok = True
+
+    try:
+        import certifi
+
+        parts.append(f"python certifi {certifi.__version__}")
+    except ImportError:
+        ok = False
+        parts.append("python certifi MISSING")
+
+    try:
+        from pip._vendor import certifi as vendored_certifi
+
+        parts.append(f"pip certifi {vendored_certifi.__version__}")
+    except ImportError:
+        parts.append("pip certifi not installed")
+
+    if platform.system() == "Windows":
+        parts.append(f"windows root store ({platform.release()})")
+
+    msys = Path("C:/msys64/usr/ssl/certs/ca-bundle.crt")
+    if msys.is_file():
+        parts.append(f"msys64 bundle {msys.stat().st_size} bytes")
+
+    return Check(TRUST, ok, "; ".join(parts))
+
+
 _CHECKS = {
     API_KEY: _check_api_key,
     DB: _check_db,
     CORPUS: _check_corpus,
     METADATA: _check_metadata,
+    TRUST: _check_trust,
 }
 
 
@@ -257,6 +297,7 @@ __all__ = [
     "CORPUS",
     "DB",
     "METADATA",
+    "TRUST",
     "Check",
     "check_environment",
     "env_file",

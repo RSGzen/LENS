@@ -178,6 +178,17 @@ class PreflightTestCase(unittest.TestCase):
         self.assertEqual(preflight.check_environment(need=()), [])
         self.assertTrue(set(preflight.ALL) >= {preflight.API_KEY, preflight.DB, preflight.CORPUS})
 
+    def test_trust_report_names_the_bundle_this_interpreter_uses(self) -> None:
+        # Every layer updates on its own schedule and Windows Update covers none of
+        # the Python ones, so "which bundle do we trust" has to be printable.
+        import certifi
+
+        check = preflight._check_trust()
+
+        self.assertTrue(check.ok)
+        self.assertIn(certifi.__version__, check.detail)
+        self.assertIn("certifi", check.detail)
+
 
 if __name__ == "__main__":
     unittest.main()
