@@ -494,8 +494,9 @@ def fork_run(
 #                      sizes, trajectory sha256, source manifest snapshot, missing
 #   manifest.json      copied verbatim
 #   trajectory.jsonl   copied verbatim
-#   tasks.json, answer.md, query.json   copied when present
-#   work/              the sandbox workspace minus ``emits/`` (those are blobs)
+#   tasks.json, answer.md   copied when present
+#   work/              the sandbox workspace minus ``emits/`` (those are blobs);
+#                      ``query.json`` travels here, where it actually lives
 #   blobs/<sha256>     only the referenced, content-addressed payloads
 #
 # Import re-hashes every blob against its filename, so a truncated or edited
@@ -509,7 +510,6 @@ BUNDLE_RUN_FILES: tuple[str, ...] = (
     "tasks.json",
     "answer.md",
     "resume.json",
-    "query.json",
 )
 # Every event field that holds a blob ref. Keep in sync with ``log_event``.
 REF_FIELDS: tuple[str, ...] = (

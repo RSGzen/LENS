@@ -243,6 +243,19 @@ class RunStoreTestCase(unittest.TestCase):
         self.assertEqual(index["schema_version"], runstore.SCHEMA_VERSION)
         self.assertTrue(index["trajectory_sha256"])
 
+    def test_the_segmentation_input_travels_inside_work(self) -> None:
+        # query.json lives under work/, so the workspace copy carries it. Listing
+        # it as a run file exported nothing and looked like it did something.
+        run_dir = self._make_runnable()
+        (run_dir / "work").mkdir()
+        (run_dir / "work" / "query.json").write_text('{"query": "q"}\n', encoding="utf-8")
+        self.assertNotIn("query.json", runstore.BUNDLE_RUN_FILES)
+
+        dest = self.root / "out"
+        dest.mkdir()
+        bundle = runstore.export_run("run-src", dest, path=self.root)
+        self.assertTrue((bundle / "work" / "query.json").is_file())
+
     def test_export_refuses_to_overwrite(self) -> None:
         self._make_runnable()
         dest = self.root / "out"
