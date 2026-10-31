@@ -31,9 +31,13 @@ classDiagram
   }
   class chunks {
   }
+  class fetch {
+  }
   class manifest {
   }
   class papers {
+  }
+  class paths {
   }
   class db {
   }
@@ -48,6 +52,8 @@ classDiagram
   class arm {
   }
   class campaign {
+  }
+  class polarity {
   }
   class kg_extract {
   }
@@ -70,6 +76,8 @@ classDiagram
   class run_logging {
   }
   class trajectory {
+  }
+  class preflight {
   }
   class reranking {
   }
@@ -94,6 +102,12 @@ classDiagram
   class retrieval {
   }
   class sql {
+  }
+  class ui {
+  }
+  class app {
+  }
+  class data {
   }
   agent --> segmentation
   budget --> lens
@@ -138,11 +152,15 @@ classDiagram
   chunks --> chunking
   chunks --> config
   chunks --> embeddings
+  fetch --> manifest
+  fetch --> paths
   manifest --> lens
   manifest --> config
   papers --> lens
   papers --> config
   papers --> embeddings
+  paths --> lens
+  paths --> config
   db --> connect
   db --> schema
   connect --> lens
@@ -153,6 +171,7 @@ classDiagram
   embeddings --> config
   arm --> lens
   arm --> config
+  polarity --> models
   kg_extract --> lens
   kg_extract --> config
   kg_gold --> kg_postprocess
@@ -175,6 +194,9 @@ classDiagram
   run_logging --> lens
   run_logging --> config
   trajectory --> config
+  preflight --> lens
+  preflight --> config
+  preflight --> paths
   reranking --> lens
   reranking --> config
   run --> lens
@@ -189,7 +211,9 @@ classDiagram
   run --> connect
   run --> embeddings
   run --> kg_extract
+  run --> kg_verify
   run --> trajectory
+  run --> preflight
   run --> reranking
   run --> kg
   run --> retrieval
@@ -200,6 +224,7 @@ classDiagram
   evaluate --> clients
   evaluate --> config
   evaluate --> models
+  evaluate --> citations
   evaluate --> trajectory
   kg --> lens
   kg --> config
@@ -214,3 +239,14 @@ classDiagram
   retrieval --> reranking
   sql --> lens
   sql --> config
+  app --> agent
+  app --> runstore
+  app --> replay
+  app --> ui
+  app --> data
+  data --> lens
+  data --> runstore
+  data --> config
+  data --> citations
+  data --> replay
+  data --> trajectory

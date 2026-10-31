@@ -1,4 +1,10 @@
 classDiagram
+  class BatchReport {
+    failed : list[Target]
+    tally : Counter[str]
+    add(status: str) None
+    summary() str
+  }
   class Budget {
     backtracks : int
     cost_usd : float
@@ -24,6 +30,7 @@ classDiagram
     max_tokens : int
   }
   class CallResult {
+    cached_tokens : int
     cost_usd : float
     finish_reason : str | None
     latency_ms : int
@@ -31,9 +38,17 @@ classDiagram
     model : str
     model_snapshot : str | None
     provider : str
+    reasoning_tokens : int
     text : str
     tokens_in : int
     tokens_out : int
+  }
+  class Check {
+    detail : str
+    hint : str
+    name : str
+    ok : bool
+    line() str
   }
   class Chunk {
     chunk_text : str
@@ -58,6 +73,16 @@ classDiagram
     run_id : str
     unresolved : list[str]
     to_dict() dict[str, Any]
+  }
+  class CorpusError {
+    details : list
+  }
+  class CorpusPaths {
+    metadata : Path
+    pdf_dir : Path
+    source : Mapping[str, str]
+    xml_dir : Path
+    describe() list[str]
   }
   class DirectionVerifier {
     budget : int
@@ -154,6 +179,22 @@ classDiagram
     supports_tools : bool
     temperature : float | None
   }
+  class PolarityResult {
+    cost_usd : float
+    ok : bool
+    probes : list[Probe]
+    skewed : list[str]
+    tokens_in : int
+    to_dict() dict[str, Any]
+  }
+  class Probe {
+    error : str
+    expect_high : bool
+    name : str
+    noul : float | None
+    ok : bool
+    to_dict() dict[str, Any]
+  }
   class Question {
     criteria : dict[str, str] | list[str]
     instructions : str
@@ -190,6 +231,7 @@ classDiagram
     run_id : str
     schema_version : int
     status : Literal
+    stop_reason : str | None
     totals : dict[str, Any]
     updated_at : str
     from_dict(payload: dict[str, Any]) 'RunManifest'
@@ -205,6 +247,22 @@ classDiagram
     stop_reason : str | None
     tasks_path : Path
     trajectory_path : Path
+  }
+  class RunView {
+    answer : str
+    cap_usd : float | None
+    citations
+    cost_usd : float
+    cost_with_fee : float
+    evidence : dict[int, list[dict[str, Any]]]
+    has_report : bool
+    has_sources : bool
+    manifest
+    missing_refs : int
+    run_id : str
+    summary : dict[str, Any]
+    tokens_in_series : list[int]
+    turns : list[Turn]
   }
   class Runtime {
     budget
@@ -227,6 +285,8 @@ classDiagram
     workspace : Path
     handle_rpc(endpoint: str, payload: Mapping[str, Any]) dict[str, Any]
     run() RunResult
+    run_flat() RunResult
+    trace_ctx(actor: Actor) TraceCtx
   }
   class SandboxSession {
     compose_file : Path
@@ -264,6 +324,15 @@ classDiagram
     isatty() bool
     writable() bool
     write(message: str) int
+  }
+  class Target {
+    arxiv_id : str
+    object_key : str
+    pdf_name : str
+    stem : str
+    tei_name : str
+    url : str
+    version : str
   }
   class Task {
     attempts : int
@@ -309,6 +378,7 @@ classDiagram
   class ToolServer {
     host : str
     port : int
+    routes : dict[str, frozenset[str]]
     runtime : Any
     token
     url : str
@@ -352,6 +422,7 @@ classDiagram
   }
   class Turn {
     budget : dict[str, Any] | None
+    cached_tokens : int | None
     code : str | None
     completion : str | None
     cost_usd : float | None
@@ -366,12 +437,15 @@ classDiagram
     observation : str | None
     ok : bool | None
     provider : str | None
+    reasoning_tokens : int | None
     stderr_full : str | None
     stdout_full : str | None
     tokens_in : int | None
     tokens_out : int | None
     tools : list[ToolStep]
     turn : int
+  }
+  class UpstreamMissing {
   }
   class VerifyStats {
     ambiguous : int
@@ -407,5 +481,7 @@ classDiagram
   Budget --> BudgetLimits : limits
   TaskLedger --> Task : tasks
   Runtime --> TaskLedger : ledger
+  RunView --> RunManifest : manifest
+  RunView --> CitationReport : citations
   JevResult --o DirectionVerifier : jev_call
   Trajectory --o LensClient : trajectory
