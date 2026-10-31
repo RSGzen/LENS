@@ -57,6 +57,20 @@ class RunStoreTestCase(unittest.TestCase):
         self.assertAlmostEqual(restored.totals["cost_usd"], 0.25)
         self.assertEqual(restored.schema_version, runstore.SCHEMA_VERSION)
 
+    def test_stop_reason_is_serialised_and_round_trips(self) -> None:
+        # The field lived on the dataclass but not in to_dict(), so every campaign
+        # row reported an empty stop_reason: "why did it stop" was unanswerable.
+        manifest = RunManifest.new("run-1", "q")
+        manifest.stop_reason = "iterations"
+
+        payload = manifest.to_dict()
+
+        self.assertEqual(payload["stop_reason"], "iterations")
+        self.assertEqual(RunManifest.from_dict(payload).stop_reason, "iterations")
+
+    def test_a_clean_run_records_no_reason(self) -> None:
+        self.assertIsNone(RunManifest.new("run-2", "q").to_dict()["stop_reason"])
+
     def test_unknown_keys_are_preserved(self) -> None:
         # A newer version writes a field this one does not know: it must survive
         # a read+write cycle instead of being silently dropped.

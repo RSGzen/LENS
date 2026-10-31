@@ -147,6 +147,7 @@ class RunManifest:
             "created_by": self.created_by,
             "iterations": self.iterations,
             "last_seq": self.last_seq,
+            "stop_reason": self.stop_reason,
             "artifacts": self.artifacts,
             "notes": self.notes,
         }
@@ -184,6 +185,7 @@ class RunManifest:
             created_by=payload.get("created_by") or {},
             iterations=payload.get("iterations") or 0,
             last_seq=payload.get("last_seq") or 0,
+            stop_reason=payload.get("stop_reason"),
             artifacts=payload.get("artifacts") or {},
             notes=payload.get("notes"),
             extra=extra,

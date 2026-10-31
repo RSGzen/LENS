@@ -38,6 +38,9 @@ _CHUNK_RE = re.compile(
 )
 # arXiv ids: YYMM.NNNN or YYMM.NNNNN (an optional version suffix is ignored).
 _ARXIV_RE = re.compile(r"\b(\d{4}\.\d{4,5})(?:v\d+)?\b")
+# Abbreviated chunk ids as a model writes them: [3b4365f9]. Six to twelve hex
+# characters in brackets, which a hyphenated uuid cannot match.
+_SHORT_ID_RE = re.compile(r"\[([0-9a-fA-F]{6,12})\]")
 
 # Tools whose payload hydrates chunks / papers. Only these carry the evidence map.
 _CHUNK_TOOLS = frozenset({"rerank_chunks", "fetch_chunks"})
@@ -236,6 +239,42 @@ def resolve_citations(run_id: str) -> CitationReport:
                 section_type=evidence.get("section_type"),
                 title=evidence.get("title") or papers.get(arxiv_id or "") or None,
                 turn=provenance.get(token),
+            )
+        )
+
+    # Abbreviated ids: [3b4365f9]. A model that writes the first eight characters
+    # of a chunk uuid is citing the chunk, and a strict matcher scored those
+    # answers as uncited — which under-reported the flat baseline's grounding.
+    # A prefix resolves only when exactly one recorded id matches it; zero and
+    # many stay unresolved and are listed.
+    for token in _SHORT_ID_RE.findall(answer):
+        key = token.lower()
+
+        if key in seen:
+            continue
+
+        matches = [full for full in chunks if full.lower().startswith(key)]
+
+        if len(matches) != 1 or matches[0] in seen:
+            if len(matches) != 1:
+                seen.add(key)
+                report.unresolved.append(token)
+                report.citations.append(Citation(token=token, kind="chunk", resolved=False))
+            continue
+
+        full = matches[0]
+        seen.add(full)
+        evidence = chunks[full]
+        arxiv_id = evidence.get("arxiv_id")
+        report.citations.append(
+            Citation(
+                token=full,
+                kind="chunk",
+                resolved=True,
+                arxiv_id=arxiv_id,
+                section_type=evidence.get("section_type"),
+                title=evidence.get("title") or papers.get(arxiv_id or "") or None,
+                turn=provenance.get(full),
             )
         )
 

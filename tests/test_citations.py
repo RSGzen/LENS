@@ -46,8 +46,13 @@ class CitationTestCase(unittest.TestCase):
     def _answer(self, text: str) -> None:
         (self.traj.run_dir / "answer.md").write_text(text, encoding="utf-8")
 
-    def _bundle(self) -> None:
+    def _bundle(self, extra_uuid: str | None = None) -> None:
         """The shape ``rerank_chunks`` returns: {chunks, papers, assets}."""
+        extra = (
+            [{"chunk_uuid": extra_uuid, "arxiv_id": "2512.24601", "section_type": "Methodology"}]
+            if extra_uuid
+            else []
+        )
         self._tool(
             1,
             "rerank_chunks",
@@ -63,6 +68,7 @@ class CitationTestCase(unittest.TestCase):
                         "arxiv_id": "2511.02817",
                         "section_type": "Result/Discussion",
                     },
+                    *extra,
                 ],
                 "papers": [
                     {"arxiv_id": "2512.24601", "title": "Recursive Language Models"},
@@ -98,6 +104,28 @@ class CitationTestCase(unittest.TestCase):
         self.assertTrue(by_token["2512.24601"].resolved)
         self.assertFalse(by_token["2601.99999"].resolved)
         self.assertEqual(report.unresolved, ["2601.99999"])
+
+    def test_an_abbreviated_id_resolves_to_the_one_chunk_it_matches(self) -> None:
+        # A model that writes the first eight characters is citing the chunk. A
+        # strict matcher counted those answers as uncited, which under-reported
+        # the flat baseline's grounding.
+        self._bundle()
+        self._answer(f"RLMs recurse on chunks [{CHUNK[:8]}].")
+
+        report = resolve_citations("run-cite")
+
+        self.assertEqual(report.counts, {"cited": 1, "resolved": 1, "unresolved": 0})
+        self.assertEqual(report.citations[0].token, CHUNK)
+
+    def test_an_ambiguous_prefix_stays_unresolved(self) -> None:
+        self._bundle()
+        self._bundle(extra_uuid="11111111-aaaa-5aaa-8aaa-aaaaaaaaaaaa")
+        self._answer("Two chunks share a prefix [11111111].")
+
+        report = resolve_citations("run-cite")
+
+        self.assertEqual(report.counts["resolved"], 0)
+        self.assertEqual(report.unresolved, ["11111111"])
 
     def test_cited_ids_dedupes_and_keeps_order(self) -> None:
         # The final gate needs the ids the answer actually names.
