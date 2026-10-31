@@ -36,14 +36,20 @@ def sql_is_allowed(
     *,
     recorded: bool = config.LENS_RECORDED,
     allow_sql: bool = config.ALLOW_SQL,
+    mode: str = config.RUN_MODE,
 ) -> bool:
-    """Return ``False`` for recorded runs, otherwise the developer opt-in.
+    """Return ``False`` for recorded runs, and for any mode with no corpus.
 
     Recorded wins over the opt-in: a recorded run is an experiment, and an
     experiment that can bypass the ``k -> n -> C -> c`` funnel is not the
-    experiment the describes.
+    experiment the arm describes.
+
+    The mode check is not redundant with the flag: ``LENS_MODE=document`` reads a
+    fixed file and never opens the corpus, so a stray ``LENS_ALLOW_SQL=1`` in a
+    campaign file would otherwise register a corpus-reading tool inside a run
+    whose evidence is supposed to be that file. Only ``rlm`` has a corpus.
     """
-    return bool(allow_sql) and not recorded
+    return bool(allow_sql) and not recorded and mode == "rlm"
 
 
 def validate_sql(sql: str) -> str:

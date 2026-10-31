@@ -158,7 +158,7 @@ def build_runtime(
          and would expose the bound parameters as if the RLM had to supply them):
          ``shallow_match`` · ``rerank_papers`` · ``deep_match`` · ``rerank_chunks``
          · ``fetch_papers`` · ``fetch_chunks`` · ``build_kg`` · ``query(sql)``
-         (only when ``sql_is_allowed(recorded=..., allow_sql=...)``).
+         (only when ``sql_is_allowed(recorded=..., allow_sql=..., mode=...)``).
       5. ``token = secrets.token_urlsafe(32)``; ``sandbox = SandboxSession(run_id,
          workspace, token=token)``; ``server = ToolServer(runtime, token=token)``;
          ``server.start()`` — **then** set ``sandbox.host_rpc_port =

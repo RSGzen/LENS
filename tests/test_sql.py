@@ -19,6 +19,13 @@ class SqlGateTestCase(unittest.TestCase):
         self.assertFalse(sql_is_allowed(recorded=False, allow_sql=False))
         self.assertTrue(sql_is_allowed(recorded=False, allow_sql=True))
 
+    def test_a_mode_with_no_corpus_never_allows_sql(self) -> None:
+        # LENS_MODE=document reads a fixed file. A stray LENS_ALLOW_SQL=1 in a
+        # campaign file used to register a corpus-reading tool there anyway.
+        self.assertFalse(sql_is_allowed(recorded=False, allow_sql=True, mode="document"))
+        self.assertFalse(sql_is_allowed(recorded=False, allow_sql=True, mode="naive"))
+        self.assertTrue(sql_is_allowed(recorded=False, allow_sql=True, mode="rlm"))
+
     def test_select_and_with_are_allowed(self) -> None:
         self.assertEqual(validate_sql("SELECT 1"), "SELECT 1")
         self.assertEqual(
