@@ -1072,7 +1072,7 @@ class Runtime:
             summary = (
                 _retrieval_gate_summary(result.result)
                 if stage == "retrieval"
-                else _bounded_artifact(result.result)["summary"]
+                else _kg_gate_summary(result.result)
             )
             verdict = self._evaluate(
                 stage, {"score": None, "summary": summary}, trace_ctx=trace_ctx
@@ -1323,6 +1323,49 @@ def _bounded_artifact(result: Any) -> dict[str, Any]:
 #: Chunks whose text the retrieval gate is shown, and how much of each.
 GATE_SAMPLE_CHUNKS = 6
 GATE_SAMPLE_CHARS = 300
+
+#: Triples shown to the knowledge-graph gate. Counts cannot answer "do the entities
+#: and relations reflect what the chunks say"; a handful of real edges can.
+GATE_SAMPLE_EDGES = 8
+
+
+def _kg_gate_summary(result: Any) -> dict[str, Any]:
+    """Return the graph's own summary plus a sample of its triples.
+
+    The tool already builds a bounded ``summary`` (counts, entity types, top
+    entities), and that is passed through rather than counted. It says nothing
+    about *what the edges are*, though, so the gate could not judge whether the
+    relations reflect the chunks. A few real triples make the question answerable.
+    """
+    summary = dict(_bounded_artifact(result)["summary"])
+
+    if not isinstance(result, Mapping):
+        return summary
+
+    graph = result.get("graph")
+
+    if not isinstance(graph, Mapping):
+        return summary
+
+    labels = {
+        node.get("id"): node.get("label") or node.get("id")
+        for node in graph.get("nodes") or []
+        if isinstance(node, Mapping) and node.get("id") is not None
+    }
+    edges = [
+        {
+            "head": labels.get(link.get("source"), link.get("source")),
+            "relation": link.get("relation"),
+            "tail": labels.get(link.get("target"), link.get("target")),
+        }
+        for link in (graph.get("links") or [])[:GATE_SAMPLE_EDGES]
+        if isinstance(link, Mapping)
+    ]
+
+    if edges:
+        summary["sample_edges"] = edges
+
+    return summary
 
 
 def _retrieval_gate_summary(result: Any) -> dict[str, Any]:

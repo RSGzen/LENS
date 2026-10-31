@@ -638,6 +638,28 @@ class GateInputTestCase(unittest.TestCase):
         self.assertEqual(artifact["summary"]["relations"], {"uses": 3})
         self.assertIsNone(artifact["score"])
 
+    def test_the_kg_gate_sees_real_triples_not_counts(self) -> None:
+        from lens.agent.runtime import _kg_gate_summary
+
+        result = {
+            "summary": {"n_nodes": 12, "n_edges": 9, "top_entities": ["ReCAP"]},
+            "graph": {
+                "nodes": [
+                    {"id": "recap", "label": "ReCAP"},
+                    {"id": "squad", "label": "SQuAD"},
+                ],
+                "links": [{"source": "recap", "target": "squad", "relation": "evaluated_on"}],
+            },
+        }
+
+        summary = _kg_gate_summary(result)
+
+        self.assertEqual(summary["n_nodes"], 12)
+        self.assertEqual(
+            summary["sample_edges"],
+            [{"head": "ReCAP", "relation": "evaluated_on", "tail": "SQuAD"}],
+        )
+
     def test_every_cited_chunk_is_fetched_not_the_first_five(self) -> None:
         runtime = Runtime(
             "q",
