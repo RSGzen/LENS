@@ -174,6 +174,7 @@ class LensClient:
         tokens_in = usage["tokens_in"]
         tokens_out = usage["tokens_out"]
         cost = usage["cost_usd"]
+        self._note_missing_cost(usage, model_spec.id, trace_ctx)
 
         latency_ms = int((time.perf_counter() - start_timer) * 1000)
 
@@ -262,6 +263,7 @@ class LensClient:
         tokens_in = usage["tokens_in"]
         tokens_out = usage["tokens_out"]
         cost = usage["cost_usd"]
+        self._note_missing_cost(usage, config.JEV_MODEL_ID, trace_ctx)
 
         completion_ref = self.trajectory.store_blob(json.dumps(response_json))
 
@@ -417,6 +419,36 @@ class LensClient:
             status=last_status,
             attempts=attempts_made,
         ) from last_exc
+
+    def _note_missing_cost(
+        self, usage: Mapping[str, int | float], model: str, trace_ctx: TraceCtx
+    ) -> None:
+        """Record a call that reported tokens but no cost.
+
+        A provider that renames or drops ``usage.cost`` makes every call free as far
+        as the harness can see: no cap binds, ``totals()`` reports ``$0.00``, and
+        nothing fails. The note is the only signal that a number is missing rather
+        than zero.
+        """
+        tokens_in = int(usage["tokens_in"])
+        tokens_out = int(usage["tokens_out"])
+
+        if (tokens_in or tokens_out) == 0 or float(usage["cost_usd"]) != 0.0:
+            return
+
+        self.trajectory.log_event(
+            trace_ctx=trace_ctx,
+            call_type="note",
+            action="cost.anomaly",
+            extra={
+                "text": (
+                    f"{model} reported {tokens_in} in / {tokens_out} out tokens with no "
+                    "usage.cost: this call is billed as $0.00, so the cap and every "
+                    "reported $/query miss it"
+                ),
+                "model": model,
+            },
+        )
 
     def _usage(self, response: Mapping[str, Any]) -> dict[str, int | float]:
         """Extract the billing fields from an OpenRouter response.

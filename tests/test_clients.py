@@ -147,6 +147,33 @@ class LensClientTestCase(unittest.TestCase):
         self.assertAlmostEqual(event["cost_usd"], 0.00042)
         self.assertEqual(self._read_blob(event["completion_ref"]), "hi")
 
+    def test_a_call_with_tokens_and_no_cost_is_recorded_as_an_anomaly(self) -> None:
+        # If the provider renames usage.cost, every call looks free: no cap binds
+        # and every report says $0.00, with no error anywhere.
+        payload = chat_payload()
+        del payload["usage"]["cost"]
+        session = FakeSession([FakeResponse(200, payload)])
+
+        result = self._client(session).chat(
+            "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
+        )
+
+        self.assertEqual(result.cost_usd, 0.0)
+        notes = [event for event in self._events() if event["action"] == "cost.anomaly"]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("no usage.cost", notes[0]["extra"]["text"])
+
+    def test_a_zero_cost_with_zero_tokens_is_not_an_anomaly(self) -> None:
+        # A provider that reports no usage at all is a different (and rarer) case;
+        # it must not spam a note on every call.
+        payload = chat_payload()
+        payload["usage"] = {}
+
+        session = FakeSession([FakeResponse(200, payload)])
+        self._client(session).chat("root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx)
+
+        self.assertEqual([e for e in self._events() if e["action"] == "cost.anomaly"], [])
+
     def test_extra_rides_on_the_chat_event(self) -> None:
         # A caller that is not a loop turn tags its event; segmentation is the one
         # caller that does, and an untagged event reads as a turn at step 0.
