@@ -12,7 +12,9 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -155,6 +157,25 @@ class RunStoreTestCase(unittest.TestCase):
         self.assertEqual(by_id["run-live"].status, "interrupted")
         self.assertEqual(by_id["run-done"].status, "completed")
         self.assertEqual(runstore.sweep_interrupted(self.root), [])  # idempotent
+
+    def test_sweep_leaves_a_run_whose_log_is_recent(self) -> None:
+        # A second terminal may be running it. Marking it interrupted would let a
+        # --resume append to a log something else is still writing.
+        run_dir = self._make_run("run-live", status="running")
+        (run_dir / "trajectory.jsonl").write_text("{}\n", encoding="utf-8")
+
+        self.assertEqual(runstore.sweep_interrupted(self.root), [])
+        listed = {m.run_id: m for m in runstore.list_runs(self.root)}
+        self.assertEqual(listed["run-live"].status, "running")
+
+    def test_sweep_takes_a_log_older_than_the_window(self) -> None:
+        run_dir = self._make_run("run-dead", status="running")
+        log = run_dir / "trajectory.jsonl"
+        log.write_text("{}\n", encoding="utf-8")
+        old = time.time() - 3600
+        os.utime(log, (old, old))
+
+        self.assertEqual(runstore.sweep_interrupted(self.root), ["run-dead"])
 
     # ---------------------------------------------------------------- resume
     def test_resume_cache_round_trip(self) -> None:

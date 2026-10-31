@@ -46,6 +46,7 @@ import hashlib
 import json
 import os
 import shutil
+import time
 from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
 from datetime import datetime, timezone
@@ -349,11 +350,22 @@ def list_runs(path: str | Path | None = None, *, status: str | None = None) -> l
     return sorted(manifests, key=lambda manifest: manifest.updated_at, reverse=True)
 
 
-def sweep_interrupted(path: str | Path | None = None) -> list[str]:
-    """Mark every ``running`` run as ``interrupted``; return the affected ids.
+def sweep_interrupted(
+    path: str | Path | None = None,
+    *,
+    stale_after_s: float | None = None,
+) -> list[str]:
+    """Mark stale ``running`` runs as ``interrupted``; return the affected ids.
 
     Call once at process start, before any new run. A run left ``running`` by a
     killed process is exactly what the resume path needs to find.
+
+    **The log is the heartbeat.** A run whose ``trajectory.jsonl`` was written
+    more recently than ``stale_after_s`` (``config.RUN_HEARTBEAT_STALE_S``,
+    five minutes by default) is left alone: it may be a live process in another
+    terminal, and marking it interrupted would let a second ``--resume`` append to
+    a log something else is still writing. A run with no log at all has nothing to
+    resume, so it is swept immediately.
 
     ``updated_at`` is **not** touched: a sweep is not activity, and bumping it
     would reorder ``--list`` on every startup so the ordering stops meaning
@@ -364,6 +376,11 @@ def sweep_interrupted(path: str | Path | None = None) -> list[str]:
     if not root.is_dir():
         return []
 
+    from lens import config
+
+    if stale_after_s is None:
+        stale_after_s = config.RUN_HEARTBEAT_STALE_S
+
     affected: list[str] = []
 
     for entry in root.iterdir():
@@ -373,6 +390,10 @@ def sweep_interrupted(path: str | Path | None = None) -> list[str]:
         manifest = read_manifest(entry)
 
         if manifest is None or manifest.status != "running":
+            continue
+
+        log = entry / config.TRAJECTORY_FILENAME
+        if log.is_file() and (time.time() - log.stat().st_mtime) < stale_after_s:
             continue
 
         manifest.status = "interrupted"

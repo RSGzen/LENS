@@ -343,6 +343,13 @@ CREDIT_FEE = 1.055
 # rather than by a reader that silently rewrites newlines.
 BLOB_FORMAT_VERSION = 2
 
+# A ``running`` run is presumed dead when nothing has been appended to its log for
+# this long. ``--list``/``--resume`` sweep stale runs to ``interrupted``; a run
+# inside the window is left alone because it may be live in another terminal, and
+# two processes appending to one trajectory is worse than a late sweep. Five
+# minutes is well above the 120 s exec cap and a full turn on this hardware.
+RUN_HEARTBEAT_STALE_S = float(os.environ.get("LENS_RUN_HEARTBEAT_STALE_S", "300"))
+
 # Context assembly. Compaction triggers when the estimated root context exceeds
 # ``CONTEXT_COMPACT_RATIO * CONTEXT_TOKEN_LIMIT`` (= 30,000 tokens by default).
 # 40k is ~10% of gpt-5's window and ~15% of qwen3-coder's. A turn needs far less:
