@@ -47,8 +47,9 @@ Calling tools
 Sandbox modules
 <<BEGIN:kg>>
 - ``kg_neighbors``, ``kg_triples``, ``kg_subgraph`` are bound as plain functions in
-  the namespace (no import needed): ``kg_neighbors(graph, entity=...)``. They walk
-  the graph you get from ``build_kg`` — build it once, then read it.
+  the namespace (no import needed): ``kg_neighbors(graph, entity=...)``,
+  ``kg_triples(graph, head=...)``, ``kg_subgraph(graph, entities)``. Walk the graph
+  you get from ``build_kg``: build it once, then read it.
 - Edges carry ``direction_verified`` / ``direction_confidence``. ``true`` means the
   decision layer confirmed the direction of the relation; unverified edges were
   kept but not confirmed, so do not state one as a fact.
@@ -665,10 +666,13 @@ in a persistent sandbox namespace, so variables survive between turns.
 """
 
 
-#: The KG traversal helpers and the signature each one is documented with.
+#: The KG traversal helpers and the signature each one is documented with. The
+#: signatures are the module's real ones: ``relation``/``direction`` and
+#: ``head``/``relation``/``tail`` are **keyword-only**, and the default direction is
+#: ``"out"`` — documenting them otherwise would send the model into a ``TypeError``.
 KG_HELPER_SIGNATURES: dict[str, str] = {
-    "kg_neighbors": '(graph, entity, relation=None, direction="both")',
-    "kg_triples": "(graph, head=None, relation=None, tail=None)",
+    "kg_neighbors": '(graph, entity, *, relation=None, direction="out")',
+    "kg_triples": "(graph, *, head=None, relation=None, tail=None)",
     "kg_subgraph": "(graph, entities)",
 }
 
@@ -685,9 +689,14 @@ plain functions in the namespace (importing `kg_query` works too):
 
 | helper | signature |
 |---|---|
-| `kg_neighbors` | `kg_neighbors(graph, entity, relation=None, direction="both")` |
-| `kg_triples` | `kg_triples(graph, head=None, relation=None, tail=None)` |
+| `kg_neighbors` | `kg_neighbors(graph, entity, *, relation=None, direction="out")` |
+| `kg_triples` | `kg_triples(graph, *, head=None, relation=None, tail=None)` |
 | `kg_subgraph` | `kg_subgraph(graph, entities)` |
+
+`direction` is `"out"` (the entity is the head), `"in"` or `"both"`.
+
+Names are matched case-insensitively against the graph's normalised node keys, so
+`kg_neighbors(graph, "BERT")` finds the node `build_kg` stored for BERT.
 
 Every edge carries `direction_verified` / `direction_confidence` /
 `direction_source`. `true` means the decision layer confirmed the direction of the
