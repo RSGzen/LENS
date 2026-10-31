@@ -172,8 +172,8 @@ def build_groundedness_question(
     citation_list = ", ".join(str(citation) for citation in citations) or "(none cited)"
     excerpt = (answer or "").strip()
 
-    if len(excerpt) > 2000:
-        excerpt = excerpt[:2000] + " …"
+    if len(excerpt) > ANSWER_MAX_CHARS:
+        excerpt = excerpt[:ANSWER_MAX_CHARS] + " …"
 
     evidence_text = _format_evidence(evidence)
 
@@ -201,7 +201,16 @@ def build_groundedness_question(
 
 #: Total characters of cited chunk text handed to the final gate. Enough for a few
 #: chunks, small enough to stay incidental against JEV's input price and 32 K cap.
-EVIDENCE_MAX_CHARS = 2000
+#: Total characters of cited chunk text the final gate is shown. The old cap was
+#: 2 000, which covered about three chunks — while answers routinely cite 11-29 —
+#: so most claims were unsupported *by construction* and every run ended at the
+#: iteration cap. Measured cost of the decision layer at the time: $0.0002 a call,
+#: 0.3 % of a run, so the cap bought nothing and cost the verdict.
+EVIDENCE_MAX_CHARS = 14000
+
+#: Characters of the answer itself the gate is shown. An answer may not be larger
+#: than the evidence that is supposed to prove it.
+ANSWER_MAX_CHARS = 4000
 
 
 def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:

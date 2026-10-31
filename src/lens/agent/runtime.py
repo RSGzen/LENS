@@ -80,6 +80,15 @@ from lens.observability.citations import cited_ids
 from lens.observability.trajectory import TraceCtx, Trajectory
 from lens.tools.evaluate import GATED_STAGES, evaluate_stage
 
+#: How much cited chunk text the final gate is shown: how many chunks to fetch,
+#: how many characters of each, and the total. ``EVIDENCE_FETCH_CHARS`` is larger
+#: than ``evaluate.EVIDENCE_MAX_CHARS`` on purpose — the formatting budget is the
+#: binding one, so the fetch never silently cuts a chunk the format would have
+#: carried.
+MAX_EVIDENCE_CHUNKS = 30
+EVIDENCE_CHUNK_CHARS = 600
+EVIDENCE_FETCH_CHARS = 15000
+
 
 def _error_envelope(kind: str, message: str) -> dict[str, Any]:
     """Return the RPC failure shape the sandbox façade raises on."""
@@ -899,6 +908,7 @@ class Runtime:
                 )
                 verdict = None
             else:
+                evidence, evidence_truncated = self._citation_evidence(citations)
                 verdict = self._evaluate(
                     "final",
                     {
@@ -912,7 +922,10 @@ class Runtime:
                             # And the *text* of those chunks: an id alone cannot be
                             # verified, so every gate call came back "unsupported" and a
                             # correct answer was rejected until the iteration cap.
-                            "evidence": self._citation_evidence(citations),
+                            "evidence": evidence,
+                            # True when the evidence budget bound before every cited
+                            # chunk was shown, so a fail is not read as a bad answer.
+                            "evidence_truncated": evidence_truncated,
                         },
                     },
                     trace_ctx=trace_ctx,
@@ -1054,7 +1067,14 @@ class Runtime:
 
         if stage is not None and stage not in self._gated_stages and envelope.get("ok"):
             self._gated_stages.add(stage)  # one gate per stage per run
-            verdict = self._evaluate(stage, _bounded_artifact(result.result), trace_ctx=trace_ctx)
+            summary = (
+                _retrieval_gate_summary(result.result)
+                if stage == "retrieval"
+                else _bounded_artifact(result.result)["summary"]
+            )
+            verdict = self._evaluate(
+                stage, {"score": None, "summary": summary}, trace_ctx=trace_ctx
+            )
 
             if verdict is not None:
                 envelope["gate"] = verdict.to_dict()
@@ -1081,32 +1101,52 @@ class Runtime:
 
         return result.text
 
-    def _citation_evidence(self, citations: list[str]) -> dict[str, str]:
-        """Return ``chunk_uuid -> chunk_text`` for the cited ids (bounded).
+    def _citation_evidence(self, citations: list[str]) -> tuple[dict[str, str], bool]:
+        """Return ``(chunk_uuid -> chunk_text, truncated)`` for the cited ids.
 
         The final gate is asked whether the citations support the claims; without
         the text it can only guess, and it guessed "unsupported" on a correct answer
         until the iteration cap. Host-side and read-only: no model call,
         no tool event — the root context stays untouched (this text never becomes an
         observation).
+
+        **Every** cited chunk is fetched, not the first five: answers cite 11-29
+        chunks, and a five-chunk evidence map makes the gate's question
+        unanswerable for the rest. The total is bounded by ``EVIDENCE_FETCH_CHARS``;
+        when the bound bites, ``truncated`` is True and the caller records it, so a
+        ``fail`` can be read as "insufficient input" rather than "bad answer".
         """
-        ids = [citation for citation in citations if "-" in citation][:5]
+        ids = [citation for citation in citations if "-" in citation][:MAX_EVIDENCE_CHUNKS]
 
         if not ids or self.conn is None:
-            return {}
+            return {}, bool(ids)
 
         from lens.tools.retrieval import fetch_chunks
 
         try:
             rows = fetch_chunks(self.conn, ids)
         except Exception:  # noqa: BLE001 - a gate with no evidence still runs
-            return {}
+            return {}, True
 
-        return {
-            str(row.get("chunk_uuid")): str(row.get("chunk_text") or "")[:600]
-            for row in rows
-            if isinstance(row, dict) and row.get("chunk_uuid")
-        }
+        evidence: dict[str, str] = {}
+        used = 0
+        truncated = False
+
+        for row in rows:
+            if not isinstance(row, dict) or not row.get("chunk_uuid"):
+                continue
+
+            body = str(row.get("chunk_text") or "")
+            remaining = EVIDENCE_FETCH_CHARS - used
+
+            if remaining <= 0:
+                truncated = True
+                break
+
+            evidence[str(row["chunk_uuid"])] = body[: min(EVIDENCE_CHUNK_CHARS, remaining)]
+            used += len(evidence[str(row["chunk_uuid"])])
+
+        return evidence, truncated
 
     def _emit(self, value: Any, label: str | None = None) -> dict[str, Any]:
         """Offload a value to ``<workspace>/emits/`` and return its ref + paths.
@@ -1230,13 +1270,24 @@ def _bounded_artifact(result: Any) -> dict[str, Any]:
 
     The gate must never receive the raw payload: ``build_kg``'s node-link graph
     would exceed JEV's 32 K state cap and the call would fail for a reason that
-    has nothing to do with the stage's quality. Counts and short scalars are
-    enough for a sufficiency judgement.
+    has nothing to do with the stage's quality.
+
+    A tool that returns its own ``summary`` hands that over instead of a count:
+    ``{"summary": {...}}`` used to become ``{"summary": 4}`` (the number of keys),
+    which told the gate nothing about what the graph contains.
     """
     summary: dict[str, Any] = {}
 
     if isinstance(result, Mapping):
+        own = result.get("summary")
+
+        if isinstance(own, Mapping):
+            summary.update(dict(list(own.items())[:20]))
+
         for key, value in list(result.items())[:12]:
+            if key == "summary":
+                continue
+
             if isinstance(value, (list, tuple, set, Mapping)):
                 summary[key] = len(value)
             elif isinstance(value, str):
@@ -1249,3 +1300,45 @@ def _bounded_artifact(result: Any) -> dict[str, Any]:
     # ``score`` stays None: no calibrated threshold exists yet, and a made-up score
     # would make tier 1 decide on a number the cannot defend.
     return {"score": None, "summary": summary}
+
+
+#: Chunks whose text the retrieval gate is shown, and how much of each.
+GATE_SAMPLE_CHUNKS = 6
+GATE_SAMPLE_CHARS = 300
+
+
+def _retrieval_gate_summary(result: Any) -> dict[str, Any]:
+    """Return a summary a *coverage* verdict can actually be made from.
+
+    ``{"chunks": 100, "papers": 19}`` cannot answer "does this cover every
+    objective the query names": counts carry no content. The gate gets the paper
+    ids plus a few real excerpts, bounded, so a sufficiency judgement has evidence
+    in front of it.
+    """
+    if not isinstance(result, Mapping):
+        return {"type": type(result).__name__}
+
+    chunks = result.get("chunks") or []
+    papers = result.get("papers") or []
+    paper_ids = [
+        str(row.get("arxiv_id"))
+        for row in papers
+        if isinstance(row, Mapping) and row.get("arxiv_id")
+    ][:8]
+    samples = [
+        {
+            "id": str(row.get("chunk_uuid") or ""),
+            "paper": str(row.get("arxiv_id") or ""),
+            "section": str(row.get("section_type") or ""),
+            "text": " ".join(str(row.get("chunk_text") or "").split())[:GATE_SAMPLE_CHARS],
+        }
+        for row in chunks[:GATE_SAMPLE_CHUNKS]
+        if isinstance(row, Mapping)
+    ]
+
+    return {
+        "chunks": len(chunks),
+        "papers": len(papers),
+        "paper_ids": paper_ids,
+        "chunk_samples": samples,
+    }

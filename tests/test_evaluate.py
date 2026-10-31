@@ -78,6 +78,19 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertLess(question.instructions.count("x"), EVIDENCE_MAX_CHARS + 1)
         self.assertLessEqual(len(question.instructions), EVIDENCE_MAX_CHARS + 2000 + 900)
 
+    def test_evidence_covers_the_whole_cited_set(self) -> None:
+        # The old 2 000-character cap held about three chunks while answers cite
+        # 11-29, so most claims were unsupported by construction and every run
+        # ended at the iteration cap.
+        evidence = {f"id-{i}": "z" * 600 for i in range(12)}
+
+        question = build_groundedness_question(
+            "twelve claims [id-0][id-11]", list(evidence), evidence
+        )
+
+        self.assertGreater(question.instructions.count("z"), 2000)
+        self.assertLessEqual(question.instructions.count("z"), EVIDENCE_MAX_CHARS)
+
     def test_gated_stages_map_only_stage_completing_tools(self) -> None:
         # shallow_match / rerank_papers return ids only: gating them asked JEV
         # whether a list of arxiv_ids was "sufficient".

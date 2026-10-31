@@ -594,5 +594,100 @@ class FlatBaselineTestCase(unittest.TestCase):
         self.assertTrue(any("dropped for size" in text for text in notes))
 
 
+class GateInputTestCase(unittest.TestCase):
+    """What the gate is shown, which is what decides whether it can answer."""
+
+    def test_retrieval_summary_carries_content_not_just_counts(self) -> None:
+        from lens.agent.runtime import _retrieval_gate_summary
+
+        result = {
+            "chunks": [
+                {
+                    "chunk_uuid": f"id-{index}",
+                    "arxiv_id": "2511.02817",
+                    "section_type": "methods",
+                    "chunk_text": "x" * 900,
+                }
+                for index in range(20)
+            ],
+            "papers": [{"arxiv_id": "2511.02817"}, {"arxiv_id": "2601.00001"}],
+            "assets": {},
+        }
+
+        summary = _retrieval_gate_summary(result)
+
+        # Counts alone cannot answer "does this cover every objective the query
+        # names": the gate needs something to read.
+        self.assertEqual(summary["chunks"], 20)
+        self.assertEqual(summary["paper_ids"], ["2511.02817", "2601.00001"])
+        self.assertEqual(len(summary["chunk_samples"]), 6)
+        self.assertEqual(len(summary["chunk_samples"][0]["text"]), 300)
+
+    def test_a_tool_summary_is_passed_through_not_counted(self) -> None:
+        from lens.agent.runtime import _bounded_artifact
+
+        artifact = _bounded_artifact(
+            {
+                "summary": {"n_nodes": 5, "relations": {"uses": 3}},
+                "graph": {"nodes": [], "links": []},
+            }
+        )
+
+        # {"summary": {...}} used to become {"summary": 2} — the number of keys.
+        self.assertEqual(artifact["summary"]["n_nodes"], 5)
+        self.assertEqual(artifact["summary"]["relations"], {"uses": 3})
+        self.assertIsNone(artifact["score"])
+
+    def test_every_cited_chunk_is_fetched_not_the_first_five(self) -> None:
+        runtime = Runtime(
+            "q",
+            "gate-input-test",
+            client=FakeClient([]),  # type: ignore[arg-type]
+            trajectory=Trajectory("gate-input-test"),
+            conn=object(),
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=FakeSandbox(Path(tempfile.gettempdir()) / "gate-input-work"),  # type: ignore[arg-type]
+            registry=ToolRegistry(),
+            budget=Budget(),
+        )
+        rows = [
+            {"chunk_uuid": f"c{index}-0000-0000-0000-000000000000", "chunk_text": "y" * 100}
+            for index in range(8)
+        ]
+
+        with patch("lens.tools.retrieval.fetch_chunks", return_value=rows):
+            evidence, truncated = runtime._citation_evidence([row["chunk_uuid"] for row in rows])
+
+        self.assertEqual(len(evidence), 8)
+        self.assertFalse(truncated)
+
+    def test_the_evidence_budget_flags_truncation(self) -> None:
+        runtime = Runtime(
+            "q",
+            "gate-trunc-test",
+            client=FakeClient([]),  # type: ignore[arg-type]
+            trajectory=Trajectory("gate-trunc-test"),
+            conn=object(),
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=FakeSandbox(Path(tempfile.gettempdir()) / "gate-trunc-work"),  # type: ignore[arg-type]
+            registry=ToolRegistry(),
+            budget=Budget(),
+        )
+        rows = [
+            {"chunk_uuid": f"c{index}-0000-0000-0000-000000000000", "chunk_text": "y" * 600}
+            for index in range(40)
+        ]
+
+        with patch("lens.tools.retrieval.fetch_chunks", return_value=rows):
+            evidence, truncated = runtime._citation_evidence([row["chunk_uuid"] for row in rows])
+
+        self.assertLess(len(evidence), 40)
+        self.assertTrue(truncated)
+
+
 if __name__ == "__main__":
     unittest.main()
