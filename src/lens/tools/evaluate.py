@@ -270,11 +270,18 @@ ANSWER_MAX_CHARS = 8000
 #: building an enormous question map.
 MAX_GATE_CLAIMS = 40
 
-#: A claim at or above this probability of being unsupported fails the gate.
-#: **Not calibrated yet.** Every per-claim probability is logged on the
-#: ``gate.verdict`` event, so a later reliability curve can re-fit this threshold
-#: over recorded answers without re-running a single query.
-CLAIM_FAIL_PROBABILITY = 0.5
+#: A claim at or above this probability of being unsupported overturns a **passing**
+#: aggregate verdict, and is then named as the failing criterion.
+#:
+#: It is higher than the aggregate's 0.5 on purpose: the aggregate has already said
+#: "supported", so un-passing it should take confidence, not a coin flip. Measured
+#: on the pilot: at 0.5 the only two answers whose verdict changed were rejected on
+#: 0.51-0.53 for lines that merely *name* a paper or a system.
+#:
+#: **Not calibrated.** Every per-claim probability is logged on the ``gate.verdict``
+#: event, so a reliability curve can re-fit both thresholds over recorded answers
+#: without re-running a single query.
+CLAIM_FAIL_PROBABILITY = 0.7
 
 
 def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:
@@ -387,7 +394,9 @@ def build_claim_question(claim_id: str, text: str, citations: Sequence[str]) -> 
             "Answer false if the excerpt supports it. A claim that the evidence does not "
             "contain something is supported when the excerpts show what was inspected, and "
             "a statement about the process (what was inspected, searched or scanned) is not "
-            "a factual claim about the evidence — answer false for those.\n"
+            "a factual claim about the evidence — answer false for those. A line that only "
+            "names a paper, a system or an id, without asserting anything about it, is not "
+            "a claim either — answer false.\n"
             f"Claim: {body}"
         ),
         criteria={
