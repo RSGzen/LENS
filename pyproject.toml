@@ -6,7 +6,10 @@ readme = "README.md"
 authors = [
     { name = "Ge Rui Sen", email = "greyson.rg@gmail.com" }
 ]
-requires-python = ">=3.12"
+# The upper bound is deliberate: the CUDA wheel and the model stack were verified on
+# 3.12, and `.python-version` pins it. Dropping the bound lets a resolver install on
+# 3.13, where torch's wheel is a different build and nothing here has been measured.
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "einops>=0.8.2",
     "gliner>=0.2.29",

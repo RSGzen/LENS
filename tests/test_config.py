@@ -54,6 +54,17 @@ class PathAnchorTestCase(unittest.TestCase):
         self.assertTrue((config.REPO_ROOT / "pyproject.toml").is_file())
         self.assertEqual(config.SANDBOX_COMPOSE_FILE, config.REPO_ROOT / "docker-compose.yaml")
 
+    def test_the_supported_interpreter_is_a_closed_range(self) -> None:
+        # The bound is a measurement: torch's CUDA wheel and the model stack were
+        # verified on 3.12, and `.python-version` pins it. `>=3.12` alone let a
+        # resolver install on 3.13, where nothing here has been measured.
+        pyproject = (config.REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+        self.assertIn('requires-python = ">=3.12,<3.13"', pyproject)
+        self.assertEqual(
+            (config.REPO_ROOT / ".python-version").read_text(encoding="utf-8").strip(), "3.12"
+        )
+
     def test_credit_fee_is_defined_once(self) -> None:
         # Reporting multiplies raw cost by this and nothing else may re-declare it:
         # a second literal is how the campaign CSV and the report drift apart.
