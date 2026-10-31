@@ -267,9 +267,11 @@ class RerankChunksTest(unittest.TestCase):
             out = rerank_chunks(None, ["u1", "u2", "u3"], "q", rr, top_chunks=2)
 
         self.assertEqual([c["chunk_uuid"] for c in out["chunks"]], ["u2", "u3"])
-        self.assertEqual(out["chunks"][0]["asset_refs"], [])
+        # No asset fields: the shape used to promise an assets map and per-chunk
+        # asset_refs before anything filled them, so both are gone (S5).
+        self.assertEqual(set(out), {"chunks", "papers"})
+        self.assertNotIn("asset_refs", out["chunks"][0])
         self.assertEqual(out["papers"]["2101.00001"]["year"], 2021)
-        self.assertEqual(out["assets"], {})
 
     def test_paper_columns_align_with_schema(self) -> None:
         self.assertIn("arxiv_id", PAPER_COLUMNS)

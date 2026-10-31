@@ -52,7 +52,7 @@ class CitationTestCase(unittest.TestCase):
         (self.traj.run_dir / "answer.md").write_text(text, encoding="utf-8")
 
     def _bundle(self, extra_uuid: str | None = None) -> None:
-        """The shape ``rerank_chunks`` returns: {chunks, papers, assets}."""
+        """The shape ``rerank_chunks`` returns: {chunks, papers}."""
         extra = (
             [{"chunk_uuid": extra_uuid, "arxiv_id": "2512.24601", "section_type": "Methodology"}]
             if extra_uuid
@@ -79,7 +79,6 @@ class CitationTestCase(unittest.TestCase):
                     {"arxiv_id": "2512.24601", "title": "Recursive Language Models"},
                     {"arxiv_id": "2511.02817", "title": "OOLONG"},
                 ],
-                "assets": {},
             },
         )
 

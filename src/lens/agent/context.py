@@ -62,7 +62,7 @@ Sandbox modules
 Payload shapes — do not guess them
 - ``shallow_match`` / ``deep_match`` -> ``list[str]``: ids only, no text.
 - ``rerank_papers`` / ``fetch_papers`` -> ``list[dict]``: paper rows.
-- ``rerank_chunks`` -> ``dict`` with keys ``chunks`` / ``papers`` / ``assets``.
+- ``rerank_chunks`` -> ``dict`` with keys ``chunks`` / ``papers``.
 - ``fetch_chunks`` -> ``list[dict]``: chunk rows.
 - A chunk row has ``chunk_uuid``, ``arxiv_id``, ``section_type``, ``chunk_text``.
 

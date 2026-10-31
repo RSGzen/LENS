@@ -17,7 +17,7 @@ Design rules (do not deviate)
   than truncating them.
 - **Hydration is host-side, at the deep stage only** : ``shallow_match``,
   ``rerank_papers`` and ``deep_match`` return ids only; ``rerank_chunks`` returns
-  the ``{chunks, papers, assets}`` payload the orchestrator ``emit()``s.
+  the ``{chunks, papers}`` payload the orchestrator ``emit()``s.
 - **The RLM never issues SQL here.** Every function runs on a host connection
   (``lens.db.connect``); in recorded runs the host uses the read-only ``lens_ro``
   role. The sandbox holds no DB driver.
@@ -43,12 +43,13 @@ to unit-test with a fake connection.
 
 Assets
 ------
-Figures/tables (``assets``) are a follow-up module (``tools/assets.py``); until it
-lands, ``rerank_chunks`` returns an empty ``assets`` map and ``asset_refs: []`` so
-the payload shape is already stable.
+Figures and tables are **not** in the payload. An earlier design put an `assets`
+map and a per-chunk `asset_refs` list in the bundle before anything filled them, so
+the shape promised more than the system could deliver; both fields are gone. The
+prose still keeps the visible label ("Table 2"), which is what a reader follows back
+to the paper.
 
-``tests/test_retrieval.py`` is the contract (no DB, no key, zero cost). The funnel
-tools are implemented; ``tools/assets.py`` remains the only deferred follow-up.
+``tests/test_retrieval.py`` is the contract (no DB, no key, zero cost).
 """
 
 from __future__ import annotations
@@ -430,14 +431,12 @@ def rerank_chunks(
       3. Keep the top-``c`` via :func:`top_by_score`.
       4. **Hydrate host-side :** build the chunk dicts
          ``{"chunk_uuid", "arxiv_id", "section_type", "section_order",
-         "chunk_text", "token_count", "asset_refs": []}`` (``asset_refs`` is filled
-         by the assets follow-up), and a ``papers`` map ``{arxiv_id: {"title",
+         "chunk_text", "token_count"}``, and a ``papers`` map ``{arxiv_id: {"title",
          "authors", "year", "abstract"}}`` via :func:`fetch_papers` +
          :func:`year_from_arxiv_id`.
 
-    Returns ``{"chunks": [...], "papers": {...}, "assets": {}}`` — the payload
-    the orchestrator ``emit()``s. ``assets`` stays ``{}`` until ``tools/assets.py``
-    lands.
+    Returns ``{"chunks": [...], "papers": {...}}`` — the payload the orchestrator
+    ``emit()``s.
     """
     rows = fetch_chunks(conn, chunk_ids)
 
@@ -452,8 +451,8 @@ def rerank_chunks(
 
     top_rows = [row for row, _ in top_by_score(sorted_rows, scores, top_chunks)]
 
-    # payload: chunk_text keeps the visible labels; asset_refs is filled by
-    # the assets follow-up (tools/assets.py), so it stays [] for now.
+    # payload: chunk_text keeps the visible labels ("Table 2"); there is no asset
+    # field, because nothing extracts figures or tables.
     chunks = [
         {
             "chunk_uuid": row["chunk_uuid"],
@@ -462,7 +461,6 @@ def rerank_chunks(
             "section_order": row["section_order"],
             "chunk_text": row["chunk_text"],
             "token_count": row["token_count"],
-            "asset_refs": [],
         }
         for row in top_rows
     ]
@@ -480,4 +478,4 @@ def rerank_chunks(
         for paper in fetch_papers(conn, arxiv_ids)
     }
 
-    return {"chunks": chunks, "papers": papers, "assets": {}}
+    return {"chunks": chunks, "papers": papers}

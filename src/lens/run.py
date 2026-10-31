@@ -215,7 +215,7 @@ def build_runtime(
         return deep_match(conn, arxiv_ids, buckets, embedder)
 
     def rerank_chunks_tool(chunk_ids: list[str], buckets: dict[str, Any]) -> dict[str, Any]:
-        """Stage B: rerank chunks and hydrate {chunks, papers, assets}."""
+        """Stage B: rerank chunks and hydrate {chunks, papers}."""
         return rerank_chunks(conn, chunk_ids, buckets, reranker)
 
     def fetch_papers_tool(arxiv_ids: list[str]) -> list[dict[str, Any]]:

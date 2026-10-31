@@ -605,7 +605,6 @@ class FlatBaselineTestCase(unittest.TestCase):
                     {"chunk_uuid": chunk_ids[1], "chunk_text": "beta"},
                 ],
                 "papers": [],
-                "assets": {},
             }
 
         for name, func in (
@@ -693,7 +692,6 @@ class GateInputTestCase(unittest.TestCase):
                 for index in range(20)
             ],
             "papers": [{"arxiv_id": "2511.02817"}, {"arxiv_id": "2601.00001"}],
-            "assets": {},
         }
 
         summary = _retrieval_gate_summary(result)
