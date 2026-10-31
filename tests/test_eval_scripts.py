@@ -400,6 +400,45 @@ class CampaignPolarityTests(unittest.TestCase):
             self.assertIsNone(payload["polarity"])
 
 
+class CampaignStopReasonTests(unittest.TestCase):
+    """The cap-binding rate is what a wave can end on, and it is counted, not remembered."""
+
+    def test_counts_are_grouped_by_reason(self) -> None:
+        rows = [
+            {"stop_reason": "iterations"},
+            {"stop_reason": "iterations"},
+            {"stop_reason": "cost"},
+            {"stop_reason": ""},
+        ]
+
+        counts = run_campaign.stop_reason_counts(rows)
+
+        self.assertEqual(counts, {"iterations": 2, "cost": 1, "unrecorded": 1})
+
+    def test_a_wave_writes_its_distribution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                patch.object(
+                    run_campaign, "load_campaign", return_value={"name": "u", "arms": [{}]}
+                ),
+                patch.object(run_campaign, "build_jobs", return_value=[]),
+                patch.object(run_campaign, "image_digest", return_value="sha256:" + "a" * 64),
+                patch.object(run_campaign, "check_polarity", return_value=_good_polarity()),
+                patch.object(
+                    run_campaign,
+                    "run_jobs",
+                    return_value=[{"exit_code": 0, "cost_usd": 0.1, "stop_reason": "iterations"}],
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                run_campaign.main(["campaign.json", "--out", tmp])
+
+            payload = json.loads(
+                (next(Path(tmp).iterdir()) / "campaign.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(payload["stop_reasons"], {"iterations": 1})
+
+
 class CheckRunShapeTests(unittest.TestCase):
     """The gate must assert the shape a mode can produce, not the loop's shape."""
 

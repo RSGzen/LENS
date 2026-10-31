@@ -160,6 +160,23 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
     }
 
 
+def stop_reason_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Return how many rows ended for each reason; ``unrecorded`` when absent.
+
+    The cap-binding rate is the difference between "the model finished" and "a
+    number we picked ended it", and it is the one property of a wave that cannot
+    be read from the cost column. Counting it here means every campaign reports it
+    without anyone remembering to.
+    """
+    counts: dict[str, int] = {}
+
+    for row in rows:
+        key = str(row.get("stop_reason") or "") or "unrecorded"
+        counts[key] = counts.get(key, 0) + 1
+
+    return counts
+
+
 def _write_output(
     rows: list[dict[str, Any]],
     campaign: dict[str, Any],
@@ -185,6 +202,7 @@ def _write_output(
             "digest_missing": digest is None,
         },
         "polarity": polarity,
+        "stop_reasons": stop_reason_counts(rows),
         "rows": rows,
     }
 
@@ -285,6 +303,8 @@ def main(argv: list[str] | None = None) -> int:
         f"spent    ${spent:.4f} raw "
         f"(${spent * config.CREDIT_FEE:.4f} with the {config.CREDIT_FEE - 1:.1%} credit fee)"
     )
+    reasons = stop_reason_counts(rows)
+    print("stopped  " + ", ".join(f"{name}={count}" for name, count in sorted(reasons.items())))
 
     return 0 if all(row["exit_code"] == 0 for row in rows) else 1
 
