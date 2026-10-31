@@ -101,7 +101,13 @@ def regrade_run(
     arm: str = "",
     query_id: str = "",
 ) -> dict[str, Any]:
-    """Score one recorded answer with the current gate and report old vs new."""
+    """Score one recorded answer with the current gate and report old vs new.
+
+    The trace id **is** the run id, so every gate call in the regrade log can be
+    traced back to the answer it judged — which is what makes the log usable as a
+    calibration sample (claim text comes from the question, the score from the
+    event, the source from this id).
+    """
     answer = read_answer(run_id)
     citations = cited_ids(answer)
     old_verdict, old_confidence = recorded_final_verdict(run_id)
@@ -128,7 +134,7 @@ def regrade_run(
             },
         },
         client=client,
-        trace_ctx=TraceCtx(trace_id="regrade", step_idx=0, actor="root"),
+        trace_ctx=TraceCtx(trace_id=run_id, step_idx=0, actor="root"),
     )
 
     return {
