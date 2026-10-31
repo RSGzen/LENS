@@ -62,6 +62,17 @@ Image digest, uv version and certifi version are run inputs, not trivia: a
 rebuilt image with a different pip changes the artifact set. Put them in the run
 manifest (`manifest.json`) so a recorded run can be traced to an exact image.
 
+The same three numbers are printable in one command, which is what a fresh machine
+needs before anything else is trusted:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\check_env.py --need trust
+```
+
+It reports the interpreter's `certifi`, whether pip's **vendored** copy is present,
+the Windows root store and the msys64 bundle — the per-layer split that Windows
+Update does not keep aligned.
+
 ## 6. Sandbox contract check
 
 ```powershell
