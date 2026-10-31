@@ -179,6 +179,32 @@ class RuntimeTestCase(unittest.TestCase):
         # The block still executed: evidence first, then the answer.
         self.assertIn("print('ran')", self.sandbox.executed)
 
+    def test_a_failed_block_stores_its_traceback(self) -> None:
+        # stderr_ref was declared in the schema and never written, so nothing but
+        # the next turn's text could say why a block failed: a replay showed the
+        # observation and a bundle had no traceback at all.
+        def failing(code: str) -> ExecResult:
+            return ExecResult(
+                ok=False,
+                stdout="partial\n",
+                stderr="Traceback (most recent call last):\nValueError: bad\n",
+                error={"type": "ValueError", "message": "bad"},
+                duration_ms=2,
+            )
+
+        self.sandbox.exec = failing  # type: ignore[method-assign]
+
+        observation = self.runtime._execute_block("raise ValueError('bad')")
+
+        # The model still gets the diagnosis in the observation ...
+        self.assertIn("ValueError: bad", observation)
+
+        with open(self.trajectory.run_dir / "trajectory.jsonl", encoding="utf-8") as handle:
+            event = json.loads(handle.read().splitlines()[-1])
+
+        self.assertEqual(event["error"]["type"], "ValueError")
+        self.assertIn("ValueError: bad", self.trajectory.load_blob(event["stderr_ref"]))
+
     def test_an_answer_written_before_its_own_block_is_not_final(self) -> None:
         self.runtime.client = FakeClient(
             [

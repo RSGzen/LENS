@@ -977,6 +977,12 @@ class Runtime:
         The returned text is exactly what the model sees **and** what the fold
         reads back from ``stdout_ref`` — the two must not diverge, or a resumed
         run would remember a turn differently from the run that produced it.
+
+        A failed block additionally stores its captured stderr behind
+        ``stderr_ref``: the observation carries the same text into the next turn,
+        and the blob is what lets a replay or a bundle still say *why* the block
+        died once the context has moved past it. The error's type and message
+        ride in ``error``.
         """
         trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="tool")
         result = self.sandbox.exec(code)
@@ -999,6 +1005,7 @@ class Runtime:
             action="exec.block",
             code_ref=self.trajectory.store_blob(code),
             stdout_ref=self.trajectory.store_blob(observation),
+            stderr_ref=self.trajectory.store_blob(result.stderr) if result.stderr else None,
             error=result.error,
             extra={"budget": self.budget.snapshot()},
         )
