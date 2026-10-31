@@ -27,7 +27,7 @@ Tiers
 The artifact
 ------------
 The gate never sees a raw tool payload: ``build_kg``'s node-link graph would blow
-JEV's 32 K state cap. ``Runtime._dispatch_tool`` passes
+the graph itself. ``Runtime._dispatch_tool`` passes
 
     {"score": float | None, "summary": <bounded dict>}
 
@@ -110,7 +110,7 @@ def build_sufficiency_question(
     arbitrary by construction. Pass it.
 
     Keep the state small: it is built from ``artifact["summary"]``, never the raw
-    payload (JEV has a 32 K cap).
+    payload (the gate reads a summary, never the whole graph).
 
     ``artifact`` contributes only its **summary size**: the question text must not
     depend on the score, or tier 1 and tier 2 would be judging different things.
@@ -215,7 +215,8 @@ def build_groundedness_question(
     ``33384c38``" is unanswerable from the id alone. The polarity was verified
     separately (true statement 0.92, false 0.03, grounded 0.89, ungrounded 0.01),
     so the rejections were substantive, not a parsing artefact. Keep the total
-    bounded (``EVIDENCE_MAX_CHARS``) — JEV is input-priced and capped at 32 K.
+    bounded (``EVIDENCE_MAX_CHARS``) — JEV is input-priced at about $0.04 per
+    million tokens, so the budget is generous rather than tight.
     """
     citation_list = ", ".join(str(citation) for citation in citations) or "(none cited)"
     excerpt = (answer or "").strip()
@@ -247,16 +248,21 @@ def build_groundedness_question(
     )
 
 
-#: Total characters of cited chunk text the final gate is shown. The old cap was
-#: 2 000, which covered about three chunks — while answers routinely cite 11-29 —
-#: so most claims were unsupported *by construction* and every run ended at the
-#: iteration cap. Measured cost of the decision layer at the time: $0.0002 a call,
-#: 0.3 % of a run, so the cap bought nothing and cost the verdict.
-EVIDENCE_MAX_CHARS = 14000
+#: Total characters of cited chunk text the final gate is shown. The decision layer
+#: is input-priced and measured at roughly $0.04 per million tokens, while one
+#: avoided revision costs a chat turn 30-50 times more — so the budget is set to
+#: carry the whole cited set (the longest observed answer cited 37 chunks, about
+#: 66 000 characters) rather than to save fractions of a cent.
+#:
+#: An earlier version capped this at 2 000 characters, on the belief that the
+#: endpoint had a 32 K context limit. It does not: the model window is 262 144
+#: tokens for state plus questions. That false constraint made most claims
+#: unsupported by construction and every RLM run ended at the iteration cap.
+EVIDENCE_MAX_CHARS = 120000
 
 #: Characters of the answer itself the gate is shown. An answer may not be larger
 #: than the evidence that is supposed to prove it.
-ANSWER_MAX_CHARS = 4000
+ANSWER_MAX_CHARS = 8000
 
 
 def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:

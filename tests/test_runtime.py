@@ -678,14 +678,15 @@ class GateInputTestCase(unittest.TestCase):
             budget=Budget(),
         )
         rows = [
-            {"chunk_uuid": f"c{index}-0000-0000-0000-000000000000", "chunk_text": "y" * 600}
-            for index in range(40)
+            {"chunk_uuid": f"c{index}-0000-0000-0000-000000000000", "chunk_text": "y" * 2000}
+            for index in range(70)
         ]
 
         with patch("lens.tools.retrieval.fetch_chunks", return_value=rows):
             evidence, truncated = runtime._citation_evidence([row["chunk_uuid"] for row in rows])
 
-        self.assertLess(len(evidence), 40)
+        self.assertLess(len(evidence), 70)
+        self.assertGreater(len(evidence), 20)
         self.assertTrue(truncated)
 
 

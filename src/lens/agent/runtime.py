@@ -85,9 +85,9 @@ from lens.tools.evaluate import GATED_STAGES, evaluate_stage
 #: than ``evaluate.EVIDENCE_MAX_CHARS`` on purpose — the formatting budget is the
 #: binding one, so the fetch never silently cuts a chunk the format would have
 #: carried.
-MAX_EVIDENCE_CHUNKS = 30
-EVIDENCE_CHUNK_CHARS = 600
-EVIDENCE_FETCH_CHARS = 15000
+MAX_EVIDENCE_CHUNKS = 64
+EVIDENCE_CHUNK_CHARS = 2000
+EVIDENCE_FETCH_CHARS = 120000
 
 
 def _error_envelope(kind: str, message: str) -> dict[str, Any]:
@@ -1045,8 +1045,8 @@ class Runtime:
         **Stage gate.** If ``name`` is in ``tools.evaluate.GATED_STAGES`` and that
         stage has not been gated yet in this run, build the bounded gate artifact
         — ``{"score": <calibrated score or None>, "summary": <small dict>}``, never
-        the raw payload (``build_kg``'s graph would blow JEV's 32 K state cap) —
-        and call :func:`lens.tools.evaluate.evaluate_stage`. If it returns a
+        the raw payload (``build_kg``'s graph is large, and the gate only needs a
+        summary of it) — and call :func:`lens.tools.evaluate.evaluate_stage`. If it returns a
         verdict, add ``"gate": verdict.to_dict()`` to the envelope; if it returns
         ``None`` (``GATE_ENABLED=0``, the ablation arm), add **nothing** — an arm
         with no gate must not look like a gate that always passes.
@@ -1269,7 +1269,7 @@ def _bounded_artifact(result: Any) -> dict[str, Any]:
     """Return ``{"score": None, "summary": {...}}`` for a **stage-completing** tool.
 
     The gate must never receive the raw payload: ``build_kg``'s node-link graph
-    would exceed JEV's 32 K state cap and the call would fail for a reason that
+    would drown the useful signal and make the call expensive for a reason that
     has nothing to do with the stage's quality.
 
     A tool that returns its own ``summary`` hands that over instead of a count:
