@@ -1,0 +1,42 @@
+{
+  "name": "m11-w1v-v2",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Variance check on the post-rebuild rig: the same arm three times, so run-to-run spread is measured rather than assumed."
+    },
+    {
+      "name": "naive-flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      },
+      "note": "The baseline repeats too, because its spread is the denominator the treatment has to clear."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Pre-registered repeat cell: the most tool calls and the widest cost spread of the five pilot queries, so it brackets the high end of the variance."
+    },
+    {
+      "id": "negative",
+      "expect": "not-answerable",
+      "text": "What ablations does the LENS harness itself report for its knowledge-graph verifier budget?",
+      "note": "Pre-registered repeat cell: the shortest run and the refusal path, so it brackets the low end."
+    }
+  ]
+}

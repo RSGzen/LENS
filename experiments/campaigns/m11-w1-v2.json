@@ -1,0 +1,80 @@
+{
+  "name": "m11-w1-v2",
+  "repeats": 1,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Treatment, rerun after the rig rebuild: the KG traversal helpers are now bound in the namespace (they were a NameError before), the direction verifier reads the whole chunk, and the sandbox image is rebuilt. Same query set as m11-w1 so the two can be compared."
+    },
+    {
+      "name": "naive-flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      },
+      "note": "Baseline: same retrieval, one chat call, no loop and no tools. Unaffected by the KG changes by construction, so it is the control for 'did anything else move'."
+    },
+    {
+      "name": "rlm-depth0",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "0",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Recursion removed at the route, not just unmentioned."
+    },
+    {
+      "name": "kg-off",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "0",
+        "LENS_GATE": "1"
+      },
+      "note": "build_kg is not registered and the traversal helpers are not bound, so the tool list, the prompt and the namespace all agree that there is no graph."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?"
+    },
+    {
+      "id": "single-fact",
+      "expect": "answerable",
+      "text": "Which paper introduces the OOLONG long-context aggregation benchmark, and what task does its trec_coarse subset use?"
+    },
+    {
+      "id": "comparison",
+      "expect": "answerable",
+      "text": "Compare how two of the retrieved systems bound the cost or runtime of their recursive calls."
+    },
+    {
+      "id": "negative",
+      "expect": "not-answerable",
+      "text": "What ablations does the LENS harness itself report for its knowledge-graph verifier budget?",
+      "note": "Negative control: LENS is not in the corpus. A grounded system says so and states the scope it inspected."
+    },
+    {
+      "id": "compound",
+      "expect": "answerable",
+      "text": "I am reviewing long-context evidence synthesis for a literature review. Which approaches decompose the query before retrieval, what constraints do they place on the evidence they keep, and what do they report about faithfulness of the citations they produce?"
+    }
+  ]
+}
