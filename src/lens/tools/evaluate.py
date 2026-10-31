@@ -146,6 +146,54 @@ def build_sufficiency_question(
     )
 
 
+def build_unsupported_claim_question(
+    answer: str,
+    citations: Sequence[str],
+    evidence: Sequence[str] | Mapping[str, str] = (),
+) -> Question:
+    """Build the JEV ``noul`` question used by the **final** gate.
+
+    Polarity: ``noul`` is **P(the answer contains an unsupported or uncited
+    factual claim)** — a *failure-detection* proposition, so a high score means
+    reject. The earlier question ("is **every** claim supported") is a conjunction
+    over the claims: with eleven well-supported claims its probability collapses
+    even when nothing is wrong, which is why measured verdicts sat at 0.33-0.49
+    for answers whose evidence was present and correct. An existential keeps a
+    fabrication detectable without penalising an answer for being long.
+
+    ``evidence`` carries a bounded excerpt of the cited chunk text
+    (``chunk_uuid -> text``). It is not optional: with ids alone the gate can only
+    judge plausibility, and it rejected a cited, correct answer on every call.
+    """
+    citation_list = ", ".join(str(citation) for citation in citations) or "(none cited)"
+    excerpt = (answer or "").strip()
+
+    if len(excerpt) > ANSWER_MAX_CHARS:
+        excerpt = excerpt[:ANSWER_MAX_CHARS] + " …"
+
+    evidence_text = _format_evidence(evidence)
+
+    return Question(
+        type="noul",
+        instructions=(
+            "Decide whether this answer contains a factual claim that is NOT supported "
+            "by the cited chunks, or a factual claim with no citation at all. "
+            f"Citations given: {citation_list}. "
+            "Answer true only if at least one such claim exists — a number, dataset, "
+            "comparison or attribution that its citation does not contain, or that "
+            "cites nothing. Answer false if every factual claim is backed by the "
+            "excerpts below. An answer that only reports what it inspected, and says "
+            "so, has no unsupported claim. "
+            f"Cited excerpts: {evidence_text} "
+            f"Answer under review:\n{excerpt}"
+        ),
+        criteria={
+            "true": "at least one factual claim is uncited or not supported by its citation",
+            "false": "every factual claim is supported by the cited excerpts",
+        },
+    )
+
+
 def build_groundedness_question(
     answer: str,
     citations: Sequence[str],
@@ -199,8 +247,6 @@ def build_groundedness_question(
     )
 
 
-#: Total characters of cited chunk text handed to the final gate. Enough for a few
-#: chunks, small enough to stay incidental against JEV's input price and 32 K cap.
 #: Total characters of cited chunk text the final gate is shown. The old cap was
 #: 2 000, which covered about three chunks — while answers routinely cite 11-29 —
 #: so most claims were unsupported *by construction* and every run ended at the
@@ -237,7 +283,11 @@ def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:
     return " | ".join(parts) or "(no chunk text available - judge from the citations)"
 
 
-def _read_answer(answer: Mapping[str, Any]) -> tuple[Verdict, float | None, str | None]:
+def _read_answer(
+    answer: Mapping[str, Any],
+    *,
+    polarity: str = "supported",
+) -> tuple[Verdict, float | None, str | None]:
     """Map one JEV answer object to ``(verdict, confidence, failing_criterion)``.
 
     The transport contract promises "typed answers with confidence/probabilities"
@@ -251,16 +301,21 @@ def _read_answer(answer: Mapping[str, Any]) -> tuple[Verdict, float | None, str 
     # no ``answer`` key at all. Reading only ``answer``/``value``/``verdict`` made
     # **every** gate verdict ``uncertain``, and since only ``fail`` rejects, the
     # final groundedness gate silently accepted a template answer that cited
-    # nothing. ``noul`` is a probability that the proposition
-    # holds (0.96 on a plainly true example in the JEV contract, 0.03 on that
-    # template answer), so it maps at 0.5.
+    # nothing. ``noul`` is a probability that the proposition holds (0.96 on a
+    # plainly true example in the JEV contract, 0.03 on that template answer).
+    #
+    # ``polarity`` says which way that probability points. "supported" means the
+    # proposition is "the answer is supported" (high = pass); "unsupported" means
+    # it is "the answer contains an unsupported claim" (high = fail), which is what
+    # the final gate asks so that a long, well-cited answer is not penalised for
+    # being a conjunction of many claims.
     if (
         raw is None
         and isinstance(answer.get("noul"), (int, float))
         and not isinstance(answer.get("noul"), bool)
     ):
         noul = float(answer["noul"])
-        raw = noul >= 0.5
+        raw = (noul < 0.5) if polarity == "unsupported" else (noul >= 0.5)
         answer = {**answer, "confidence": noul}
     confidence = answer.get("confidence")
 
@@ -415,13 +470,15 @@ def evaluate_stage(
             return verdict
 
     if stage == "final":
-        question = build_groundedness_question(
+        question = build_unsupported_claim_question(
             str(summary.get("answer") or ""),
             list(summary.get("citations") or []),
             summary.get("evidence") or (),
         )
+        polarity = "unsupported"
     else:
         question = build_sufficiency_question(stage, artifact, query=query)
+        polarity = "supported"
 
     state = json.dumps(
         {"query": (query or "").strip() or None, "stage": stage, "summary": summary},
@@ -456,7 +513,8 @@ def evaluate_stage(
             pass
 
     verdict_value, confidence, criterion = _read_answer(
-        (getattr(result, "answers", None) or {}).get("gate") or {}
+        (getattr(result, "answers", None) or {}).get("gate") or {},
+        polarity=polarity,  # type: ignore[arg-type]
     )
     verdict = StageVerdict(
         verdict=verdict_value,
@@ -473,7 +531,13 @@ def evaluate_stage(
         )
         scope_extra = {"scope_verdict": scope_verdict, "scope_confidence": scope_confidence}
 
-    _log_verdict(client, trace_ctx, stage, verdict, extra=scope_extra)
+    _log_verdict(
+        client,
+        trace_ctx,
+        stage,
+        verdict,
+        extra={"polarity": polarity, **scope_extra},
+    )
 
     return verdict
 

@@ -20,6 +20,7 @@ from lens.tools.evaluate import (
     StageVerdict,
     build_groundedness_question,
     build_sufficiency_question,
+    build_unsupported_claim_question,
     evaluate_stage,
 )
 
@@ -227,26 +228,42 @@ class EvaluateTierTestCase(unittest.TestCase):
 
     def test_noul_answer_is_read_not_ignored(self) -> None:
         # The real JEV shape for a noul question is {"type": "noul", "noul": 0.03}
-        # — no `answer` key. Reading only `answer`/`value`/`verdict` made every
+        # - no `answer` key. Reading only `answer`/`value`/`verdict` made every
         # verdict `uncertain`, and only `fail` rejects, so the final gate accepted
         # a template answer that cited nothing.
-        low = evaluate_stage(
+        #
+        # The final gate asks "does this answer contain an unsupported claim?", so
+        # the polarity is inverted relative to a support question: a LOW
+        # probability passes.
+        clean = evaluate_stage(
             "final",
-            {"score": None, "summary": {"answer": "see above", "citations": []}},
+            {"score": None, "summary": {"answer": "cited", "citations": ["c1"]}},
             client=_FakeJevClient({"gate": {"type": "noul", "noul": 0.03}}),  # type: ignore[arg-type]
             trace_ctx=self.ctx,
         )
-        high = evaluate_stage(
+        dirty = evaluate_stage(
             "final",
-            {"score": None, "summary": {"answer": "cited", "citations": ["c1"]}},
+            {"score": None, "summary": {"answer": "see above", "citations": []}},
             client=_FakeJevClient({"gate": {"type": "noul", "noul": 0.96}}),  # type: ignore[arg-type]
             trace_ctx=self.ctx,
         )
 
-        assert low is not None and high is not None
-        self.assertEqual(low.verdict, "fail")
-        self.assertEqual(high.verdict, "pass")
-        self.assertAlmostEqual(high.confidence or 0, 0.96)
+        assert clean is not None and dirty is not None
+        self.assertEqual(clean.verdict, "pass")
+        self.assertEqual(dirty.verdict, "fail")
+        self.assertAlmostEqual(dirty.confidence or 0, 0.96)
+
+    def test_the_final_question_asks_about_a_failure_not_a_universal(self) -> None:
+        # "Is every claim supported" is a conjunction: with eleven good claims it
+        # collapses even when nothing is wrong (measured 0.33-0.49). The gate asks
+        # for the existence of one bad claim instead.
+        question = build_unsupported_claim_question(
+            "two claims [c1][c2]", ["c1", "c2"], {"c1": "text one", "c2": "text two"}
+        )
+
+        self.assertEqual(question.type, "noul")
+        self.assertIn("NOT supported", question.instructions)
+        self.assertIn("text one", question.instructions)
 
     def test_final_gate_rejects_and_carries_the_criterion(self) -> None:
         client = _FakeJevClient(
