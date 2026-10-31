@@ -51,7 +51,7 @@ from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterable, Literal, Sequence
 
 # Bumped only when a reader can no longer understand an older file. Additive
 # fields do NOT need a bump (readers keep them in ``extra``).
@@ -607,11 +607,34 @@ def referenced_refs(trajectory_path: str | Path) -> list[str]:
     return refs
 
 
+def _scan_for_secrets(paths: Iterable[Path], secrets: Sequence[str]) -> list[str]:
+    """Return the file names whose bytes contain one of ``secrets``.
+
+    Cheap and blunt on purpose: a secret that reached a blob is in **text the
+    model or the provider produced**, so a substring search over the bytes is the
+    right instrument. Only secrets of at least 8 characters are searched for,
+    because a one-character "secret" would match every bundle.
+    """
+    needles = [secret.encode("utf-8") for secret in secrets if secret and len(secret) >= 8]
+    hits: list[str] = []
+
+    if not needles:
+        return hits
+
+    for path in paths:
+        blob = path.read_bytes()
+        if any(needle in blob for needle in needles):
+            hits.append(path.name)
+
+    return hits
+
+
 def export_run(
     run_id: str,
     destination: str | Path,
     *,
     path: str | Path | None = None,
+    secrets: Sequence[str] | None = None,
 ) -> Path:
     """Write ``<destination>/<run_id>.lens`` and return its path.
 
@@ -627,6 +650,11 @@ def export_run(
 
     ``bundle.json`` is written **last**: a bundle without an index is incomplete,
     and a half-written one fails ``verify_bundle`` instead of looking importable.
+
+    **No secret leaves in a bundle.** Every referenced blob is scanned for the
+    configured secrets before it is copied; a hit refuses the export
+    (``ValueError`` naming the blobs) and removes the partial bundle, so a leak
+    that reached a blob cannot be handed to someone else by this command.
     """
     root = runs_root(path)
     run_dir = root / run_id
@@ -638,6 +666,26 @@ def export_run(
 
     if bundle.exists():
         raise FileExistsError(f"{bundle} already exists")
+
+    refs = [
+        ref
+        for ref in referenced_refs(run_dir / "trajectory.jsonl")
+        if (root / "blobs" / ref.split(":", 1)[1]).is_file()
+    ]
+
+    if secrets is None:
+        from lens import config
+
+        secrets = [os.environ.get("OPENROUTER_API_KEY") or "", config.LENS_DB_PASSWORD or ""]
+
+    leaked = _scan_for_secrets(
+        [root / "blobs" / ref.split(":", 1)[1] for ref in refs],
+        secrets,
+    )
+    if leaked:
+        raise ValueError(
+            "refusing to export: a secret appears in blob(s) " + ", ".join(sorted(leaked))
+        )
 
     bundle.mkdir(parents=True)
     (bundle / "blobs").mkdir()

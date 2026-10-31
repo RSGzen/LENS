@@ -310,6 +310,32 @@ class RunStoreTestCase(unittest.TestCase):
         self.assertFalse(report["ok"])
         self.assertIn(f"unexpected file blobs/{stray}", "; ".join(report["errors"]))
 
+    def test_export_refuses_a_bundle_that_carries_a_secret(self) -> None:
+        # The upstream controls keep the key out of the container, but a key that
+        # did reach a blob must not travel in a bundle handed to someone else.
+        self._make_runnable()
+        secret = "sk-or-v1-deadbeefdeadbeef"
+        (self.root / "blobs" / self.digest_a).write_text(f"leaked: {secret}\n", encoding="utf-8")
+        dest = self.root / "out"
+        dest.mkdir()
+
+        with self.assertRaises(ValueError) as caught:
+            runstore.export_run("run-src", dest, path=self.root, secrets=[secret])
+
+        self.assertIn(self.digest_a, str(caught.exception))
+        # Refused before anything was written: no half bundle, no stray directory.
+        self.assertEqual(list(dest.iterdir()), [])
+
+    def test_export_scans_nothing_when_no_secret_is_configured(self) -> None:
+        # An empty environment must not turn every export into a refusal.
+        self._make_runnable()
+        dest = self.root / "out"
+        dest.mkdir()
+
+        bundle = runstore.export_run("run-src", dest, path=self.root, secrets=[""])
+
+        self.assertTrue(runstore.verify_bundle(bundle)["ok"])
+
     def test_export_refuses_to_overwrite(self) -> None:
         self._make_runnable()
         dest = self.root / "out"
