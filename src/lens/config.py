@@ -451,8 +451,10 @@ SANDBOX_CPUS = os.environ.get("LENS_SANDBOX_CPUS", "2")
 SANDBOX_MEMORY = os.environ.get("LENS_SANDBOX_MEMORY", "2g")
 SANDBOX_PIDS_LIMIT = int(os.environ.get("LENS_SANDBOX_PIDS_LIMIT", "256"))
 # Raw stdout captured per exec block. This is the first cut on observation size;
-# ``TOOL_RESULT_SUMMARY_CHARS`` is the second (before it becomes a message). At
-# 20,000 chars (~5k tokens) a single turn could eat a sixth of the context.
+# ``TOOL_RESULT_SUMMARY_CHARS`` is the second (before it becomes a message). The
+# compose file defaults the same variable to the same number, so a container
+# started by hand captures no more than a harness run: at 20,000 chars (~5k
+# tokens) a single turn could eat a sixth of the context.
 SANDBOX_STDOUT_MAX_CHARS = int(os.environ.get("LENS_SANDBOX_STDOUT_MAX_CHARS", "6000"))
 
 # Host RPC server the sandbox calls back into. It binds all interfaces because the
