@@ -267,9 +267,10 @@ class SandboxSession:
         Let the two drift and the host gives up on a block the runner would still
         finish (or waits on one it already killed).
 
-        ``LENS_SANDBOX_STDOUT_MAX_CHARS`` is passed too: the compose default is
-        20,000 while ``config.SANDBOX_STDOUT_MAX_CHARS`` is 6,000, so leaving it
-        to the file silently widens the sandbox's cut.
+        ``LENS_SANDBOX_STDOUT_MAX_CHARS`` is passed too, and the compose file
+        defaults it to the same number as ``config.SANDBOX_STDOUT_MAX_CHARS``:
+        passing it explicitly keeps a bare ``docker compose up`` from widening
+        the sandbox's cut behind the host's back.
 
         Every value must be a **string** — ``env=`` is passed straight to
         ``subprocess``, and an ``int`` there is a ``TypeError`` on Windows.

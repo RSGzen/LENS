@@ -97,7 +97,9 @@ services:
       # The relay's address on sandbox-net — never the host directly (see above).
       LENS_HOST_RPC_URL: ${LENS_HOST_RPC_URL:-http://lens-relay:8090}
       LENS_RPC_TOKEN: ${LENS_RPC_TOKEN:-change-me}
-      LENS_SANDBOX_STDOUT_MAX_CHARS: ${LENS_SANDBOX_STDOUT_MAX_CHARS:-20000}
+      # Same number as the host's config.SANDBOX_STDOUT_MAX_CHARS: a bare
+      # `docker compose up` must not capture more than a real run would.
+      LENS_SANDBOX_STDOUT_MAX_CHARS: ${LENS_SANDBOX_STDOUT_MAX_CHARS:-6000}
       # Must be the same number as the host's config.MAX_EXEC_BLOCK_S: the image
       # has no lens.config, so this is the runner's only source for the cap.
       LENS_MAX_EXEC_BLOCK_S: ${LENS_MAX_EXEC_BLOCK_S:-120}

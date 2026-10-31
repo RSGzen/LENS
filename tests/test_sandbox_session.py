@@ -6,10 +6,12 @@ Run:  .\.venv\Scripts\python.exe -m unittest tests.test_sandbox_session -v
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
+from lens import config
 from lens.agent.sandbox_session import ExecResult, SandboxSession
 
 
@@ -97,6 +99,14 @@ class SandboxSessionTestCase(unittest.TestCase):
 
         session._run_compose = FakeCompose(returncode=1)
         self.assertFalse(session.health())
+
+    def test_compose_file_stdout_default_matches_config(self) -> None:
+        # A bare `docker compose up` uses the file's default, not the host's
+        # constant; two different numbers mean two different capture caps.
+        text = config.SANDBOX_COMPOSE_FILE.read_text(encoding="utf-8")
+        match = re.search(r"LENS_SANDBOX_STDOUT_MAX_CHARS:\s*\$\{[^:}]+:-(\d+)", text)
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)), config.SANDBOX_STDOUT_MAX_CHARS)
 
 
 class SandboxSessionLifecycleTestCase(unittest.TestCase):
