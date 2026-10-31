@@ -249,9 +249,11 @@ def shallow_match(
     Returns the ``arxiv_id`` list in ANN order (nearest first).
     """
     query = format_query(buckets=buckets)
+    if not query.strip():
+        return []
 
     vec = embedder.encode_documents(
-        texts=[query], task_prefix=config.EMBEDDING_QUERY_PREFIX, batch_size=1
+        texts=[query], task_prefix=config.EMBEDDING_QUERY_PREFIX, batch_size=_QUERY_ENCODE_BATCH
     )
 
     with conn.cursor() as cur:
@@ -367,7 +369,7 @@ def deep_match(
         return []
 
     vec = embedder.encode_documents(
-        texts=[query], task_prefix=config.EMBEDDING_QUERY_PREFIX, batch_size=1
+        texts=[query], task_prefix=config.EMBEDDING_QUERY_PREFIX, batch_size=_QUERY_ENCODE_BATCH
     )
 
     with conn.cursor() as cur:

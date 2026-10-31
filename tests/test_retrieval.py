@@ -184,6 +184,17 @@ class ShallowMatchTest(unittest.TestCase):
         sql_blob = " ".join(s for s, _ in conn._cursor.statements).lower()
         self.assertIn(f"ef_search = {max(config.HNSW_EF_SEARCH, 100)}", sql_blob)
 
+    def test_a_blank_query_returns_empty_without_embedding(self) -> None:
+        # An empty string has no embedding to compare against: without the guard
+        # the query still ran and returned arbitrary "nearest" papers, which reads
+        # as a retrieval result rather than as no query at all.
+        conn = FakeConn([("2101.00001",)])
+        emb = FakeEmbedder()
+
+        self.assertEqual(shallow_match(conn, "   ", emb, k=3), [])
+        self.assertEqual(emb.calls, [])
+        self.assertEqual(conn._cursor.statements, [])
+
 
 class DeepMatchTest(unittest.TestCase):
     def test_filtered_search_uses_iterative_scan(self) -> None:
