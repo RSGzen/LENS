@@ -10,7 +10,12 @@ import tempfile
 import unittest
 
 import lens.observability.trajectory as trajectory_module
-from lens.observability.citations import cited_ids, resolve_citations, write_sources_md
+from lens.observability.citations import (
+    cited_ids,
+    claim_units,
+    resolve_citations,
+    write_sources_md,
+)
 from lens.observability.trajectory import TraceCtx, Trajectory
 
 CHUNK = "11111111-1111-5111-8111-111111111111"
@@ -181,6 +186,47 @@ class CitationTestCase(unittest.TestCase):
         self.assertIn(GHOST, text)
         # answer.md stays the model's words; the trace lives beside it.
         self.assertNotIn("## Unresolved", (self.traj.run_dir / "answer.md").read_text())
+
+
+class ClaimUnitTests(unittest.TestCase):
+    def test_a_sentence_with_words_and_an_id_is_a_claim(self) -> None:
+        unit = (
+            "ReCAP keeps the prompt within a sliding window of K rounds "
+            "[11111111-1111-5111-8111-111111111111]."
+        )
+
+        units = claim_units(unit)
+
+        self.assertEqual(len(units), 1)
+        self.assertEqual(units[0][1], ["11111111-1111-5111-8111-111111111111"])
+
+    def test_an_id_dump_is_not_a_claim(self) -> None:
+        # A bullet that is only ids asserts nothing, so a verdict on it can only
+        # name a non-claim as the failing one.
+        text = (
+            "- 85849030-2267-5a7a-8da5-2557ffd56876@2510.04532, "
+            "11111111-1111-5111-8111-111111111111"
+        )
+
+        units = claim_units(text)
+
+        # Falls back to one whole-answer unit, because nothing qualified.
+        self.assertEqual(len(units), 1)
+        self.assertEqual(units[0][1], [])
+
+    def test_an_answer_with_no_citation_is_judged_once(self) -> None:
+        units = claim_units("No evidence was found for this question.")
+
+        self.assertEqual(len(units), 1)
+        self.assertEqual(units[0][1], [])
+
+    def test_each_sentence_is_scored_separately(self) -> None:
+        text = (
+            "The window is K rounds [11111111-1111-5111-8111-111111111111]. "
+            "The cost is bounded [22222222-2222-5222-8222-222222222222]."
+        )
+
+        self.assertEqual(len(claim_units(text)), 2)
 
 
 if __name__ == "__main__":

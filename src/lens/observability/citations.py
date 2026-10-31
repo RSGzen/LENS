@@ -50,17 +50,36 @@ _PAPER_TOOLS = frozenset({"rerank_papers", "fetch_papers"})
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
+#: Any id we understand, for stripping a unit down to its words.
+_ID_TOKEN_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"|\d{4}\.\d{4,5}(?:v\d+)?"
+)
+
+#: A unit whose words are shorter than this is an id dump, not a claim.
+MIN_CLAIM_WORDS = 12
+
+#: Punctuation left behind when the ids are removed.
+_RESIDUE = re.compile(r"[\s\-–—•*:;,.()\[\]/|<>\"'`]+")
+
+
 def claim_units(text: str) -> list[tuple[str, list[str]]]:
     """Split an answer into claim-sized units with the ids each one cites.
 
-    A *claim* is a sentence (or a list line) that names at least one source: those
-    are the units a groundedness check can be performed on. Units without a
-    citation are prose, not claims — the aggregate question already fails an answer
-    whose facts are uncited.
+    A *claim* is a sentence (or a list line) with **words and** a source. Two kinds
+    of unit are skipped:
+
+    - units with no citation — they are prose, and the aggregate question already
+      fails an answer whose facts are uncited;
+    - units whose text is only ids and punctuation. A bullet like
+      ``- 85849030-…@2510.04532`` asserts nothing, so asking whether an excerpt
+      supports it can only produce a rejection that names a non-claim. Measured on
+      the pilot: without this filter the per-claim gate rejected answers on their
+      id lists, and the named "failing claim" was a citation dump.
 
     Returns ``[(unit_text, [id, ...]), ...]`` in reading order. An answer with no
-    citation at all collapses to one unit with an empty id list, so it is still
-    judged once instead of being skipped.
+    claim at all collapses to one unit with an empty id list, so it is still judged
+    once rather than silently skipped.
     """
     units: list[tuple[str, list[str]]] = []
 
@@ -72,8 +91,15 @@ def claim_units(text: str) -> list[tuple[str, list[str]]]:
 
         ids = cited_ids(unit)
 
-        if ids:
-            units.append((unit, ids))
+        if not ids:
+            continue
+
+        residue = _RESIDUE.sub(" ", _ID_TOKEN_RE.sub(" ", unit)).strip()
+
+        if len(residue) < MIN_CLAIM_WORDS:
+            continue
+
+        units.append((unit, ids))
 
     if not units:
         body = " ".join((text or "").split())

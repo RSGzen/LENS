@@ -130,7 +130,8 @@ class EvaluateTestCase(unittest.TestCase):
             {
                 "score": None,
                 "summary": {
-                    "answer": f"a claim [{one}]. another claim [{two}].",
+                    "answer": f"ReCAP keeps a sliding window of K rounds [{one}]. "
+                    f"The cost stays bounded by that window [{two}].",
                     "citations": [one, two],
                     "evidence": {one: "text", two: "text"},
                     "evidence_truncated": False,
@@ -163,7 +164,8 @@ class EvaluateTestCase(unittest.TestCase):
             {
                 "score": None,
                 "summary": {
-                    "answer": f"good claim [{one}]. bad claim [{two}].",
+                    "answer": f"ReCAP keeps a sliding window of K rounds [{one}]. "
+                    f"The cost stays bounded by that window [{two}].",
                     "citations": [one, two],
                     "evidence": {one: "a", two: "b"},
                 },
@@ -175,7 +177,7 @@ class EvaluateTestCase(unittest.TestCase):
         assert verdict is not None
         self.assertEqual(verdict.verdict, "fail")
         self.assertIn("claim-02", verdict.failing_criterion or "")
-        self.assertIn("bad claim", verdict.failing_criterion or "")
+        self.assertIn("The cost stays bounded", verdict.failing_criterion or "")
 
     def test_all_claims_supported_passes(self) -> None:
         one = "11111111-1111-5111-8111-111111111111"
@@ -193,7 +195,7 @@ class EvaluateTestCase(unittest.TestCase):
             {
                 "score": None,
                 "summary": {
-                    "answer": f"one [{one}]. two [{two}].",
+                    "answer": f"The window is K rounds [{one}]. The cost stays bounded [{two}].",
                     "citations": [one, two],
                     "evidence": {one: "a", two: "b"},
                 },

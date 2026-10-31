@@ -385,7 +385,9 @@ def build_claim_question(claim_id: str, text: str, citations: Sequence[str]) -> 
             "claim is NOT supported — it states a number, dataset, comparison or "
             "attribution the excerpt does not contain, or it cites an id with no excerpt. "
             "Answer false if the excerpt supports it. A claim that the evidence does not "
-            "contain something is supported when the excerpts show what was inspected.\n"
+            "contain something is supported when the excerpts show what was inspected, and "
+            "a statement about the process (what was inspected, searched or scanned) is not "
+            "a factual claim about the evidence — answer false for those.\n"
             f"Claim: {body}"
         ),
         criteria={
