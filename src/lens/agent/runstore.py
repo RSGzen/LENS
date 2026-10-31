@@ -672,6 +672,10 @@ def verify_bundle(bundle: str | Path) -> dict[str, Any]:
 
     The blob's **filename is its hash**, so verification is just "hash the bytes
     and compare with the name" — no separate manifest of hashes to trust.
+
+    The directory listing must also equal the index: a file under ``blobs/`` that
+    the index does not name is unverified bytes travelling inside a bundle that
+    claims to be verified.
     """
     bundle = Path(bundle)
     index_path = bundle / BUNDLE_INDEX
@@ -727,6 +731,12 @@ def verify_bundle(bundle: str | Path) -> dict[str, Any]:
         actual = _sha256_file(trajectory) if trajectory.is_file() else None
         if actual != expected_trajectory:
             errors.append("trajectory.jsonl does not match the index")
+
+    blob_dir = bundle / "blobs"
+    if blob_dir.is_dir():
+        for extra in sorted(path.name for path in blob_dir.iterdir() if path.is_file()):
+            if extra not in blob_index:
+                errors.append(f"unexpected file blobs/{extra} is not in the index")
 
     return {
         "ok": not errors,

@@ -265,6 +265,23 @@ class RunStoreTestCase(unittest.TestCase):
         bundle = runstore.export_run("run-src", dest, path=self.root)
         self.assertTrue((bundle / "work" / "query.json").is_file())
 
+    def test_verify_rejects_a_blob_the_index_does_not_name(self) -> None:
+        # An extra file under blobs/ is bytes travelling inside a "verified"
+        # bundle: unread, unhashed against anything, and invisible to a reader
+        # who trusts the report.
+        self._make_runnable()
+        dest = self.root / "out"
+        dest.mkdir()
+        bundle = runstore.export_run("run-src", dest, path=self.root)
+        self.assertTrue(runstore.verify_bundle(bundle)["ok"])
+
+        stray = hashlib.sha256(b"smuggled").hexdigest()
+        (bundle / "blobs" / stray).write_text("smuggled", encoding="utf-8")
+
+        report = runstore.verify_bundle(bundle)
+        self.assertFalse(report["ok"])
+        self.assertIn(f"unexpected file blobs/{stray}", "; ".join(report["errors"]))
+
     def test_export_refuses_to_overwrite(self) -> None:
         self._make_runnable()
         dest = self.root / "out"
