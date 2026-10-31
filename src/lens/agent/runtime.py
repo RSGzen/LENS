@@ -77,7 +77,7 @@ from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.clients import LensClient
 from lens.experiments.arm import arm_fingerprint
 from lens.observability.citations import cited_ids
-from lens.observability.trajectory import TraceCtx, Trajectory
+from lens.observability.trajectory import Actor, TraceCtx, Trajectory
 from lens.tools.evaluate import GATED_STAGES, evaluate_stage
 
 #: How much cited chunk text the final gate is shown: how many chunks to fetch,
@@ -694,6 +694,15 @@ class Runtime:
         ):
             if name not in self.registry.names():
                 self.registry.register(name, func)
+
+    def trace_ctx(self, actor: Actor = "tool") -> TraceCtx:
+        """Return a trace context for the run's current step and ``actor``.
+
+        For a collaborator that runs *inside* a tool call but is not the loop —
+        the KG direction verifier is the one — so its JEV events land on the turn
+        that caused them instead of on step 0.
+        """
+        return TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor=actor)
 
     def _segment_query(self) -> dict[str, list[str]]:
         """Segment the query with and write ``<workspace>/query.json``.

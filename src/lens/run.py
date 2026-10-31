@@ -35,6 +35,7 @@ from lens.clients import LensClient
 from lens.db.connect import connect
 from lens.embeddings import Embedder
 from lens.kg_extract import GlinerExtractor
+from lens.kg_verify import DirectionVerifier
 from lens.observability.trajectory import Trajectory
 from lens.preflight import API_KEY, DB, require_environment
 from lens.reranking import Reranker
@@ -225,9 +226,19 @@ def build_runtime(
         """Fetch chunk rows by chunk_uuid."""
         return fetch_chunks(conn, chunk_ids)
 
+    def kg_jev_call(state, questions):
+        """One JEV call for the direction verifier, on the turn that caused it.
+
+        The app is already constructed by the time a tool can run, so `runtime` is
+        a forward reference to a name that exists for every real call.
+        """
+        return client.jev(state, questions, trace_ctx=runtime.trace_ctx("tool"))
+
+    verifier = DirectionVerifier(kg_jev_call) if config.KG_VERIFY_ENABLED else None
+
     def build_kg_tool(chunk_ids: list[str]) -> dict[str, Any]:
         """Build the knowledge graph for the selected chunks (node-link payload)."""
-        return build_kg(conn, chunk_ids, extractor)
+        return build_kg(conn, chunk_ids, extractor, verifier=verifier)
 
     if retrieve:
         registry.register("shallow_match", shallow_match_tool)

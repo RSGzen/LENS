@@ -19,6 +19,7 @@ from unittest.mock import patch
 import lens.run as run_module
 from lens import config
 from lens.agent.runtime import RunResult
+from lens.kg_verify import DirectionVerifier
 
 
 class FakeRuntime:
@@ -72,6 +73,47 @@ class ParserTestCase(unittest.TestCase):
         self.assertTrue(parser.parse_args(["q", "--recorded"]).recorded)
         self.assertFalse(parser.parse_args(["q", "--no-allow-sql"]).allow_sql)
         self.assertTrue(parser.parse_args(["q", "--allow-sql"]).allow_sql)
+
+
+class BuildRuntimeWiringTestCase(unittest.TestCase):
+    """``build_runtime`` itself, with every heavy collaborator replaced."""
+
+    def test_build_kg_receives_a_direction_verifier(self) -> None:
+        # KG_VERIFY_ENABLED was inert: build_kg was constructed with verifier=None,
+        # so a normal run recorded verify: null and no edge was ever verified.
+        captured: dict[str, object] = {}
+
+        def fake_build_kg(conn, chunk_ids, extractor, **kwargs):
+            captured["verifier"] = kwargs.get("verifier")
+            return {"graph": {}, "summary": {}, "stats": {}}
+
+        class FakeRegistry:
+            def register(self, name, func) -> None:
+                captured[name] = func
+
+        trajectory_cls = unittest.mock.Mock()
+        trajectory_cls.return_value.run_dir = Path(tempfile.mkdtemp())
+
+        with (
+            patch.object(run_module, "Trajectory", trajectory_cls),
+            patch.object(run_module, "LensClient"),
+            patch.object(run_module, "connect"),
+            patch.object(run_module, "Embedder"),
+            patch.object(run_module, "Reranker"),
+            patch.object(run_module, "GlinerExtractor"),
+            patch.object(run_module, "ToolRegistry", FakeRegistry),
+            patch.object(run_module, "ToolServer"),
+            patch.object(run_module, "SandboxSession"),
+            patch.object(run_module, "Runtime"),
+            patch.object(run_module, "build_kg", fake_build_kg),
+            patch.object(run_module.config, "KG_ENABLED", True),
+            patch.object(run_module.config, "KG_VERIFY_ENABLED", True),
+        ):
+            run_module.build_runtime("q", "wiring-verify")
+            captured["build_kg"](["u1"])  # type: ignore[operator]
+
+        self.assertIsInstance(captured["verifier"], DirectionVerifier)
+        self.assertIsNotNone(captured["verifier"])
 
 
 class MainWiringTestCase(unittest.TestCase):

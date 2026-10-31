@@ -45,6 +45,24 @@ def fake_jev(choice, confidence=0.9):
     return call
 
 
+def recording_jev(choice="ab"):
+    """Return ``(call, states)`` where ``states`` collects every state sent."""
+    seen: list[str] = []
+
+    def call(state, questions):
+        seen.append(state)
+        return JevResult(
+            answers={"direction": {"type": "choice", "choice": choice, "confidence": 0.9}},
+            model="fake",
+            provider="fake",
+            tokens_in=10,
+            cost_usd=0.0,
+            latency_ms=1,
+        )
+
+    return call, seen
+
+
 class SpanFilterTest(unittest.TestCase):
     def test_generic_spans(self) -> None:
         for text in ("novels", "long-text scenarios", "target model", "academic terms", "it"):
@@ -124,6 +142,21 @@ class VerifierTest(unittest.TestCase):
         out, stats = verifier.verify(triples, {"u1": "The result is interesting."})
         self.assertEqual(out, [])
         self.assertEqual(stats.dropped, 1)
+
+    def test_the_jev_state_is_the_chunk_not_one_sentence(self) -> None:
+        # A one-sentence state hid the hedge in the next sentence; the chunk is the
+        # unit the extractor read, and it is what JEV should judge.
+        chunk = (
+            "Baseline results look strong. "
+            "We do not claim that A outperforms B, because the margin is noise."
+        )
+        triples = [triple("A", "Method", "outperforms", "B", "Method", direction_margin=0.01)]
+        call, states = recording_jev("neither")
+        verifier = DirectionVerifier(call, budget=5)
+
+        verifier.verify(triples, {"u1": chunk})
+
+        self.assertEqual(states[0], chunk)
 
     def test_budget_marks_remaining_unverified(self) -> None:
         triples = [

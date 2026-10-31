@@ -440,7 +440,13 @@ class DirectionVerifier:
         # Most ambiguous first (smallest margin); verify up to the budget.
         pending.sort(key=lambda item: abs(float(item[0].get("direction_margin", 1.0))))
         for triple, sentence in pending[: self.budget]:
-            state = sentence[: self.max_state_chars]
+            # The state is the **chunk**, not the one sentence the two mentions sit
+            # in. A verifier that sees a single sentence cannot tell a hedge in the
+            # next one from an assertion, and the chunk is the unit the extractor
+            # actually read; the sentence is only the fallback when the chunk text
+            # is unavailable.
+            chunk_text = (chunk_texts or {}).get(triple.get("chunk_uuid"), "")
+            state = (chunk_text or sentence)[: self.max_state_chars]
             questions = {
                 "direction": Question(
                     type="choice",

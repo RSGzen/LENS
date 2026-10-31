@@ -274,7 +274,10 @@ KG_VERIFY_BUDGET = int(os.environ.get("LENS_KG_VERIFY_BUDGET", "40"))
 KG_VERIFY_MARGIN = float(os.environ.get("LENS_KG_VERIFY_MARGIN", "0.05"))
 KG_VERIFY_HIGH = float(os.environ.get("LENS_KG_VERIFY_HIGH", "0.7"))
 KG_VERIFY_LOW = float(os.environ.get("LENS_KG_VERIFY_LOW", "0.4"))
-KG_VERIFY_MAX_STATE_CHARS = int(os.environ.get("LENS_KG_VERIFY_MAX_STATE", "1200"))
+# State the direction verifier sends to JEV: the **chunk** the triple came from,
+# capped here. 2,400 chars covers a 512-token chunk, which is the unit the
+# extractor read; a one-sentence state hid the hedge in the next sentence.
+KG_VERIFY_MAX_STATE_CHARS = int(os.environ.get("LENS_KG_VERIFY_MAX_STATE", "2400"))
 # Suffix type hints ("X dataset" -> Dataset, "ROUGE score" -> Metric) applied
 # before relation-slot typing and protected like gazetteer hints.
 KG_SUFFIX_HINTS = os.environ.get("LENS_KG_SUFFIX_HINTS", "1").strip() != "0"
