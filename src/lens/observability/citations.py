@@ -46,6 +46,43 @@ _SHORT_ID_RE = re.compile(r"\[([0-9a-fA-F]{6,12})\]")
 _CHUNK_TOOLS = frozenset({"rerank_chunks", "fetch_chunks"})
 _PAPER_TOOLS = frozenset({"rerank_papers", "fetch_papers"})
 
+#: Sentence and list-line boundaries. A claim unit is what sits between two of them.
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def claim_units(text: str) -> list[tuple[str, list[str]]]:
+    """Split an answer into claim-sized units with the ids each one cites.
+
+    A *claim* is a sentence (or a list line) that names at least one source: those
+    are the units a groundedness check can be performed on. Units without a
+    citation are prose, not claims — the aggregate question already fails an answer
+    whose facts are uncited.
+
+    Returns ``[(unit_text, [id, ...]), ...]`` in reading order. An answer with no
+    citation at all collapses to one unit with an empty id list, so it is still
+    judged once instead of being skipped.
+    """
+    units: list[tuple[str, list[str]]] = []
+
+    for piece in _SENTENCE_SPLIT.split(text or ""):
+        unit = " ".join(piece.split())
+
+        if not unit:
+            continue
+
+        ids = cited_ids(unit)
+
+        if ids:
+            units.append((unit, ids))
+
+    if not units:
+        body = " ".join((text or "").split())
+
+        if body:
+            units.append((body, []))
+
+    return units
+
 
 @dataclass
 class Citation:

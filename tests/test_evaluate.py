@@ -118,9 +118,11 @@ class EvaluateTestCase(unittest.TestCase):
             trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
         )
 
-        self.assertEqual(set(client.questions[0]), {"gate", "scope"})
+        self.assertIn("scope", client.questions[0])
 
-    def test_complete_evidence_asks_one_question(self) -> None:
+    def test_complete_evidence_asks_the_aggregate_and_one_question_per_claim(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+        two = "22222222-2222-5222-8222-222222222222"
         client = _FakeJevClient({"gate": {"noul": 0.9}})
 
         evaluate_stage(
@@ -128,9 +130,9 @@ class EvaluateTestCase(unittest.TestCase):
             {
                 "score": None,
                 "summary": {
-                    "answer": "a claim [c1]",
-                    "citations": ["c1"],
-                    "evidence": {"c1": "text"},
+                    "answer": f"a claim [{one}]. another claim [{two}].",
+                    "citations": [one, two],
+                    "evidence": {one: "text", two: "text"},
                     "evidence_truncated": False,
                 },
             },
@@ -138,7 +140,71 @@ class EvaluateTestCase(unittest.TestCase):
             trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
         )
 
-        self.assertEqual(set(client.questions[0]), {"gate"})
+        # The aggregate plus one question per cited unit, in the same call.
+        self.assertEqual(set(client.questions[0]), {"gate", "claim-01", "claim-02"})
+        self.assertNotIn("scope", client.questions[0])
+
+    def test_a_failing_claim_names_itself_and_rejects(self) -> None:
+        # The aggregate says "fine" (0.05) but claim 02 is unsupported (0.93): the
+        # gate rejects and the criterion points at the claim, so the next turn has
+        # something to fix instead of "revise".
+        one = "11111111-1111-5111-8111-111111111111"
+        two = "22222222-2222-5222-8222-222222222222"
+        client = _FakeJevClient(
+            {
+                "gate": {"noul": 0.05},
+                "claim-01": {"noul": 0.02},
+                "claim-02": {"noul": 0.93},
+            }
+        )
+
+        verdict = evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"good claim [{one}]. bad claim [{two}].",
+                    "citations": [one, two],
+                    "evidence": {one: "a", two: "b"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "fail")
+        self.assertIn("claim-02", verdict.failing_criterion or "")
+        self.assertIn("bad claim", verdict.failing_criterion or "")
+
+    def test_all_claims_supported_passes(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+        two = "22222222-2222-5222-8222-222222222222"
+        client = _FakeJevClient(
+            {
+                "gate": {"noul": 0.4},
+                "claim-01": {"noul": 0.1},
+                "claim-02": {"noul": 0.2},
+            }
+        )
+
+        verdict = evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"one [{one}]. two [{two}].",
+                    "citations": [one, two],
+                    "evidence": {one: "a", two: "b"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "pass")
+        self.assertIsNone(verdict.failing_criterion)
 
     def test_gate_disabled_returns_none_without_a_client(self) -> None:
         # The ablation arm: no verdict, no JEV call, no `gate` key.

@@ -52,6 +52,7 @@ from typing import Any, Literal, Mapping, Sequence
 from lens import config
 from lens.clients import LensClient
 from lens.models import Question
+from lens.observability.citations import claim_units
 from lens.observability.trajectory import TraceCtx
 
 Verdict = Literal["pass", "fail", "uncertain"]
@@ -264,6 +265,17 @@ EVIDENCE_MAX_CHARS = 120000
 #: than the evidence that is supposed to prove it.
 ANSWER_MAX_CHARS = 8000
 
+#: Claims asked about individually in one decision call. Observed answers carry at
+#: most nineteen cited units; the cap only stops a pathological answer from
+#: building an enormous question map.
+MAX_GATE_CLAIMS = 40
+
+#: A claim at or above this probability of being unsupported fails the gate.
+#: **Not calibrated yet.** Every per-claim probability is logged on the
+#: ``gate.verdict`` event, so a later reliability curve can re-fit this threshold
+#: over recorded answers without re-running a single query.
+CLAIM_FAIL_PROBABILITY = 0.5
+
 
 def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:
     """Render cited excerpts as ``id: text`` lines within ``EVIDENCE_MAX_CHARS``."""
@@ -347,6 +359,40 @@ def _read_answer(
     criterion = answer.get("failing_criterion") or answer.get("criterion") or answer.get("reason")
 
     return verdict, confidence, str(criterion)[:300] if criterion else None
+
+
+def build_claim_question(claim_id: str, text: str, citations: Sequence[str]) -> Question:
+    """Build the per-claim ``noul`` question used by the **final** gate.
+
+    Polarity matches the aggregate question: ``noul`` is P(this claim is **not**
+    supported). One question per claim means the verdict can name the claim that
+    failed, which is what turns "revise the answer" into "fix claim 07".
+
+    The excerpts are not repeated here — they live in the shared state, and JEV
+    evaluates every question against that same state.
+    """
+    cited = ", ".join(str(citation) for citation in citations) or "(none cited)"
+    body = (text or "").strip()
+
+    if len(body) > 600:
+        body = body[:600] + " …"
+
+    return Question(
+        type="noul",
+        instructions=(
+            f"Claim {claim_id} cites: {cited}. Decide whether that citation supports it, "
+            "using the excerpt for each cited id in the state. Answer true only if the "
+            "claim is NOT supported — it states a number, dataset, comparison or "
+            "attribution the excerpt does not contain, or it cites an id with no excerpt. "
+            "Answer false if the excerpt supports it. A claim that the evidence does not "
+            "contain something is supported when the excerpts show what was inspected.\n"
+            f"Claim: {body}"
+        ),
+        criteria={
+            "true": "the claim is not supported by the excerpt of the ids it cites",
+            "false": "the claim is supported by the excerpt of the ids it cites",
+        },
+    )
 
 
 def build_scope_question(answer: str) -> Question:
@@ -482,7 +528,20 @@ def evaluate_stage(
             summary.get("evidence") or (),
         )
         polarity = "unsupported"
+        # One claim per question, in the same call: JEV evaluates a question map
+        # against one state, so per-claim scoring costs a few hundred input tokens
+        # and returns *which* claim failed. The aggregate question stays as a
+        # cross-check; the two disagree in the log rather than being averaged.
+        claims = claim_units(str(summary.get("answer") or ""))[:MAX_GATE_CLAIMS]
+        summary = {
+            **summary,
+            "claims": [
+                {"id": f"claim-{index:02d}", "citations": ids}
+                for index, (_text, ids) in enumerate(claims, start=1)
+            ],
+        }
     else:
+        claims = []
         question = build_sufficiency_question(stage, artifact, query=query)
         polarity = "supported"
 
@@ -493,6 +552,10 @@ def evaluate_stage(
     )
 
     questions: dict[str, Question] = {"gate": question}
+
+    for index, (claim_text, claim_ids) in enumerate(claims, start=1):
+        name = f"claim-{index:02d}"
+        questions[name] = build_claim_question(name, claim_text, claim_ids)
 
     if stage == "final" and summary.get("evidence_truncated"):
         # The groundedness verdict is being asked about evidence that is not all
@@ -522,6 +585,38 @@ def evaluate_stage(
         (getattr(result, "answers", None) or {}).get("gate") or {},
         polarity=polarity,  # type: ignore[arg-type]
     )
+
+    # Per-claim verdicts. They can only *tighten* the aggregate: a claim named as
+    # unsupported fails the gate even if the answer as a whole scored below the
+    # threshold, and the criterion then names that claim so the next turn has
+    # something to fix instead of "revise".
+    answers = getattr(result, "answers", None) or {}
+    claim_scores: dict[str, float] = {}
+    claim_text_by_id: dict[str, str] = {}
+
+    for index, (claim_text, _ids) in enumerate(claims, start=1):
+        name = f"claim-{index:02d}"
+        _verdict, probability, _criterion = _read_answer(
+            answers.get(name) or {}, polarity="unsupported"
+        )
+
+        if probability is not None:
+            claim_scores[name] = probability
+            claim_text_by_id[name] = claim_text
+
+    failed_claims = {
+        name: score for name, score in claim_scores.items() if score >= CLAIM_FAIL_PROBABILITY
+    }
+
+    if failed_claims:
+        worst = max(failed_claims, key=lambda name: failed_claims[name])
+        criterion = (
+            f"{worst} (P={failed_claims[worst]:.2f}): {claim_text_by_id.get(worst, '')[:160]}"
+        )
+
+        if verdict_value != "fail":
+            verdict_value = "fail"
+
     verdict = StageVerdict(
         verdict=verdict_value,
         confidence=confidence,
@@ -531,11 +626,24 @@ def evaluate_stage(
     )
     scope_extra: dict[str, Any] = {}
 
+    if claim_scores:
+        scope_extra.update(
+            {
+                "claims": len(claim_scores),
+                "claim_scores": claim_scores,
+                "claims_failed": sorted(failed_claims),
+            }
+        )
+
     if "scope" in questions:
         scope_verdict, scope_confidence, _criterion = _read_answer(
             (getattr(result, "answers", None) or {}).get("scope") or {}
         )
-        scope_extra = {"scope_verdict": scope_verdict, "scope_confidence": scope_confidence}
+        scope_extra = {
+            "scope_verdict": scope_verdict,
+            "scope_confidence": scope_confidence,
+            **scope_extra,
+        }
 
     _log_verdict(
         client,
