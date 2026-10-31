@@ -18,6 +18,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from lens.experiments.polarity import PolarityResult, Probe
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -34,6 +36,18 @@ score_instruments = _load("score_instruments")
 judge_answers = _load("judge_answers")
 freeze_manifest = _load("freeze_manifest")
 run_campaign = _load("run_campaign")
+
+
+def _good_polarity():
+    return PolarityResult(
+        probes=[Probe("true-claim", True, 0.92), Probe("false-claim", False, 0.03)],
+        cost_usd=0.00002,
+        tokens_in=40,
+    )
+
+
+def _bad_polarity():
+    return PolarityResult(probes=[Probe("true-claim", True, 0.03)], cost_usd=0.00002, tokens_in=10)
 
 
 class RetrievalMetricTests(unittest.TestCase):
@@ -293,6 +307,7 @@ class CampaignIdentityTests(unittest.TestCase):
             patch.object(run_campaign, "load_campaign", return_value=campaign),
             patch.object(run_campaign, "build_jobs", return_value=[]),
             patch.object(run_campaign, "image_digest", return_value=digest),
+            patch.object(run_campaign, "check_polarity", return_value=_good_polarity()),
             patch.object(run_campaign, "run_jobs", side_effect=lambda *a, **k: ran.append(k) or []),
             redirect_stdout(io.StringIO()),
             redirect_stderr(io.StringIO()),
@@ -335,6 +350,54 @@ class CampaignIdentityTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(len(ran), 1)
+
+
+class CampaignPolarityTests(unittest.TestCase):
+    """The wave preflight: a skewed decision layer must stop the campaign."""
+
+    def _invoke(self, *argv: str, polarity) -> tuple[int, list]:
+        ran: list = []
+        campaign = {"name": "unit", "arms": [{}]}
+
+        with (
+            patch.object(run_campaign, "load_campaign", return_value=campaign),
+            patch.object(run_campaign, "build_jobs", return_value=[]),
+            patch.object(run_campaign, "image_digest", return_value="sha256:" + "a" * 64),
+            patch.object(run_campaign, "check_polarity", return_value=polarity),
+            patch.object(run_campaign, "run_jobs", side_effect=lambda *a, **k: ran.append(k) or []),
+            redirect_stdout(io.StringIO()),
+            redirect_stderr(io.StringIO()),
+        ):
+            code = run_campaign.main(["campaign.json", *argv])
+
+        return code, ran
+
+    def test_a_skewed_layer_stops_the_wave_before_it_spends(self) -> None:
+        code, ran = self._invoke(polarity=_bad_polarity())
+
+        self.assertEqual(code, 3)
+        self.assertEqual(ran, [])
+
+    def test_the_probe_result_is_recorded_beside_the_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _ran = self._invoke("--out", tmp, polarity=_good_polarity())
+
+            self.assertEqual(code, 0)
+            payload = json.loads(
+                (next(Path(tmp).iterdir()) / "campaign.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(payload["polarity"]["ok"])
+            self.assertEqual(len(payload["polarity"]["probes"]), 2)
+
+    def test_skipping_the_probe_is_recorded_as_null(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _ran = self._invoke("--skip-polarity", "--out", tmp, polarity=None)
+
+            self.assertEqual(code, 0)
+            payload = json.loads(
+                (next(Path(tmp).iterdir()) / "campaign.json").read_text(encoding="utf-8")
+            )
+            self.assertIsNone(payload["polarity"])
 
 
 class CheckRunShapeTests(unittest.TestCase):

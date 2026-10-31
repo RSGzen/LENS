@@ -4,16 +4,18 @@
 Why this exists
 ---------------
 A campaign's true cost is not the number printed at the end of
-``scripts/run_campaign.py``. That number is the CSV sum, and it excludes two things
-that spend real money after the cells finish:
+``scripts/run_campaign.py``. That number is the CSV sum, and it excludes the runs
+that spend money around the cells:
 
 1. the **judge** (``scripts/judge_answers.py``), one call per answer, logged to its
    own ``judge-<timestamp>`` run;
 2. a **regrade** (``scripts/regrade_gate.py``), decision-layer only, logged to
-   ``regrade-<timestamp>``.
+   ``regrade-<timestamp>``;
+3. the **polarity preflight** that ``run_campaign.py`` runs before the cells,
+   logged to ``polarity-<timestamp>``.
 
-All three are real spend and each lands in a different artifact, so a table that
-quotes only one of them is optimistic by whatever the other two cost.
+Each is real spend and each lands in a different artifact, so a table that quotes
+only one of them is optimistic by whatever the others cost.
 
 Usage::
 
@@ -43,8 +45,9 @@ from lens import config
 from lens.agent import runstore
 from lens.observability.trajectory import Trajectory
 
-#: Run-id prefixes that spend money *after* the cells, in the order they run.
-COMPANION_PREFIXES = ("judge-", "regrade-")
+#: Run-id prefixes that spend money *after* the cells, in the order they run: the
+#: polarity preflight before the wave, the judge and any regrade after it.
+COMPANION_PREFIXES = ("polarity-", "judge-", "regrade-")
 
 
 def load_campaign(path: str | Path) -> dict[str, Any]:

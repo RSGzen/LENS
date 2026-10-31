@@ -42,8 +42,11 @@ from typing import Any
 
 from lens import config
 from lens.agent import runstore
+from lens.clients import LensClient
 from lens.experiments.campaign import build_jobs, load_campaign
+from lens.experiments.polarity import PolarityResult, probe_polarity
 from lens.observability.citations import resolve_citations
+from lens.observability.trajectory import TraceCtx, Trajectory
 
 
 def image_digest() -> str | None:
@@ -70,12 +73,28 @@ def image_digest() -> str | None:
     return finished.stdout.strip() or None
 
 
+def check_polarity() -> PolarityResult:
+    """Run the four JEV probes in their own run so the spend is auditable.
+
+    The probe needs a client and a trajectory, which is why it lives here rather
+    than in ``experiments.polarity``: that module stays network-free and testable,
+    and this function is the only place that knows how to build the real objects.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = f"polarity-{stamp}"
+    trajectory = Trajectory(run_id)
+    client = LensClient(trajectory)
+    trace = TraceCtx(trace_id=run_id, step_idx=0, actor="tool")
+
+    return probe_polarity(lambda state, questions: client.jev(state, questions, trace_ctx=trace))
+
+
 def run_jobs(jobs: list[dict[str, Any]], *, digest: str | None, dry_run: bool) -> list[dict]:
     """Execute the matrix and return one result row per job.
 
     A failing run does **not** abort the campaign: the row says ``exit_code`` and
     the next arm still runs. Partial evidence beats a campaign that stops at the
-    first bad query - which is exactly what is looking for.
+    first bad query.
     """
     rows: list[dict[str, Any]] = []
 
@@ -147,11 +166,13 @@ def _write_output(
     out: Path,
     *,
     digest: str | None,
+    polarity: dict[str, Any] | None = None,
 ) -> Path:
     """Write ``campaign.json`` + ``campaign.csv``; return the directory.
 
-    The image identity lives in the JSON header, not in every row: one campaign
-    ran on one image, and repeating it per row invites a row edited by hand.
+    The image identity and the polarity probes live in the JSON header, not in
+    every row: one campaign ran on one image, and a per-row copy invites an edit
+    by hand. ``polarity: null`` means the preflight was skipped or refused to run.
     """
     out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -163,6 +184,7 @@ def _write_output(
             "digest": digest,
             "digest_missing": digest is None,
         },
+        "polarity": polarity,
         "rows": rows,
     }
 
@@ -186,6 +208,11 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-missing-digest",
         action="store_true",
         help="run without an image digest (a machine without Docker); recorded in campaign.json",
+    )
+    parser.add_argument(
+        "--skip-polarity",
+        action="store_true",
+        help="do not run the four JEV polarity probes (skips a ~$0.00002 preflight)",
     )
     parser.add_argument(
         "--out", default=None, help="output directory (default: DATA_ROOT/campaigns)"
@@ -219,6 +246,24 @@ def main(argv: list[str] | None = None) -> int:
 
     print("")
 
+    # Polarity before spend: if the decision layer no longer reads `noul` at 0.5,
+    # every gate verdict this wave records is noise, and the probes cost $0.00002.
+    polarity: PolarityResult | None = None
+
+    if not args.dry_run and not args.skip_polarity:
+        polarity = check_polarity()
+        print(f"polarity {polarity.to_dict()['skewed'] or 'ok'} (4 probes)")
+
+        if not polarity.ok:
+            print(
+                "\nrefusing to run: the decision layer did not read `noul` at 0.5 on "
+                "probe(s) " + ", ".join(polarity.skewed) + "\n"
+                "the gate's thresholds assume that mapping; check the endpoint's answer "
+                "shape, or pass --skip-polarity and record why",
+                file=sys.stderr,
+            )
+            return 3
+
     rows = run_jobs(jobs, digest=digest, dry_run=args.dry_run)
 
     if args.dry_run:
@@ -230,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
         campaign,
         out / f"{campaign['name']}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
         digest=digest,
+        polarity=polarity.to_dict() if polarity is not None else None,
     )
 
     spent = sum(float(row["cost_usd"]) for row in rows)
