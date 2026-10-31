@@ -72,14 +72,26 @@ class TrajectoryTestCase(unittest.TestCase):
 
         self.assertEqual(hashlib.sha256(blob.read_bytes()).hexdigest(), blob.name)
 
-    def test_load_blob_reads_a_legacy_crlf_blob(self) -> None:
-        # Blobs written before the fix hold CRLF; reads must still return the text
-        # that was stored (and not double it up with "\r").
+    def test_load_blob_returns_the_bytes_that_were_hashed(self) -> None:
+        # Blob-store format v2 is byte in, byte out. A payload that contains "\r\n"
+        # (a model that writes CRLF, a quoted CSV row) round-trips unchanged; the
+        # old blanket replace() corrupted exactly those payloads.
+        text = "alpha\r\nbeta\r\n"
+        ref = self.traj.store_blob(text)
+
+        self.assertEqual(self.traj.load_blob(ref), text)
+
+    def test_a_legacy_crlf_blob_is_repaired_not_rewritten_on_read(self) -> None:
+        # Format v1 could leave CRLF on disk where the hash was taken over LF. The
+        # reader now returns what is stored, so the disagreement is visible (the
+        # file no longer hashes to its name) and the one-off migration script is
+        # what fixes it — a read that silently rewrote newlines hid the defect.
         ref = self.traj.store_blob("alpha\nbeta")
         blob = self.traj.blobs_dir / ref.split(":", 1)[1]
-        blob.write_bytes(b"alpha\r\nbeta\r\n")  # simulate the legacy writer
+        blob.write_bytes(b"alpha\r\nbeta\r\n")  # simulate the v1 writer
 
-        self.assertEqual(self.traj.load_blob(ref), "alpha\nbeta\n")
+        self.assertEqual(self.traj.load_blob(ref), "alpha\r\nbeta\r\n")
+        self.assertNotEqual(hashlib.sha256(blob.read_bytes()).hexdigest(), blob.name)
 
     # ---------------------------------------------------------------- events
     def test_log_event_appends_one_line_per_call(self) -> None:

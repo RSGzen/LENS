@@ -16,6 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from lens import config
 from lens.agent import runstore
 from lens.agent.runstore import RunManifest
 from lens.observability.trajectory import Trajectory
@@ -45,6 +46,12 @@ class RunStoreTestCase(unittest.TestCase):
         self.assertTrue(manifest.created_at)
         self.assertTrue(manifest.updated_at)
         self.assertIsNone(manifest.parent_run_id)
+
+    def test_a_new_manifest_records_the_blob_format(self) -> None:
+        # The rule that wrote the bytes a run points at cannot be inferred later,
+        # so the run states it once, at creation.
+        manifest = RunManifest.new("run-1", "q")
+        self.assertEqual(manifest.extra["blob_format"], config.BLOB_FORMAT_VERSION)
 
     def test_manifest_round_trip(self) -> None:
         manifest = RunManifest.new(

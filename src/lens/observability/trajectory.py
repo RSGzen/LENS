@@ -343,11 +343,14 @@ class Trajectory:
         if not blob_path.exists():
             raise FileNotFoundError(f"Blob not found at {blob_path}")
 
-        # Read **bytes** and decode: a text-mode read normalises newlines, which
-        # would hide the fact that older blobs were written with CRLF (see
-        # ``store_blob``). The explicit normalisation keeps those legacy blobs
-        # readable while new ones are byte-exact.
-        return blob_path.read_bytes().decode("utf-8").replace("\r\n", "\n")
+        # Read **bytes** and decode. Text mode would normalise newlines and return
+        # something other than the bytes that were hashed; the blob-store format
+        # (``config.BLOB_FORMAT_VERSION``) is byte in, byte out, so a round trip is
+        # exact even for a payload that contains "\r\n". A store written by format
+        # v1 could hold CRLF where the hash was taken over LF, and those blobs are
+        # repaired once by ``scripts/repair_blobs.py`` — this reader does not paper
+        # over it, because a blanket replace would also corrupt legitimate CRLF.
+        return blob_path.read_bytes().decode("utf-8")
 
     def rebuild(self) -> "RebuiltState":
         """Fold ``trajectory.jsonl`` back into the state a resume needs.

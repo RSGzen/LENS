@@ -202,8 +202,15 @@ class RunManifest:
         caps: dict[str, Any] | None = None,
         created_by: dict[str, Any] | None = None,
     ) -> "RunManifest":
-        """Create a ``running`` manifest with both timestamps set."""
+        """Create a ``running`` manifest with both timestamps set.
+
+        Also records ``extra["blob_format"]``: the blob-store rule this run writes
+        under. It cannot be upgraded later without rewriting the bytes it points
+        at, which is why it is set once, here.
+        """
         timestamp = now_iso()
+
+        from lens import config
 
         return cls(
             run_id=run_id,
@@ -214,6 +221,7 @@ class RunManifest:
             models=models or {},
             caps=caps or {},
             created_by=created_by or {},
+            extra={"blob_format": config.BLOB_FORMAT_VERSION},
         )
 
 

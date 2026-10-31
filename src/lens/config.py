@@ -335,6 +335,14 @@ MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "1.00"))
 # which is why it belongs here and not in three modules.
 CREDIT_FEE = 1.055
 
+# Blob-store format the writer uses. **v1** wrote blobs in text mode, so on Windows
+# "\n" became "\r\n" on disk while the hash had been taken over the LF bytes: the
+# filename stopped being the hash of the file. **v2** writes and reads the exact
+# bytes. The version is recorded in each new run's manifest, so an artifact states
+# which rule produced it; a v1 store is migrated once by ``scripts/repair_blobs.py``
+# rather than by a reader that silently rewrites newlines.
+BLOB_FORMAT_VERSION = 2
+
 # Context assembly. Compaction triggers when the estimated root context exceeds
 # ``CONTEXT_COMPACT_RATIO * CONTEXT_TOKEN_LIMIT`` (= 30,000 tokens by default).
 # 40k is ~10% of gpt-5's window and ~15% of qwen3-coder's. A turn needs far less:
