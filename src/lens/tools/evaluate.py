@@ -195,60 +195,6 @@ def build_unsupported_claim_question(
     )
 
 
-def build_groundedness_question(
-    answer: str,
-    citations: Sequence[str],
-    evidence: Sequence[str] | Mapping[str, str] = (),
-) -> Question:
-    """Build the JEV ``noul`` question used by the **final** gate.
-
-    "Is every claim in the answer supported by the cited chunks?" — ``citations``
-    are the ``chunk_uuid`` values the answer relies on, and ``evidence`` carries a
-    **bounded** excerpt of the cited chunk text (``chunk_uuid -> text``, or bare
-    excerpts). This is the guardrail row of.x.3 ("final guardrail /
-    hallucination check"), so a ``false`` verdict means "do not accept this answer
-    yet", not "the run failed".
-
-    **The excerpt is not optional in practice.** Without it the gate sees ids and
-    nothing else, so it can only judge plausibility — measured on the first `gpt-5`
-    run: nine gate calls returned ``noul`` 0.03-0.35 and rejected a *cited, correct*
-    answer until the iteration cap, because "is claim X supported by chunk
-    ``33384c38``" is unanswerable from the id alone. The polarity was verified
-    separately (true statement 0.92, false 0.03, grounded 0.89, ungrounded 0.01),
-    so the rejections were substantive, not a parsing artefact. Keep the total
-    bounded (``EVIDENCE_MAX_CHARS``) — JEV is input-priced at about $0.04 per
-    million tokens, so the budget is generous rather than tight.
-    """
-    citation_list = ", ".join(str(citation) for citation in citations) or "(none cited)"
-    excerpt = (answer or "").strip()
-
-    if len(excerpt) > ANSWER_MAX_CHARS:
-        excerpt = excerpt[:ANSWER_MAX_CHARS] + " …"
-
-    evidence_text = _format_evidence(evidence)
-
-    return Question(
-        type="noul",
-        instructions=(
-            "Decide whether every factual claim in the answer is supported by the cited "
-            f"chunks. Citations given: {citation_list}. Answer false if any claim is "
-            "uncited, contradicted by its citation, or supported by a chunk that does "
-            "not contain it - a number, dataset or comparison with no source counts as "
-            "unsupported. An answer that cites nothing at all - placeholders such as "
-            "'[see above]' or 'the retrieved evidence' are not citations - is "
-            "unsupported. A claim that something is **absent** from the evidence is "
-            "supported when the excerpt shows the inspection (a count of what was "
-            "searched) rather than a hunch. "
-            f"Cited evidence (truncated): {evidence_text} "
-            f"Answer under review (truncated): {excerpt}"
-        ),
-        criteria={
-            "true": "every factual claim is supported by the cited chunks",
-            "false": "at least one claim is uncited, contradicted, or unsupported",
-        },
-    )
-
-
 #: Total characters of cited chunk text the final gate is shown. The decision layer
 #: is input-priced and measured at roughly $0.04 per million tokens, while one
 #: avoided revision costs a chat turn 30-50 times more — so the budget is set to
@@ -497,7 +443,7 @@ def evaluate_stage(
     ``config.STAGE_THRESHOLDS[stage]``). **Skip tier 1 when the score is missing or no
     threshold is calibrated** — do not invent one, and do not treat a missing
     score as a failure. Tier 2: JEV ``noul`` with
-    :func:`build_sufficiency_question` (or :func:`build_groundedness_question`
+    :func:`build_sufficiency_question` (or :func:`build_unsupported_claim_question`
     when ``stage == "final"``). Tier 3: leave ``verdict="uncertain"`` with the
     failing criterion; the orchestrator puts it in the envelope and the root's
     next turn is the judgment. Log ``stage``, ``confidence`` and ``verdict`` on
@@ -671,8 +617,8 @@ __all__ = [
     "GATED_STAGES",
     "StageVerdict",
     "Verdict",
-    "build_groundedness_question",
     "build_scope_question",
     "build_sufficiency_question",
+    "build_unsupported_claim_question",
     "evaluate_stage",
 ]

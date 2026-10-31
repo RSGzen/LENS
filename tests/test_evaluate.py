@@ -18,7 +18,6 @@ from lens.tools.evaluate import (
     EVIDENCE_MAX_CHARS,
     GATED_STAGES,
     StageVerdict,
-    build_groundedness_question,
     build_sufficiency_question,
     build_unsupported_claim_question,
     evaluate_stage,
@@ -61,15 +60,10 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertEqual(state["query"], "which methods aggregate long context?")
         self.assertEqual(state["stage"], "retrieval")
 
-    def test_groundedness_question_is_noul(self) -> None:
-        question = build_groundedness_question("A claim [c1].", ["c1"])
-        self.assertEqual(question.type, "noul")
-        self.assertEqual(set(question.criteria), {"true", "false"})
-
     def test_groundedness_question_carries_bounded_evidence(self) -> None:
         # An id alone cannot be verified: without the chunk text the gate rejected
         # a correct, cited answer on every call until the iteration cap.
-        question = build_groundedness_question(
+        question = build_unsupported_claim_question(
             "The sky is blue [chunk-a].", ["chunk-a"], {"chunk-a": "x" * 5000}
         )
 
@@ -85,7 +79,7 @@ class EvaluateTestCase(unittest.TestCase):
         # ended at the iteration cap.
         evidence = {f"id-{i}": "z" * 600 for i in range(12)}
 
-        question = build_groundedness_question(
+        question = build_unsupported_claim_question(
             "twelve claims [id-0][id-11]", list(evidence), evidence
         )
 
