@@ -689,6 +689,38 @@ class GateInputTestCase(unittest.TestCase):
         self.assertGreater(len(evidence), 20)
         self.assertTrue(truncated)
 
+    def test_truncation_keeps_the_most_cited_chunks(self) -> None:
+        runtime = Runtime(
+            "q",
+            "gate-order-test",
+            client=FakeClient([]),  # type: ignore[arg-type]
+            trajectory=Trajectory("gate-order-test"),
+            conn=object(),
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=FakeSandbox(Path(tempfile.gettempdir()) / "gate-order-work"),  # type: ignore[arg-type]
+            registry=ToolRegistry(),
+            budget=Budget(),
+        )
+        rare = "aaaa1111-0000-0000-0000-000000000000"
+        common = "bbbb2222-0000-0000-0000-000000000000"
+        rows = [
+            {"chunk_uuid": rare, "chunk_text": "r" * 2000},
+            {"chunk_uuid": common, "chunk_text": "c" * 2000},
+        ]
+        answer = f"a claim [{rare}]. " + " ".join([f"again [{common}]."] * 5)
+
+        # Room for one chunk only: the one the answer leans on must survive.
+        with (
+            patch("lens.tools.retrieval.fetch_chunks", return_value=rows),
+            patch("lens.agent.runtime.EVIDENCE_FETCH_CHARS", 2000),
+        ):
+            evidence, truncated = runtime._citation_evidence([rare, common], answer=answer)
+
+        self.assertEqual(list(evidence), [common])
+        self.assertTrue(truncated)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -908,7 +908,8 @@ class Runtime:
                 )
                 verdict = None
             else:
-                evidence, evidence_truncated = self._citation_evidence(citations)
+                cited_chunks = [citation for citation in citations if "-" in citation]
+                evidence, evidence_truncated = self._citation_evidence(citations, answer=final)
                 verdict = self._evaluate(
                     "final",
                     {
@@ -926,6 +927,7 @@ class Runtime:
                             # True when the evidence budget bound before every cited
                             # chunk was shown, so a fail is not read as a bad answer.
                             "evidence_truncated": evidence_truncated,
+                            "evidence_dropped": max(0, len(cited_chunks) - len(evidence)),
                         },
                     },
                     trace_ctx=trace_ctx,
@@ -1101,7 +1103,9 @@ class Runtime:
 
         return result.text
 
-    def _citation_evidence(self, citations: list[str]) -> tuple[dict[str, str], bool]:
+    def _citation_evidence(
+        self, citations: list[str], *, answer: str = ""
+    ) -> tuple[dict[str, str], bool]:
         """Return ``(chunk_uuid -> chunk_text, truncated)`` for the cited ids.
 
         The final gate is asked whether the citations support the claims; without
@@ -1110,41 +1114,55 @@ class Runtime:
         no tool event — the root context stays untouched (this text never becomes an
         observation).
 
-        **Every** cited chunk is fetched, not the first five: answers cite 11-29
-        chunks, and a five-chunk evidence map makes the gate's question
-        unanswerable for the rest. The total is bounded by ``EVIDENCE_FETCH_CHARS``;
-        when the bound bites, ``truncated`` is True and the caller records it, so a
-        ``fail`` can be read as "insufficient input" rather than "bad answer".
+        **Every** cited chunk is fetched, not the first five, and at full length: an
+        answer citing 37 chunks is the longest seen, about 66 000 characters. When
+        the budget does bind, the chunks the answer cites **most often** are the
+        ones kept — dropping them by fetch order would hide exactly the evidence
+        the claim leans on. ``truncated`` is reported so a ``fail`` can be read as
+        "insufficient input" rather than "bad answer".
         """
         ids = [citation for citation in citations if "-" in citation][:MAX_EVIDENCE_CHUNKS]
 
         if not ids or self.conn is None:
             return {}, bool(ids)
 
+        # Most-cited first, first appearance as the tie-break.
+        position = {chunk_id: index for index, chunk_id in enumerate(ids)}
+        ranked = sorted(
+            ids, key=lambda chunk_id: (-(answer or "").count(chunk_id), position[chunk_id])
+        )
+
         from lens.tools.retrieval import fetch_chunks
 
         try:
-            rows = fetch_chunks(self.conn, ids)
+            rows = fetch_chunks(self.conn, ranked)
         except Exception:  # noqa: BLE001 - a gate with no evidence still runs
             return {}, True
+
+        by_id = {
+            str(row["chunk_uuid"]): str(row.get("chunk_text") or "")
+            for row in rows
+            if isinstance(row, dict) and row.get("chunk_uuid")
+        }
 
         evidence: dict[str, str] = {}
         used = 0
         truncated = False
 
-        for row in rows:
-            if not isinstance(row, dict) or not row.get("chunk_uuid"):
+        for chunk_id in ranked:
+            body = by_id.get(chunk_id)
+
+            if body is None:
                 continue
 
-            body = str(row.get("chunk_text") or "")
             remaining = EVIDENCE_FETCH_CHARS - used
 
             if remaining <= 0:
                 truncated = True
                 break
 
-            evidence[str(row["chunk_uuid"])] = body[: min(EVIDENCE_CHUNK_CHARS, remaining)]
-            used += len(evidence[str(row["chunk_uuid"])])
+            evidence[chunk_id] = body[: min(EVIDENCE_CHUNK_CHARS, remaining)]
+            used += len(evidence[chunk_id])
 
         return evidence, truncated
 
