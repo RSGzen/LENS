@@ -27,6 +27,13 @@ The exec cap is lowered with ``--exec-cap`` (default 5 s) so the timeout check
 costs seconds instead of the production 120 s; ``SandboxSession`` forwards the
 same number to the runner, which is why the mechanism is what gets verified.
 
+**What "8/8" means.** These checks prove the boundary — reachability through the
+relay, blocked egress, persistence, the timeout, the mount, no secrets in the
+container, the image's modules — with a stub runtime. They do not exercise the
+production exec cap, a real tool dispatch or a model call; those are covered by a
+live run and ``scripts/check_run.py``. The summary prints that scope, so a quoted
+"8/8" carries it.
+
 Usage::  python scripts/verify_sandbox.py [--exec-cap 5]
 
 This is an integration script, not part of the no-key unit suite. It spends no
@@ -184,6 +191,11 @@ def main(argv: list[str] | None = None) -> int:
     passed = sum(1 for result in results if result)
     print(f"{passed}/{len(results)} checks passed")
     print("image    " + config.SANDBOX_IMAGE)
+    # The scope, printed every time: "8/8" proves the boundary, not the pipeline.
+    print(
+        "scope    boundary only - stub runtime, "
+        f"{args.exec_cap:g}s exec cap, no tool dispatch and no model call"
+    )
 
     return 0 if passed == len(results) and results else 1
 
