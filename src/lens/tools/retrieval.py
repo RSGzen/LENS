@@ -28,10 +28,11 @@ The four funnel tools take ``buckets`` — the segmentation output (a mapping of
 bucket name -> **list** of clause texts, e.g.
 ``{"objectives": ["improve Y", "test Y"], "problems": ["Y is costly"]}``), or a
 plain query string. :func:`format_query`
-normalises both into the single string that is embedded (with the nomic
+joins both into the single string that is embedded (with the nomic
 ``search_query:`` prefix) at the shallow/deep stages and passed to the
 cross-encoder at the rerank stages. Document and query paths **must** use the same
-prefix, or the vector space skews.
+prefix, or the vector space skews. Nothing here normalises the text: the visible
+clauses are stripped and joined, which is all the query path does.
 
 Embeddings — text-literal cast
 ------------------------------

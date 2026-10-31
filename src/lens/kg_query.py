@@ -38,7 +38,9 @@ def normalize_entity(text: str) -> str:
     """Canonical **display** form of an entity surface string.
 
     NFC, collapse Unicode whitespace runs to a single ASCII space, strip ends,
-    strip control characters (same lossless rules as ``chunking.normalize_text``).
+    strip control characters. This is the only lossless normaliser in the tree: the
+    ingestion path collapses whitespace per paragraph and leaves the rest alone, and
+    the query path normalises nothing, so these rules apply to **entity names only**.
     **Do not** lowercase or strip symbols (that would destroy meaningful math/Greek
     tokens); case-insensitive merging is handled by ``dedup_triples`` /
     ``build_graph`` via a separate fold key.

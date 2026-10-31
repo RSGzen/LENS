@@ -211,8 +211,9 @@ def write_query_json(buckets: Mapping[str, Any], path: str | Path) -> Path:
     """Write the segmentation output to ``query.json`` (UTF-8, ``indent=2``).
 
     The sandbox reads this file as its ``query.json`` context file. Use
-    ``ensure_ascii=False`` so non-ASCII query text round-trips losslessly, the
-    same way the retrieval path normalises it. Returns the path.
+    ``ensure_ascii=False`` so non-ASCII query text round-trips losslessly: there is
+    no normalisation step on the query path, so this file is the text as segmented.
+    Returns the path.
     """
     with open(path, "w", encoding="utf-8") as f:
         json.dump(buckets, f, ensure_ascii=False, indent=2)
