@@ -40,8 +40,9 @@ import requests
 from lens.dataset.manifest import is_candidate
 from lens.dataset.paths import TEI_SUFFIX
 
-#: Public bucket and prefix. Both are pinned by ``CORPUS.md`` and the manifest, so a
-#: change here is a corpus-version change, not a refactor.
+#: Public bucket and prefix for arXiv's `arxiv-dataset` release. A change here is a
+#: corpus-version change, not a refactor: the manifest records what was downloaded
+#: from these, so an old corpus and a new URL must not be mixed.
 GCS_BUCKET_URL = "https://storage.googleapis.com/arxiv-dataset"
 PDF_PREFIX = "arxiv/arxiv/pdf"
 
