@@ -91,6 +91,11 @@ class Turn:
     tools: list[ToolStep] = field(default_factory=list)
     emits: list[str] = field(default_factory=list)
     gate: dict[str, Any] | None = None
+    #: Every verdict logged in this turn, in order. A turn can hold several (a
+    #: retrieval gate, a KG gate, and each retry of the final gate), and they are
+    #: logged as their own events rather than attached to a tool -- which is why the
+    #: meter counted nothing on runs whose only gates were final ones.
+    gate_verdicts: list[dict[str, Any]] = field(default_factory=list)
     budget: dict[str, Any] | None = None
     # Refs that could not be resolved from the bundle (damaged/incomplete export).
     missing_refs: list[str] = field(default_factory=list)
@@ -292,6 +297,16 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
         if gate is not None:
             turn.gate = gate  # the last gate of the turn is the turn's verdict
 
+    elif call_type == "note":
+        if event.get("action") == "gate.verdict":
+            turn.gate_verdicts.append(
+                {
+                    "stage": event.get("stage"),
+                    "verdict": event.get("verdict"),
+                    "confidence": event.get("confidence"),
+                }
+            )
+
     elif call_type == "emit":
         label = extra.get("var")
 
@@ -320,7 +335,11 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
     reasoning half of the output. Both are subsets of ``tokens_in`` /
     ``tokens_out`` and neither changes the caps.
     """
-    gates = [tool.gate for turn in turns for tool in turn.tools if tool.gate]
+    # Verdicts are logged as their own events; an earlier recorder attached them to
+    # the tool call that triggered the gate, and runs recorded that way still have to
+    # report a count. The events win when both exist, or a gate would be counted twice.
+    recorded = [gate for turn in turns for gate in turn.gate_verdicts]
+    gates = recorded or [tool.gate for turn in turns for tool in turn.tools if tool.gate]
 
     return {
         "turns": len(turns),

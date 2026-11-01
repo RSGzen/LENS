@@ -48,6 +48,18 @@ class ReplayTestCase(unittest.TestCase):
             latency_ms=900,
         )
 
+    def _verdict(self, step: int, stage: str, verdict: str, confidence: float) -> None:
+        """Log one gate verdict the way the runtime does: its own event."""
+        self.trajectory.log_event(
+            trace_ctx=TraceCtx(trace_id="run-test", step_idx=step, actor="root"),
+            call_type="note",
+            action="gate.verdict",
+            stage=stage,
+            verdict=verdict,
+            confidence=confidence,
+            extra={"polarity": "unsupported", "tier": "jev"},
+        )
+
     def _exec(
         self,
         step: int,
@@ -250,6 +262,42 @@ class ReplayRegressionTestCase(unittest.TestCase):
         self._chat(0, "first")
 
         self.assertEqual([t.turn for t in replay_turns(self.traj)], [0, 2])
+
+    def _verdict(self, step: int, stage: str, verdict: str, confidence: float) -> None:
+        """Log one gate verdict the way the runtime does: its own event."""
+        self.traj.log_event(
+            trace_ctx=TraceCtx("run-edge", step, "root"),  # type: ignore[arg-type]
+            call_type="note",
+            action="gate.verdict",
+            stage=stage,
+            verdict=verdict,
+            confidence=confidence,
+            extra={"polarity": "unsupported", "tier": "jev"},
+        )
+
+    def test_a_logged_verdict_is_counted_even_with_no_tool_gate(self) -> None:
+        # The final gate is its own event, not an extra on a tool call. Counting only
+        # tool-attached gates made the meter read 0 / 0 on runs whose every gate was a
+        # final one -- which is most of them.
+        self._chat(0, "done")
+        self._verdict(0, "retrieval", "fail", 0.12)
+        self._verdict(0, "final", "fail", 0.91)
+
+        turns = replay_turns(self.traj)
+        summary = replay_summary(turns)
+
+        self.assertEqual(summary["gates_passed"], 0)
+        self.assertEqual(summary["gates_failed"], 2)
+        self.assertEqual(len(turns[0].gate_verdicts), 2)
+
+    def test_a_pass_and_a_fail_are_both_counted(self) -> None:
+        self._chat(0, "done")
+        self._verdict(0, "final", "pass", 0.2)
+        self._verdict(0, "final", "fail", 0.8)
+
+        summary = replay_summary(replay_turns(self.traj))
+
+        self.assertEqual((summary["gates_passed"], summary["gates_failed"]), (1, 1))
 
     def test_sub_call_does_not_clobber_the_root_completion(self) -> None:
         self._chat(0, "root completion", tokens=100)
