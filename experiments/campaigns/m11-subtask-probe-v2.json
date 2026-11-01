@@ -1,0 +1,26 @@
+{
+  "name": "m11-subtask-probe-v2",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Repeats m11-subtask-probe after three changes: the compaction trigger comes from the remaining budget instead of a fixed 30k, the token cap is re-derived to 175k from measured per-turn size, and the final gate no longer reads an answer's own list of unsupported items as claims. Same query, same arm, so the two campaigns line up run for run."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Unchanged from the first probe so the comparison is paired. The 175k cap is close to what these runs spent before the change (169k-205k), so the stop reason is expected to move from iterations to tokens."
+    }
+  ]
+}
