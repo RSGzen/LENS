@@ -1,0 +1,13 @@
+{
+  "instrument": "w2-grid-v1",
+  "purpose": "The W2 capacity grid: k (stage-A candidates) x n (papers after the stage-A reranker), with the chunk budget scaled to the paper count so the two are not confounded -- C = 20n and c_top = 5n. Six points, plus the A1 dense baseline measured separately.",
+  "rule": "c_top is a filter only where it is below C, which it is at every point here. The grid is pre-registered: the point is chosen by one standard error on nDCG@10, never by which point looked best on the queries after seeing them.",
+  "points": [
+    {"name": "k100-n20", "k": 100, "n": 20, "C": 400, "c_top": 100},
+    {"name": "k100-n30", "k": 100, "n": 30, "C": 600, "c_top": 150},
+    {"name": "k100-n50", "k": 100, "n": 50, "C": 1000, "c_top": 250},
+    {"name": "k200-n20", "k": 200, "n": 20, "C": 400, "c_top": 100},
+    {"name": "k200-n30", "k": 200, "n": 30, "C": 600, "c_top": 150},
+    {"name": "k200-n50", "k": 200, "n": 50, "C": 1000, "c_top": 250}
+  ]
+}

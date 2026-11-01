@@ -1,0 +1,139 @@
+{
+  "instrument": "tier2-queries-v1",
+  "frozen": "2026-11-01",
+  "purpose": "Tier 2 retrieval evaluation: 25 arXiv cs.AI research questions used to measure nDCG@10, recall@10, MRR and P@10 for the retrieval configurations. They are retrieval questions, so 'relevant' means the paper helps answer it, not that the paper agrees with the funnel.",
+  "rule": "Authored before any retrieval was run for this wave and never edited afterwards. A query added or reworded after seeing a ranking invalidates the metric it was measured on. The set covers the project's own subject area and the four question shapes the system is for: method, comparison, evaluation, and resource.",
+  "spread": {
+    "method": "how something is done",
+    "comparison": "how two or more approaches differ",
+    "evaluation": "how something is measured or what a result means",
+    "resource": "what exists: a dataset, benchmark or system"
+  },
+  "queries": [
+    {
+      "id": "agg-beyond-window",
+      "type": "method",
+      "text": "What methods do language model systems use to aggregate information that exceeds a single context window?"
+    },
+    {
+      "id": "rlm-vs-react",
+      "type": "comparison",
+      "text": "How do recursive language model systems differ from ReAct-style agents in how they handle long context?"
+    },
+    {
+      "id": "compression",
+      "type": "method",
+      "text": "Which methods compress a long input into a shorter representation that a language model can still use?"
+    },
+    {
+      "id": "rag-vs-long-context",
+      "type": "comparison",
+      "text": "When does retrieval-augmented generation outperform simply feeding the whole document to a long-context model?"
+    },
+    {
+      "id": "corpus-level-benchmarks",
+      "type": "resource",
+      "text": "What benchmarks evaluate reasoning over a corpus of many documents rather than a single long document?"
+    },
+    {
+      "id": "needle-evaluation",
+      "type": "evaluation",
+      "text": "How is long-context recall measured, and what do needle-in-a-haystack tests fail to capture?"
+    },
+    {
+      "id": "memory-hierarchy",
+      "type": "method",
+      "text": "How do agent scaffolds implement a memory hierarchy to keep working state across many steps?"
+    },
+    {
+      "id": "summarisation-drift",
+      "type": "evaluation",
+      "text": "What goes wrong when an agent summarises its own context repeatedly, and how is the information loss measured?"
+    },
+    {
+      "id": "inference-cost",
+      "type": "evaluation",
+      "text": "How do papers reduce the inference cost of processing very long inputs, and how do they measure the savings?"
+    },
+    {
+      "id": "context-rot",
+      "type": "method",
+      "text": "What is context rot, and which interventions reduce the degradation of model accuracy as the context grows?"
+    },
+    {
+      "id": "kg-from-papers",
+      "type": "method",
+      "text": "How are knowledge graphs constructed automatically from scientific papers using language models?"
+    },
+    {
+      "id": "entity-relation-extraction",
+      "type": "method",
+      "text": "Which approaches extract entities and typed relations from research text without task-specific training data?"
+    },
+    {
+      "id": "slr-automation",
+      "type": "method",
+      "text": "How is a systematic literature review automated, from screening papers to extracting their findings?"
+    },
+    {
+      "id": "citation-faithfulness",
+      "type": "evaluation",
+      "text": "How is citation faithfulness of a generated answer evaluated, beyond checking that the cited document exists?"
+    },
+    {
+      "id": "hallucination-in-rag",
+      "type": "evaluation",
+      "text": "How is hallucination detected in retrieval-augmented generation when the answer cites retrieved passages?"
+    },
+    {
+      "id": "cross-encoder-reranking",
+      "type": "method",
+      "text": "How do cross-encoder rerankers improve passage retrieval over a first-stage dense retriever, and what do they cost?"
+    },
+    {
+      "id": "dense-vs-bm25",
+      "type": "comparison",
+      "text": "How do dense retrieval and BM25 compare on scientific text, and when is combining them better than either alone?"
+    },
+    {
+      "id": "multi-document-summarisation",
+      "type": "method",
+      "text": "How is multi-document summarisation done when the documents are long and only some are relevant?"
+    },
+    {
+      "id": "tool-use-long-horizon",
+      "type": "method",
+      "text": "How do long-horizon agents decide which tool to call next, and how do they recover from a failed call?"
+    },
+    {
+      "id": "uncertainty-estimation",
+      "type": "method",
+      "text": "How is uncertainty estimated for a language model's answer when no ground truth is available?"
+    },
+    {
+      "id": "self-consistency",
+      "type": "evaluation",
+      "text": "Does sampling several answers and taking a majority improve accuracy, and on which tasks does it fail?"
+    },
+    {
+      "id": "chunking-strategies",
+      "type": "method",
+      "text": "How should a long document be split into chunks for retrieval, and how does chunk size affect answer quality?"
+    },
+    {
+      "id": "query-decomposition",
+      "type": "method",
+      "text": "How are complex questions decomposed into sub-questions that can be answered from separate retrieved passages?"
+    },
+    {
+      "id": "scientific-retrieval",
+      "type": "evaluation",
+      "text": "What makes retrieval over scientific literature harder than retrieval over web text, and how is that measured?"
+    },
+    {
+      "id": "llm-judge",
+      "type": "evaluation",
+      "text": "How reliable is an LLM judge when scoring answer quality, and how is its agreement with human raters reported?"
+    }
+  ]
+}

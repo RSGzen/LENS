@@ -109,6 +109,11 @@ def buckets_for(text: str) -> dict[str, list[str]]:
     return {"objectives": [text], "problems": [], "constraints": [], "requirements": []}
 
 
+#: Papers per configuration that go into the judged pool. Ten because the metric is
+#: nDCG@10: a paper ranked 11th cannot change it.
+POOL_DEPTH = 10
+
+
 def ann_recall(literal: str, k: int) -> float:
     """Return the ANN overlap with the exact top-k, at the configured ``ef_search``."""
     with connect(readonly=True) as conn, conn.cursor() as cur:
@@ -222,27 +227,68 @@ def summarise(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def capacity_mode(args: argparse.Namespace) -> list[dict[str, Any]]:
-    """Run the tuple grid over the given queries."""
+    """Run the tuple grid over the given queries, optionally ranking the top papers."""
     points = load_tuples(Path(args.tuples))
     queries = load_queries([Path(path) for path in args.queries], args.query_ids)
     embedder, reranker = Embedder(), Reranker()
     rows: list[dict[str, Any]] = []
+    rankings: list[dict[str, Any]] = []
 
     print(f"{len(points)} tuples x {len(queries)} queries | ef_search={config.HNSW_EF_SEARCH}")
 
     with connect(readonly=True) as conn:
+        if args.rankings and args.a1_dense:
+            # A1 is retrieval only: the top papers by abstract cosine, no cross-encoder.
+            # It is the Tier-2 baseline, so it has to be in the pool that gets judged.
+            for query in queries:
+                candidates = shallow_match(
+                    conn, buckets_for(query["text"]), embedder, k=int(points[0]["k"])
+                )
+
+                for rank, doc_id in enumerate(candidates[:POOL_DEPTH], start=1):
+                    rankings.append(
+                        {
+                            "config": "a1-dense",
+                            "query_id": query["id"],
+                            "rank": rank,
+                            "doc_id": doc_id,
+                        }
+                    )
+
+            print("  a1-dense: dense top-10 papers")
+
         for index, point in enumerate(points, start=1):
             started = time.perf_counter()
 
             for query in queries:
-                row, _papers = run_point(conn, query, point, embedder, reranker)
+                row, papers = run_point(conn, query, point, embedder, reranker)
                 rows.append(row)
+
+                for rank, doc_id in enumerate(papers[:POOL_DEPTH], start=1):
+                    rankings.append(
+                        {
+                            "config": point.get("name") or f"k{point['k']}-n{point['n']}",
+                            "query_id": query["id"],
+                            "rank": rank,
+                            "doc_id": doc_id,
+                        }
+                    )
 
             print(
                 f"  [{index}/{len(points)}] {point.get('name') or ''} k={point['k']} "
                 f"n={point['n']} C={point['C']} c_top={point['c_top']} "
                 f"({time.perf_counter() - started:.0f}s)"
             )
+
+    if args.rankings and rankings:
+        out = Path(args.rankings)
+
+        with out.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["config", "query_id", "rank", "doc_id"])
+            writer.writeheader()
+            writer.writerows(rankings)
+
+        print(f"wrote {out} ({len(rankings)} rows)")
 
     return rows
 
@@ -295,6 +341,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--k", type=int, nargs="*", default=[50, 100, 200, 400])
     parser.add_argument("--n", type=int, nargs="*", default=[5, 10, 20, 50])
     parser.add_argument("--out", default=None, help="write the rows as CSV here")
+    parser.add_argument(
+        "--rankings",
+        default=None,
+        help="write 'config,query_id,rank,doc_id' for the top 10 papers of every point "
+        "(the pooled candidate list, and score_retrieval's rankings input)",
+    )
+    parser.add_argument(
+        "--a1-dense",
+        action="store_true",
+        help="also rank the A1 baseline: dense top-10 papers with no cross-encoder",
+    )
     args = parser.parse_args(argv)
 
     if bool(args.qrels) == bool(args.tuples):
