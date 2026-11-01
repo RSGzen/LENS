@@ -72,6 +72,66 @@ class UiDataTestCase(unittest.TestCase):
             latency_ms=120,
         )
 
+    def _gate(
+        self,
+        run_id: str,
+        step: int,
+        *,
+        stage: str = "final",
+        verdict: str = "fail",
+        confidence: float = 0.96,
+        scores: dict[str, float] | None = None,
+        failed: list[str] | None = None,
+        criterion: str | None = None,
+        request: bool = True,
+    ) -> None:
+        """Write one gate call: the request event and the verdict event."""
+        traj = Trajectory(run_id)
+
+        if request:
+            body = {
+                "model": "typesafe/jev-1.13",
+                "state": json.dumps({"stage": stage, "summary": {"answer": "candidate answer"}}),
+                "questions": {
+                    "gate": {
+                        "type": "noul",
+                        "instructions": "does it contain an unsupported claim?",
+                    },
+                    "claim-01": {
+                        "type": "noul",
+                        "instructions": f"Claim claim-01 cites: {CHUNK_A}",
+                    },
+                },
+            }
+            traj.log_event(
+                trace_ctx=TraceCtx(run_id, step, "root"),
+                call_type="jev",
+                action="jev.decisions",
+                model="typesafe/jev-1.13",
+                provider="TypeSafe",
+                prompt_ref=traj.store_blob(json.dumps(body)),
+                completion_ref=traj.store_blob(json.dumps({"answers": {"gate": {"noul": 0.96}}})),
+                tokens_in=1234,
+                cost_usd=0.0004,
+                latency_ms=800,
+            )
+
+        traj.log_event(
+            trace_ctx=TraceCtx(run_id, step, "root"),
+            call_type="note",
+            action="gate.verdict",
+            stage=stage,
+            verdict=verdict,
+            confidence=confidence,
+            extra={
+                "claim_scores": scores or {"claim-01": 0.92},
+                "claims_failed": failed if failed is not None else ["claim-01"],
+                "criterion": criterion,
+                "polarity": "unsupported",
+                "tier": "jev",
+            },
+        )
+
     def _make_run(
         self,
         run_id: str,
@@ -289,6 +349,105 @@ class UiDataTestCase(unittest.TestCase):
         path.write_text("{not json", encoding="utf-8")
         self.assertEqual(data.load_aliases(), {})
         self.assertEqual(data.load_run("run-a").run_id, "run-a")  # still openable
+
+    # ------------------------------------------------------------------ gates
+    def test_gate_calls_pair_the_request_with_the_verdict(self) -> None:
+        self._make_run("run-gate")
+        self._gate("run-gate", 1, criterion="claim-01 (P=0.92): a claim")
+
+        calls = data.gate_calls("run-gate")
+
+        self.assertEqual(sorted(calls), [1])
+        call = calls[1][0]
+        self.assertEqual((call.stage, call.verdict), ("final", "fail"))
+        self.assertAlmostEqual(call.confidence, 0.96)
+        self.assertEqual(call.claims_failed, ("claim-01",))
+        self.assertAlmostEqual(call.claim_scores["claim-01"], 0.92)
+        self.assertIn("unsupported claim", call.question or "")
+        self.assertIn("candidate answer", call.state or "")
+        self.assertAlmostEqual(call.cost_usd, 0.0004)
+        self.assertEqual(call.tokens_in, 1234)
+
+    def test_gate_call_keeps_the_ids_each_claim_was_judged_against(self) -> None:
+        self._make_run("run-gate-ids")
+        self._gate("run-gate-ids", 2)
+
+        call = data.gate_calls("run-gate-ids")[2][0]
+
+        self.assertIn(CHUNK_A, call.claim_questions["claim-01"])
+
+    def test_a_verdict_without_a_request_is_still_reported(self) -> None:
+        # A skipped tier costs nothing and asks nothing; dropping it would hide a
+        # gate that ran from the panel entirely.
+        self._make_run("run-gate-skip")
+        self._gate("run-gate-skip", 3, request=False, verdict="skipped", confidence=None)
+
+        call = data.gate_calls("run-gate-skip")[3][0]
+
+        self.assertEqual(call.verdict, "skipped")
+        self.assertIsNone(call.question)
+        self.assertIsNone(call.state)
+        self.assertEqual(call.cost_usd, 0.0)
+
+    def test_two_gates_in_one_turn_keep_their_order(self) -> None:
+        self._make_run("run-gate-two")
+        self._gate("run-gate-two", 1, stage="retrieval", verdict="fail", confidence=0.1)
+        self._gate("run-gate-two", 1, stage="final", verdict="pass", confidence=0.2)
+
+        calls = data.gate_calls("run-gate-two")[1]
+
+        self.assertEqual([call.stage for call in calls], ["retrieval", "final"])
+        self.assertEqual([call.verdict for call in calls], ["fail", "pass"])
+
+    def test_a_run_without_gates_has_no_entries(self) -> None:
+        self._make_run("run-no-gate")
+
+        self.assertEqual(data.gate_calls("run-no-gate"), {})
+
+    def test_a_bad_run_id_reads_nothing(self) -> None:
+        self.assertEqual(data.gate_calls(".."), {})
+
+    def test_the_state_is_clipped_with_a_marker(self) -> None:
+        self._make_run("run-gate-long")
+        traj = Trajectory("run-gate-long")
+        body = {
+            "model": "typesafe/jev-1.13",
+            "state": "x" * (data.GATE_STATE_CHARS + 500),
+            "questions": {"gate": {"type": "noul", "instructions": "q"}},
+        }
+        traj.log_event(
+            trace_ctx=TraceCtx("run-gate-long", 1, "root"),
+            call_type="jev",
+            action="jev.decisions",
+            prompt_ref=traj.store_blob(json.dumps(body)),
+            completion_ref=traj.store_blob("{}"),
+            tokens_in=10,
+            cost_usd=0.0,
+            latency_ms=1,
+        )
+        traj.log_event(
+            trace_ctx=TraceCtx("run-gate-long", 1, "root"),
+            call_type="note",
+            action="gate.verdict",
+            stage="final",
+            verdict="fail",
+            confidence=0.9,
+            extra={"claim_scores": {}, "claims_failed": []},
+        )
+
+        state = data.gate_calls("run-gate-long")[1][0].state or ""
+
+        self.assertGreater(len(state), data.GATE_STATE_CHARS)
+        self.assertIn("more characters", state)
+
+    def test_the_view_carries_the_gates(self) -> None:
+        self._make_run("run-view-gate")
+        self._gate("run-view-gate", 1)
+
+        view = data.load_run("run-view-gate")
+
+        self.assertIsNotNone(view)
+        self.assertEqual(len(view.gates[1]), 1)
 
 
 if __name__ == "__main__":

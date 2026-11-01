@@ -57,6 +57,18 @@ ALIASES_FILENAME = "aliases.json"
 ALIAS_MAX_CHARS = 64
 
 
+def _clip(text: str, limit: int) -> str:
+    """Return ``text`` capped at ``limit`` characters, with an explicit marker.
+
+    A silently shortened string reads as the whole thing. The marker says how much
+    was dropped, so a reader knows to open the blob rather than trust the panel.
+    """
+    if len(text) <= limit:
+        return text
+
+    return text[:limit] + f"\n... [{len(text) - limit:,} more characters]"
+
+
 def is_run_id(run_id: str | None) -> bool:
     """Return ``True`` when ``run_id`` is a plain directory name under the runs root.
 
@@ -85,6 +97,42 @@ def cap_of(manifest: RunManifest) -> float | None:
         return None
 
 
+#: Characters of the gate's state kept for display. The state is the whole prompt
+#: payload (answer, evidence excerpts, sample chunks); the UI shows enough to audit
+#: what the verdict was based on, not enough to re-read the run.
+GATE_STATE_CHARS = 4000
+
+#: Characters of one gate question kept for display.
+GATE_QUESTION_CHARS = 900
+
+
+@dataclass(frozen=True)
+class GateCall:
+    """One gate call: what it was asked, what it answered, and what it cost.
+
+    The verdict alone is not auditable. A reader needs the **question** (which
+    claim, which citations), the **state** it was judged against, and the
+    probability, because "fail 0.96" says nothing about whether the rejection was
+    right.
+    """
+
+    stage: str | None
+    verdict: str
+    confidence: float | None
+    criterion: str | None
+    polarity: str | None
+    claims_failed: tuple[str, ...]
+    #: claim id -> probability the claim is unsupported.
+    claim_scores: dict[str, float]
+    #: claim id -> the question text sent for it (clipped).
+    claim_questions: dict[str, str]
+    question: str | None
+    state: str | None
+    cost_usd: float
+    latency_ms: int | None
+    tokens_in: int | None
+
+
 @dataclass
 class RunView:
     """Everything one run shows: identity, turns, meters, citations, answer."""
@@ -97,6 +145,8 @@ class RunView:
     answer: str
     #: turn number -> chunk rows hydrated by that turn's tool calls.
     evidence: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
+    #: turn number -> the gate calls made in that turn, in the order they ran.
+    gates: dict[int, list[GateCall]] = field(default_factory=dict)
     has_sources: bool = False
     has_report: bool = False
 
@@ -284,9 +334,138 @@ def load_run(run_id: str) -> RunView | None:
         citations=resolve_citations(str(run_id)),
         answer=answer,
         evidence=_evidence_by_turn(turns, trajectory),
+        gates=gate_calls(str(run_id)),
         has_sources=(run_dir / "sources.md").is_file(),
         has_report=(run_dir / "report.md").is_file(),
     )
+
+
+def gate_calls(run_id: str) -> dict[int, list[GateCall]]:
+    """Return one run's gate calls, grouped by turn, in the order they ran.
+
+    A gate call is two log events: ``jev.decisions`` carries the request (state and
+    questions) and its cost; ``gate.verdict`` carries the answer that was acted on.
+    They are paired within a turn because neither names the other: the request holds
+    no stage, the verdict holds no ref. A verdict with no request (a skipped tier)
+    is still returned, with the question fields empty -- dropping it would hide a
+    gate that ran and was not paid for.
+
+    Every field is bounded, and a damaged blob degrades to ``None`` rather than
+    raising: a half-written run must still open.
+    """
+    if not is_run_id(run_id):
+        return {}
+
+    log = runs_root() / str(run_id) / "trajectory.jsonl"
+
+    if not log.is_file():
+        return {}
+
+    try:
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return {}
+
+    trajectory = Trajectory(str(run_id))
+    requests: dict[int, list[dict[str, Any]]] = {}
+    calls: dict[int, list[GateCall]] = {}
+
+    for line in lines:
+        if not line.strip():
+            continue
+
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+
+        step = int(event.get("step_idx") or 0)
+        action = event.get("action")
+
+        if action == "jev.decisions":
+            requests.setdefault(step, []).append(_gate_request(trajectory, event))
+        elif action == "gate.verdict":
+            pending = requests.get(step) or []
+            request = pending.pop(0) if pending else {}
+            calls.setdefault(step, []).append(_gate_call(event, request))
+
+    return calls
+
+
+def _gate_request(trajectory: Trajectory, event: dict[str, Any]) -> dict[str, Any]:
+    """Return what one gate call was asked: state, questions, cost."""
+    request: dict[str, Any] = {
+        "cost_usd": float(event.get("cost_usd") or 0.0),
+        "latency_ms": event.get("latency_ms"),
+        "tokens_in": event.get("tokens_in"),
+    }
+
+    payload = _blob_json(trajectory, event.get("prompt_ref"))
+
+    if not isinstance(payload, dict):
+        return request
+
+    state = payload.get("state")
+
+    if isinstance(state, str):
+        request["state"] = _clip(state, GATE_STATE_CHARS)
+    elif state is not None:
+        request["state"] = _clip(json.dumps(state, ensure_ascii=False, indent=2), GATE_STATE_CHARS)
+
+    questions = payload.get("questions")
+
+    if isinstance(questions, dict):
+        aggregate = questions.get("gate")
+
+        if isinstance(aggregate, dict):
+            request["question"] = _clip(
+                str(aggregate.get("instructions") or ""), GATE_QUESTION_CHARS
+            )
+
+        request["claim_questions"] = {
+            str(key): _clip(str(value.get("instructions") or ""), GATE_QUESTION_CHARS)
+            for key, value in questions.items()
+            if str(key).startswith("claim-") and isinstance(value, dict)
+        }
+
+    return request
+
+
+def _gate_call(event: dict[str, Any], request: dict[str, Any]) -> GateCall:
+    """Join one ``gate.verdict`` event with its request."""
+    extra = event.get("extra") or {}
+    scores = extra.get("claim_scores") or {}
+
+    return GateCall(
+        stage=event.get("stage"),
+        verdict=str(event.get("verdict") or "unknown"),
+        confidence=event.get("confidence"),
+        criterion=extra.get("criterion"),
+        polarity=extra.get("polarity"),
+        claims_failed=tuple(str(name) for name in extra.get("claims_failed") or ()),
+        claim_scores={
+            str(key): float(value)
+            for key, value in scores.items()
+            if isinstance(value, (int, float))
+        },
+        claim_questions=request.get("claim_questions") or {},
+        question=request.get("question"),
+        state=request.get("state"),
+        cost_usd=float(request.get("cost_usd") or 0.0),
+        latency_ms=request.get("latency_ms"),
+        tokens_in=request.get("tokens_in"),
+    )
+
+
+def _blob_json(trajectory: Trajectory, ref: str | None) -> Any:
+    """Return a JSON blob, or ``None`` when it is missing or unparseable."""
+    if not ref:
+        return None
+
+    try:
+        return json.loads(trajectory.load_blob(ref))
+    except (OSError, KeyError, ValueError, IndexError):
+        return None
 
 
 def evidence_upto(view: RunView, cursor: int) -> list[dict[str, Any]]:

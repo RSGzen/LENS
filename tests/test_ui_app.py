@@ -130,6 +130,45 @@ class UiAppTestCase(unittest.TestCase):
         self.assertEqual(labels["cap"], "$1.00")  # from the manifest, not config
         self.assertTrue(any("Recorded playback" in c.value for c in at.caption))
 
+    def test_the_gate_panel_shows_what_was_asked_and_answered(self) -> None:
+        # A verdict is only checkable against its inputs, so the page must show the
+        # probability, the named claim and the question the gate was asked. The gate
+        # is on turn 0 because the timeline renders only up to the cursor.
+        traj = Trajectory("run-ui")
+        body = {
+            "model": "typesafe/jev-1.13",
+            "state": json.dumps({"stage": "final", "summary": {"answer": "candidate"}}),
+            "questions": {"gate": {"type": "noul", "instructions": "unsupported claim?"}},
+        }
+        traj.log_event(
+            trace_ctx=TraceCtx("run-ui", 0, "root"),
+            call_type="jev",
+            action="jev.decisions",
+            prompt_ref=traj.store_blob(json.dumps(body)),
+            completion_ref=traj.store_blob("{}"),
+            tokens_in=99,
+            cost_usd=0.0003,
+            latency_ms=700,
+        )
+        traj.log_event(
+            trace_ctx=TraceCtx("run-ui", 0, "root"),
+            call_type="note",
+            action="gate.verdict",
+            stage="final",
+            verdict="fail",
+            confidence=0.91,
+            extra={"claim_scores": {"claim-01": 0.91}, "claims_failed": ["claim-01"]},
+        )
+
+        at = self._app()
+
+        self.assertEqual([str(exception.value) for exception in at.exception], [])
+        headings = [block.value for block in at.markdown]
+
+        self.assertTrue(any("final" in value and "fail" in value for value in headings))
+        self.assertTrue(any("P=0.91" in value for value in headings))
+        self.assertTrue(any("call(s)" in expander.label for expander in at.expander))
+
     def test_step_advances_the_cursor(self) -> None:
         at = self._app()
         step = [button for button in at.button if button.label.endswith("Step ▶")][0]

@@ -40,7 +40,7 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import streamlit as st
 
@@ -527,10 +527,10 @@ def render_timeline(view: data.RunView) -> None:
     st.caption(f"showing turn 0–{cursor} of {len(turns) - 1}")
 
     for turn in turns[: cursor + 1]:
-        render_turn(view.run_id, turn)
+        render_turn(view.run_id, turn, view.gates.get(turn.turn, ()))
 
 
-def render_turn(run_id: str, turn: Turn) -> None:
+def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) -> None:
     """One turn card (U5): completion, code, tools, and what the model saw."""
     with st.container(border=True):
         head = st.columns([5, 1, 1, 1])
@@ -573,6 +573,9 @@ def render_turn(run_id: str, turn: Turn) -> None:
             st.markdown("**Observation — what the model actually saw**")
             st.code(turn.observation, language="text")
 
+        if gates:
+            render_gate(gates)
+
         chips = []
 
         if turn.emits:
@@ -596,6 +599,73 @@ def render_turn(run_id: str, turn: Turn) -> None:
                 f"{len(turn.missing_refs)} missing refs in this turn: "
                 + ", ".join(f"`{ref}`" for ref in turn.missing_refs[:3])
             )
+
+
+def render_gate(gates: Sequence[data.GateCall]) -> None:
+    """The gate panel: every gate call in this turn, what it was asked, what it cost.
+
+    A verdict is only checkable against its own inputs, so each call shows the
+    probability it returned, the claim it named, the question it was asked, and the
+    state it judged. The state is one of the largest objects a run records, so it
+    stays inside the expander and arrives already clipped.
+    """
+    spend = sum(call.cost_usd for call in gates)
+
+    with st.expander(f"Gate ? {len(gates)} call(s), ${spend:.6f}"):
+        for index, call in enumerate(gates, start=1):
+            probability = "" if call.confidence is None else f" ? P={call.confidence:.2f}"
+
+            st.markdown(
+                f"**{index}. {call.stage or 'stage not recorded'} ? {call.verdict}**"
+                f"{probability} ? ${call.cost_usd:.6f}"
+                + (f" ? {_duration(call.latency_ms)}" if call.latency_ms else "")
+                + (f" ? {call.tokens_in:,} tokens in" if call.tokens_in else "")
+            )
+
+            if call.criterion:
+                st.caption("named claim")
+                st.code(call.criterion, language="text")
+
+            if call.claim_scores:
+                failed = set(call.claims_failed)
+                st.dataframe(
+                    [
+                        {
+                            "claim": claim,
+                            "P(unsupported)": round(score, 2),
+                            "failed": claim in failed,
+                            "cited ids in the question": _cited_ids_in(
+                                call.claim_questions.get(claim)
+                            ),
+                        }
+                        for claim, score in sorted(call.claim_scores.items())
+                    ],
+                    hide_index=True,
+                    width="stretch",
+                )
+
+            if call.question:
+                st.caption("question asked for the whole answer")
+                st.code(call.question, language="text")
+
+            if call.state:
+                st.caption(f"state the verdict was based on ({len(call.state):,} characters shown)")
+                st.code(call.state, language="json")
+
+
+def _cited_ids_in(question: str | None) -> str:
+    """Return the chunk ids named in one claim question, comma-separated.
+
+    Those ids are the only record of which chunks a single claim was judged
+    against, and "what was this claim checked against" is the first question a
+    reader asks of a rejection.
+    """
+    if not question:
+        return ""
+
+    pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+    return ", ".join(dict.fromkeys(re.findall(pattern, question)))
 
 
 def render_tool(run_id: str, tool: ToolStep, slot: str) -> None:
