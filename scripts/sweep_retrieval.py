@@ -34,6 +34,7 @@ import json
 import statistics
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -226,24 +227,78 @@ def summarise(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return summary
 
 
+def _log(handle: Any, message: str) -> None:
+    """Write one timestamped line to the log, if there is one, and flush it.
+
+    A sweep over 25 queries and six points runs for about an hour, so the log is the
+    only place that says how far it got if the session dies. Line-buffered by hand:
+    a crash must not take the record of where it crashed with it.
+    """
+    if handle is None:
+        return
+
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    handle.write(f"{stamp} | {message}\n")
+    handle.flush()
+
+
+def summarise_point(rows: list[dict[str, Any]]) -> str:
+    """Return a one-line summary of one point's rows."""
+    if not rows:
+        return "no rows"
+
+    return (
+        f"chunks_mean={statistics.mean(r['chunks'] for r in rows):.1f} "
+        f"papers_with_chunks_mean="
+        f"{statistics.mean(r['papers_with_chunks'] for r in rows):.1f} "
+        f"starved_worst={max(r['papers_without_chunks'] for r in rows)} "
+        f"min_ppr_worst={min(r['chunks_per_paper_min'] for r in rows)} "
+        f"bundle_kchars={statistics.mean(r['bundle_chars'] for r in rows) / 1000:.1f} "
+        f"secs_mean={statistics.mean(r['seconds'] for r in rows):.1f}"
+    )
+
+
 def capacity_mode(args: argparse.Namespace) -> list[dict[str, Any]]:
     """Run the tuple grid over the given queries, optionally ranking the top papers.
 
     The rankings file is written **per point and flushed**, not collected and written
     at the end: a sweep over 25 queries takes about an hour, and a session that dies
-    halfway should cost one point rather than the whole run.
+    halfway should cost one point rather than the whole run. ``--log`` writes the same
+    progress, timestamped, to a file opened ``w`` so a rerun starts a fresh record.
     """
     points = load_tuples(Path(args.tuples))
+
+    if args.point:
+        wanted = set(args.point)
+        missing = wanted - {point.get("name") for point in points}
+
+        if missing:
+            raise SystemExit(f"no such point(s): {sorted(missing)}")
+
+        points = [point for point in points if point.get("name") in wanted]
+
     queries = load_queries([Path(path) for path in args.queries], args.query_ids)
     embedder, reranker = Embedder(), Reranker()
     rows: list[dict[str, Any]] = []
     handle = None
     writer: Any = None
+    log = None
+
+    if args.log:
+        log = Path(args.log).open("w", encoding="utf-8")
+        _log(
+            log,
+            f"sweep start: {len(points)} points x {len(queries)} queries | "
+            f"ef_search={config.HNSW_EF_SEARCH} | tuples={args.tuples} | queries={args.queries}",
+        )
 
     if args.rankings:
-        handle = Path(args.rankings).open("w", newline="", encoding="utf-8")
+        handle = Path(args.rankings).open("a" if args.append else "w", newline="", encoding="utf-8")
         writer = csv.DictWriter(handle, fieldnames=["config", "query_id", "rank", "doc_id"])
-        writer.writeheader()
+
+        if not (args.append and Path(args.rankings).stat().st_size > 0):
+            writer.writeheader()
+
         handle.flush()
 
     print(f"{len(points)} tuples x {len(queries)} queries | ef_search={config.HNSW_EF_SEARCH}")
@@ -254,6 +309,8 @@ def capacity_mode(args: argparse.Namespace) -> list[dict[str, Any]]:
                 # A1 is retrieval only: the top papers by abstract cosine, no
                 # cross-encoder. It is the Tier-2 baseline, so it has to be in the
                 # pool that gets judged.
+                started = time.perf_counter()
+
                 for query in queries:
                     candidates = shallow_match(
                         conn, buckets_for(query["text"]), embedder, k=int(points[0]["k"])
@@ -270,15 +327,28 @@ def capacity_mode(args: argparse.Namespace) -> list[dict[str, Any]]:
                     )
 
                 handle.flush()
+                _log(
+                    log,
+                    f"a1-dense: {len(queries)} queries ranked, "
+                    f"{time.perf_counter() - started:.0f}s",
+                )
                 print("  a1-dense: dense top-10 papers")
 
             for index, point in enumerate(points, start=1):
                 started = time.perf_counter()
                 name = point.get("name") or f"k{point['k']}-n{point['n']}"
+                point_rows: list[dict[str, Any]] = []
 
-                for query in queries:
+                _log(
+                    log,
+                    f"point {index}/{len(points)} {name} | k={point['k']} n={point['n']} "
+                    f"C={point['C']} c_top={point['c_top']} | {len(queries)} queries",
+                )
+
+                for position, query in enumerate(queries, start=1):
                     row, papers = run_point(conn, query, point, embedder, reranker)
                     rows.append(row)
+                    point_rows.append(row)
 
                     if writer is not None:
                         writer.writerows(
@@ -291,19 +361,38 @@ def capacity_mode(args: argparse.Namespace) -> list[dict[str, Any]]:
                             for rank, doc_id in enumerate(papers[:POOL_DEPTH], start=1)
                         )
 
+                    _log(
+                        log,
+                        f"  {name} q{position}/{len(queries)} {query['id']} | "
+                        f"candidates={row['candidates']} papers={row['papers']} "
+                        f"chunks={row['chunks']} papers_with_chunks={row['papers_with_chunks']} "
+                        f"starved={row['papers_without_chunks']} "
+                        f"min_ppr={row['chunks_per_paper_min']} "
+                        f"kchars={row['bundle_chars'] / 1000:.1f} | {row['seconds']}s",
+                    )
+
                 if handle is not None:
                     handle.flush()
 
+                elapsed = time.perf_counter() - started
+                _log(
+                    log,
+                    f"point {name} done in {elapsed:.0f}s | {summarise_point(point_rows)}",
+                )
                 print(
                     f"  [{index}/{len(points)}] {name} k={point['k']} "
                     f"n={point['n']} C={point['C']} c_top={point['c_top']} "
-                    f"({time.perf_counter() - started:.0f}s)",
+                    f"({elapsed:.0f}s)",
                     flush=True,
                 )
     finally:
         if handle is not None:
             handle.close()
-            print(f"wrote {args.rankings} ({sum(1 for _ in rows)} query rows)")
+
+        _log(log, f"sweep end: {len(rows)} query rows")
+
+        if log is not None:
+            log.close()
 
     return rows
 
@@ -361,6 +450,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="write 'config,query_id,rank,doc_id' for the top 10 papers of every point "
         "(the pooled candidate list, and score_retrieval's rankings input)",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="append to --rankings instead of truncating it, so a point-per-run sweep "
+        "accumulates into one pooled file",
+    )
+    parser.add_argument(
+        "--log",
+        default=None,
+        help="write a timestamped progress log here (opened 'w'): every query's "
+        "measurements and every point's summary",
+    )
+    parser.add_argument(
+        "--point",
+        nargs="*",
+        default=None,
+        help="run only these tuple names, so a long sweep can be split into short runs",
     )
     parser.add_argument(
         "--a1-dense",
