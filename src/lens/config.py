@@ -202,9 +202,17 @@ RESUME = os.environ.get("LENS_RESUME", "1").strip().lower() not in {"0", "false"
 #   deep_match    C chunk candidates (filtered) -> Stage-B rerank -> c chunks
 # `k`/`C` are the candidate-recall knobs; the cross-encoder cost is linear in
 # them (one pass per candidate). These are the guardrail caps.
-RETRIEVAL_K = int(os.environ.get("LENS_RETRIEVAL_K", "100"))  # Stage A candidates
+# Measured, not inherited. A capacity sweep over ten corpus queries (k, n, C and
+# C_TOP) found two things: the shipped C == C_TOP == 100 made the stage-B reranker a
+# pure reorder, and coverage of the selected papers tracks C_TOP rather than C --
+# at n=50, raising C from 600 to 1500 left 18 papers with no chunk at all, because
+# 100 surviving chunks spread over about 35 papers. Raising C to 400 with C_TOP at
+# 100 takes coverage from 18.7 to 19.3 of 20 papers and drops the worst-case starved
+# papers from 5 to 2, for 174 kB instead of 152 kB per bundle. Depth past ~400 buys
+# nothing: C=600 starves the same two papers and costs 40% more time.
+RETRIEVAL_K = int(os.environ.get("LENS_RETRIEVAL_K", "200"))  # Stage A candidates
 RETRIEVAL_N = int(os.environ.get("LENS_RETRIEVAL_N", "20"))  # papers after Stage A
-RETRIEVAL_C = int(os.environ.get("LENS_RETRIEVAL_C", "100"))  # Stage B candidates
+RETRIEVAL_C = int(os.environ.get("LENS_RETRIEVAL_C", "400"))  # Stage B candidates
 RETRIEVAL_C_TOP = int(os.environ.get("LENS_RETRIEVAL_C_TOP", "100"))  # chunks after Stage B
 # The KG scope is the deep-match candidate set (C); the answer context is top-c.
 # Keep C >= C_TOP so the reranked context is a subset of the KG's chunk set.
