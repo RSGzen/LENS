@@ -115,9 +115,7 @@ def uncited_units(text: str) -> list[tuple[str, list[str]]]:
     return units
 
 
-def claim_units(
-    text: str, *, include_uncited: bool = False
-) -> list[tuple[str, list[str]]]:
+def claim_units(text: str, *, include_uncited: bool = False) -> list[tuple[str, list[str]]]:
     """Split an answer into claim-sized units with the ids each one cites.
 
     A *claim* is a sentence (or a list line) with **words and** a source. Two kinds
@@ -166,7 +164,7 @@ def claim_units(
     # The sentence path is the fallback for prose without bullets; it is skipped when
     # the bullet path produced units, because a bullet's own sentence would otherwise
     # be counted twice.
-    for piece in ([] if units else _SENTENCE_SPLIT.split(text or "")):
+    for piece in [] if units else _SENTENCE_SPLIT.split(text or ""):
         unit = " ".join(piece.split())
 
         if not unit:
