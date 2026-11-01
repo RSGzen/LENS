@@ -227,68 +227,83 @@ def summarise(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def capacity_mode(args: argparse.Namespace) -> list[dict[str, Any]]:
-    """Run the tuple grid over the given queries, optionally ranking the top papers."""
+    """Run the tuple grid over the given queries, optionally ranking the top papers.
+
+    The rankings file is written **per point and flushed**, not collected and written
+    at the end: a sweep over 25 queries takes about an hour, and a session that dies
+    halfway should cost one point rather than the whole run.
+    """
     points = load_tuples(Path(args.tuples))
     queries = load_queries([Path(path) for path in args.queries], args.query_ids)
     embedder, reranker = Embedder(), Reranker()
     rows: list[dict[str, Any]] = []
-    rankings: list[dict[str, Any]] = []
+    handle = None
+    writer: Any = None
+
+    if args.rankings:
+        handle = Path(args.rankings).open("w", newline="", encoding="utf-8")
+        writer = csv.DictWriter(handle, fieldnames=["config", "query_id", "rank", "doc_id"])
+        writer.writeheader()
+        handle.flush()
 
     print(f"{len(points)} tuples x {len(queries)} queries | ef_search={config.HNSW_EF_SEARCH}")
 
-    with connect(readonly=True) as conn:
-        if args.rankings and args.a1_dense:
-            # A1 is retrieval only: the top papers by abstract cosine, no cross-encoder.
-            # It is the Tier-2 baseline, so it has to be in the pool that gets judged.
-            for query in queries:
-                candidates = shallow_match(
-                    conn, buckets_for(query["text"]), embedder, k=int(points[0]["k"])
-                )
+    try:
+        with connect(readonly=True) as conn:
+            if writer is not None and args.a1_dense:
+                # A1 is retrieval only: the top papers by abstract cosine, no
+                # cross-encoder. It is the Tier-2 baseline, so it has to be in the
+                # pool that gets judged.
+                for query in queries:
+                    candidates = shallow_match(
+                        conn, buckets_for(query["text"]), embedder, k=int(points[0]["k"])
+                    )
 
-                for rank, doc_id in enumerate(candidates[:POOL_DEPTH], start=1):
-                    rankings.append(
+                    writer.writerows(
                         {
                             "config": "a1-dense",
                             "query_id": query["id"],
                             "rank": rank,
                             "doc_id": doc_id,
                         }
+                        for rank, doc_id in enumerate(candidates[:POOL_DEPTH], start=1)
                     )
 
-            print("  a1-dense: dense top-10 papers")
+                handle.flush()
+                print("  a1-dense: dense top-10 papers")
 
-        for index, point in enumerate(points, start=1):
-            started = time.perf_counter()
+            for index, point in enumerate(points, start=1):
+                started = time.perf_counter()
+                name = point.get("name") or f"k{point['k']}-n{point['n']}"
 
-            for query in queries:
-                row, papers = run_point(conn, query, point, embedder, reranker)
-                rows.append(row)
+                for query in queries:
+                    row, papers = run_point(conn, query, point, embedder, reranker)
+                    rows.append(row)
 
-                for rank, doc_id in enumerate(papers[:POOL_DEPTH], start=1):
-                    rankings.append(
-                        {
-                            "config": point.get("name") or f"k{point['k']}-n{point['n']}",
-                            "query_id": query["id"],
-                            "rank": rank,
-                            "doc_id": doc_id,
-                        }
-                    )
+                    if writer is not None:
+                        writer.writerows(
+                            {
+                                "config": name,
+                                "query_id": query["id"],
+                                "rank": rank,
+                                "doc_id": doc_id,
+                            }
+                            for rank, doc_id in enumerate(papers[:POOL_DEPTH], start=1)
+                        )
 
-            print(
-                f"  [{index}/{len(points)}] {point.get('name') or ''} k={point['k']} "
-                f"n={point['n']} C={point['C']} c_top={point['c_top']} "
-                f"({time.perf_counter() - started:.0f}s)"
-            )
+                if handle is not None:
+                    handle.flush()
 
-    if args.rankings and rankings:
-        out = Path(args.rankings)
-
-        with out.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=["config", "query_id", "rank", "doc_id"])
-            writer.writeheader()
-            writer.writerows(rankings)
-
-        print(f"wrote {out} ({len(rankings)} rows)")
+                print(
+                    f"  [{index}/{len(points)}] {name} k={point['k']} "
+                    f"n={point['n']} C={point['C']} c_top={point['c_top']} "
+                    f"({time.perf_counter() - started:.0f}s)",
+                    flush=True,
+                )
+    finally:
+        if handle is not None:
+            handle.close()
+            print(f"wrote {args.rankings} ({sum(1 for _ in rows)} query rows)")
 
     return rows
 
