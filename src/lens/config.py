@@ -214,7 +214,21 @@ if RETRIEVAL_C < RETRIEVAL_C_TOP:
 # HNSW query-time recall/latency knob. `m` / `ef_construction` are build-time
 # (see scripts/build_indexes.py); `ef_search` is set per query. Record all three
 # per run.
-HNSW_EF_SEARCH = int(os.environ.get("LENS_HNSW_EF_SEARCH", "40"))
+#
+# 40 is pgvector's own default and it is far too small here: an ANN scan returns at
+# most `ef_search` candidates, so asking for the top 100 with ef_search 100 explores
+# exactly as many nodes as it returns. Measured against an exact scan on this corpus,
+# ef_search 40 recovered 40 % of the true top-100 and ef_search 100 recovered 73 % --
+# the 4th-closest paper to a recorded query was missing from the candidate set, so no
+# reranker could recover it. 400 restores 95 % and 1000 restores 97 %. The cost is
+# milliseconds: the whole stage-A search was 1.2 ms at ef 40 against a 30 s tool
+# budget, so recall is bought far more cheaply than anything downstream.
+HNSW_EF_SEARCH = int(os.environ.get("LENS_HNSW_EF_SEARCH", "400"))
+
+#: Candidate list as a multiple of the requested LIMIT. A fixed ef_search is right
+#: for the default k and wrong for a `k` swept in W2a, so the query path takes the
+#: larger of the two: ef_search must exceed the LIMIT, not equal it.
+HNSW_EF_MULTIPLIER = int(os.environ.get("LENS_HNSW_EF_MULTIPLIER", "4"))
 
 # Cross-encoder reranker, used at BOTH stages (Stage A = papers, Stage B =
 # chunks) so one notion of relevance ranks both.
