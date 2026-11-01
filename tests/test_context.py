@@ -192,7 +192,23 @@ class ContextTestCase(unittest.TestCase):
         self.assertEqual(context.context_trigger_tokens(0), config.CONTEXT_TRIGGER_FLOOR)
         self.assertEqual(context.context_trigger_tokens(-5), config.CONTEXT_TRIGGER_FLOOR)
 
-    def test_compact_messages_keeps_system_and_recent_turn(self) -> None:
+    def test_the_omission_marker_survives_a_tight_budget(self) -> None:
+        # Compaction that drops history without saying so reads as a model that
+        # suddenly wrote shorter turns -- to the analyst and to the model.
+        messages = [
+            {"role": "system", "content": "contract"},
+            {"role": "user", "content": "old observation " * 40},
+            {"role": "assistant", "content": "newest turn"},
+        ]
+
+        compacted = context.compact_messages(messages, budget=12)
+
+        self.assertTrue(
+            any("omitted" in str(message.get("content")) for message in compacted),
+            compacted,
+        )
+
+    def test_compaction_keeps_the_system_and_the_newest_message(self) -> None:
         messages = [
             {"role": "system", "content": "sys"},
             *[{"role": "assistant", "content": "x" * 100} for _ in range(20)],

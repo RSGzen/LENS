@@ -257,6 +257,24 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertEqual(state["summary"]["answer"], f"One claim [{one}].")
         self.assertNotIn("self_reported_gaps_removed", state["summary"])
 
+    def test_the_recorded_heading_wordings_are_recognised(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+        # The first version matched exact strings and therefore missed every real
+        # answer: the recorded headings say "we", and carry trailing words.
+        for heading in (
+            "Claims we could not support from the inspected chunks",
+            "Claims we could not support with the retrieved chunks:",
+            "Claims I could not verify",
+            "Unsupported claims",
+        ):
+            answer = f"One claim [{one}].\n\n{heading}\n- something\n"
+
+            self.assertEqual(
+                evaluate_module.strip_self_reported_gaps(answer),
+                f"One claim [{one}].",
+                heading,
+            )
+
     def test_prose_that_mentions_the_phrase_is_not_a_heading(self) -> None:
         # Only a short standalone line is a heading; a sentence that happens to
         # contain the words is part of the answer and stays in front of the gate.

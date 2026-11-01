@@ -443,7 +443,8 @@ def compact_messages(
     - the newest message is always kept, even if it alone exceeds the target: an
       empty history is worse than a slightly over-budget one.
     - one **omission marker** records how many turns went and that the sandbox
-      namespace still holds their data. It is a ``user`` message rather than text
+      namespace still holds their data, even if it pushes the list slightly over
+      the budget. It is a ``user`` message rather than text
       appended to the system message, so the system prefix stays byte-identical
       and prefix caching keeps hitting.
 
@@ -479,8 +480,11 @@ def compact_messages(
             ),
         }
 
-        if used + estimate_tokens([marker]) <= budget:
-            kept.insert(0, marker)
+        # Inserted even when it pushes the list a few tokens over budget. The
+        # marker is ~30 tokens and it is the only trace that compaction happened:
+        # skipping it when the budget was tight made a compacted run look like a run
+        # whose model suddenly wrote shorter turns, to the analyst and to the model.
+        kept.insert(0, marker)
 
     return system + kept
 

@@ -46,6 +46,7 @@ like a gate that always passes.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping, Sequence
 
@@ -147,19 +148,23 @@ def build_sufficiency_question(
     )
 
 
-#: Headings an answer uses to announce the claims it could not support. Matched as a
-#: whole short line, never inside prose: the list under one is a **labelled
-#: limitation**, and an answer should not be failed for disclosing it.
-GAP_HEADINGS: tuple[str, ...] = (
-    "claims i could not support",
-    "claims i could not verify",
-    "claims that could not be supported",
-    "unsupported claims",
-    "what i could not support",
+#: Headings an answer uses to announce the claims it could not support, matched at
+#: the **start** of a short line and never inside prose: the list under one is a
+#: labelled limitation, and an answer should not be failed for disclosing it.
+#:
+#: Patterns rather than strings because the wording varies and the first version
+#: missed every real answer by demanding an exact match: recorded headings read
+#: "Claims **we** could not support from the inspected chunks" and "Claims we could
+#: not support with the retrieved chunks:".
+GAP_HEADING_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^claims? (?:i|we) (?:could|can) ?not (?:support|verify)", re.IGNORECASE),
+    re.compile(r"^claims that (?:could|can) ?not be supported", re.IGNORECASE),
+    re.compile(r"^unsupported claims?\b", re.IGNORECASE),
+    re.compile(r"^what (?:i|we) (?:could|can) ?not support", re.IGNORECASE),
 )
 
 #: Longest line treated as a heading rather than as prose that happens to match.
-GAP_HEADING_MAX_CHARS = 80
+GAP_HEADING_MAX_CHARS = 120
 
 
 def strip_self_reported_gaps(answer: str) -> str:
@@ -182,7 +187,7 @@ def strip_self_reported_gaps(answer: str) -> str:
         if not heading or len(heading) > GAP_HEADING_MAX_CHARS:
             continue
 
-        if heading in GAP_HEADINGS:
+        if any(pattern.match(heading) for pattern in GAP_HEADING_PATTERNS):
             return "\n".join(lines[:index]).rstrip()
 
     return answer
