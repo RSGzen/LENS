@@ -56,8 +56,10 @@ from lens.agent.context import (
     build_messages,
     build_system_prompt,
     compact_messages,
+    compaction_start,
     context_trigger_tokens,
     count_tokens,
+    estimate_tokens,
     extract_final_answer,
     extract_python_block,
     kg_bindings,
@@ -98,6 +100,11 @@ from lens.tools.evaluate import GATED_STAGES, evaluate_stage
 MAX_EVIDENCE_CHUNKS = 64
 EVIDENCE_CHUNK_CHARS = 2000
 EVIDENCE_FETCH_CHARS = 120000
+
+#: Tools whose result depends only on their arguments, so a repeated call can be
+#: served from the recorded blob (within a run, and on resume). State-changing
+#: tools (ledger, backtrack) are never replayed.
+REPLAYABLE_TOOLS = frozenset({"retrieval_funnel", "fetch_papers", "fetch_chunks", "build_kg"})
 
 
 def _error_envelope(kind: str, message: str) -> dict[str, Any]:
@@ -205,6 +212,10 @@ class Runtime:
         self._namespace_complete: bool = True
         # Where a resume picked up (for the ``run.resume`` note).
         self._from_seq: int = 0
+        # Compaction: the trigger is fixed at the first turn, and the number of
+        # history messages already evicted only grows (see ``compaction_start``).
+        self._compaction_trigger: int | None = None
+        self._compact_start: int = 0
 
     # ------------------------------------------------------------------- run
     def run(self) -> RunResult:
@@ -305,17 +316,13 @@ class Runtime:
     def _flat_evidence(self) -> tuple[list[dict[str, Any]], int]:
         """Return ``(chunks, dropped)`` for the flat prompt.
 
-        The same four funnel calls the RLM arm runs, in the same order, so the
-        baseline is handed the same evidence. A chunk that would push the prompt
-        past the context limit is dropped **and counted** — never silently cut.
+        The same funnel call the RLM arm makes, so the baseline is handed the same
+        evidence. A chunk that would push the prompt past the context limit is
+        dropped **and counted** — never silently cut.
         """
         buckets = self._query_buckets or {"query": self.query}
 
-        ids = self._dispatch_flat("shallow_match", {"buckets": buckets})
-        papers = self._dispatch_flat("rerank_papers", {"arxiv_ids": ids, "buckets": buckets})
-        arxiv_ids = [row["arxiv_id"] for row in papers if row.get("arxiv_id")]
-        chunk_ids = self._dispatch_flat("deep_match", {"arxiv_ids": arxiv_ids, "buckets": buckets})
-        bundle = self._dispatch_flat("rerank_chunks", {"chunk_ids": chunk_ids, "buckets": buckets})
+        bundle = self._dispatch_flat("retrieval_funnel", {"buckets": buckets})
 
         chunks: list[dict[str, Any]] = []
         dropped = 0
@@ -624,7 +631,9 @@ class Runtime:
         ``"replayed": True``; a missing blob is ``None`` (fall through to a live
         call) rather than an error.
         """
-        if not self.replay:
+        # Only read-only tools: replaying ``ledger_update`` would skip the update and
+        # replaying ``backtrack`` would skip the count that enforces its cap.
+        if not self.replay or name not in REPLAYABLE_TOOLS:
             return None
 
         if self._replayed is None:
@@ -839,8 +848,25 @@ class Runtime:
             question=self.query,
         )
         messages = build_messages(system_prompt=system_prompt, memory=self._messages)
-        remaining = self.budget.limits.max_tokens - (self.budget.tokens_in + self.budget.tokens_out)
-        messages = compact_messages(messages, budget=context_trigger_tokens(remaining))
+
+        if self._compaction_trigger is None:
+            remaining = self.budget.limits.max_tokens - (
+                self.budget.tokens_in + self.budget.tokens_out
+            )
+            self._compaction_trigger = context_trigger_tokens(remaining)
+
+        trigger = self._compaction_trigger
+        target = int(trigger * config.CONTEXT_COMPACT_TARGET_RATIO)
+        self._compact_start = compaction_start(
+            messages[1:],
+            system_tokens=estimate_tokens(messages[:1]),
+            start=self._compact_start,
+            trigger=trigger,
+            target=target,
+        )
+        messages = compact_messages(
+            messages, budget=trigger, target=target, start=self._compact_start
+        )
 
         # The tail, always: the usage line (it changes every turn, which is why it
         # must not live in the system prompt) and, near a cap, the wrap-up nudge.
@@ -913,9 +939,13 @@ class Runtime:
                         {
                             "role": "user",
                             "content": (
-                                "The block above ran. If its output answers the question, "
-                                "re-emit that answer now as FINAL_ANSWER: <the values, not "
-                                "the variable names>. Otherwise continue."
+                                "The block above ran; the FINAL_ANSWER written beside it "
+                                "was set aside because it was written before the output "
+                                "existed. Every variable from that block still exists. If "
+                                "the output answers the question, reply with FINAL_ANSWER: "
+                                "<the values, not the variable names> and no code block. "
+                                "Otherwise write only the next step - do not re-run "
+                                "retrieval or earlier code."
                             ),
                         }
                     )
@@ -984,7 +1014,10 @@ class Runtime:
                         "content": (
                             f"The final gate rejected the answer: "
                             f"{verdict.failing_criterion or 'unsupported claim'}. "
-                            "Revise it and emit FINAL_ANSWER: again."
+                            "Fix the named claims: quote the sentence in the cited chunk "
+                            "that states each one, or move it under the claims you could "
+                            "not support. Your retrieved chunks are still in the namespace; "
+                            "do not re-run retrieval. Then emit FINAL_ANSWER: again."
                         ),
                     }
                 )
@@ -1102,17 +1135,43 @@ class Runtime:
         ``None`` (``GATE_ENABLED=0``, the ablation arm), add **nothing** — an arm
         with no gate must not look like a gate that always passes.
 
-        Only the **stage-completing** tools are mapped (``rerank_chunks``,
-        ``build_kg``). Earlier tools of the same stage return ids only, so gating
-        them would ask JEV whether a list of ``arxiv_id``s is "sufficient".
+        Only the **stage-completing** tools are mapped (``retrieval_funnel``,
+        ``build_kg``): a tool that returns ids only gives JEV nothing to judge.
+
+        A read-only tool (``REPLAYABLE_TOOLS``) called again with the same
+        arguments is served from its recorded blob and logged with
+        ``extra={"replayed": True}``.
         """
         recorded = self._replay_recorded(name, args)
 
         if recorded is not None:
+            # Logged, so a repeated call stays visible (and countable) in the
+            # trajectory even though nothing was re-computed.
+            self.trajectory.log_event(
+                trace_ctx=trace_ctx,
+                call_type="tool",
+                action="tool.dispatch",
+                tool=name,
+                args_hash=args_hash(args),
+                args_ref=self.trajectory.store_blob(
+                    json.dumps(args, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                ),
+                result_ref=recorded["result_ref"],
+                result_summary=self.registry.summarize_result(recorded["result"]),
+                latency_ms=0,
+                extra={"replayed": True},
+            )
             return recorded
 
         result = self.registry.dispatch(name, args, trace_ctx=trace_ctx, trajectory=self.trajectory)
         envelope = result.to_dict()
+
+        if result.ok and result.result_ref and name in REPLAYABLE_TOOLS:
+            # The in-run cache: the same call later in this run is served from
+            # this blob instead of re-running the funnel.
+            if self._replayed is None:
+                self._replayed = dict(self.trajectory.rebuild().tool_results)
+            self._replayed[f"{name}:{args_hash(args)}"] = result.result_ref
 
         stage = GATED_STAGES.get(name)
 
@@ -1519,12 +1578,10 @@ def _retrieval_gate_summary(result: Any) -> dict[str, Any]:
         return {"type": type(result).__name__}
 
     chunks = result.get("chunks") or []
-    papers = result.get("papers") or []
-    paper_ids = [
-        str(row.get("arxiv_id"))
-        for row in papers
-        if isinstance(row, Mapping) and row.get("arxiv_id")
-    ][:8]
+    papers = result.get("papers") or {}
+    # The funnel's ``papers`` is a map keyed by arxiv id; reading it as a list of
+    # rows yielded the keys as strings and left ``paper_ids`` always empty.
+    paper_ids = [str(key) for key in papers][:8] if isinstance(papers, Mapping) else []
     samples = [
         {
             "id": str(row.get("chunk_uuid") or ""),

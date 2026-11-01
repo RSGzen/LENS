@@ -847,9 +847,9 @@ def render_evidence(view: data.RunView) -> None:
 
     if not rows:
         st.caption(
-            "No hydrating tool call yet. `shallow_match` and `deep_match` return "
-            "ids only; `rerank_chunks` / `fetch_chunks` are what put chunk text in "
-            "front of the model (an id list is a candidate, not evidence)."
+            "No hydrating tool call yet. `retrieval_funnel` / `fetch_chunks` (or "
+            "`rerank_chunks` in older runs) are what put chunk text in front of the "
+            "model (an id list is a candidate, not evidence)."
         )
         return
 

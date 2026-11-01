@@ -48,9 +48,10 @@ from lens.observability.trajectory import Trajectory
 #: as a second column, never folded into the raw number the log holds.
 CREDIT_FEE = config.CREDIT_FEE
 
-#: Tools whose payload hydrates chunks. The same pair ``citations.py`` trusts: an
-#: id list from ``deep_match`` names candidates, not evidence the model could read.
-CHUNK_TOOLS = frozenset({"rerank_chunks", "fetch_chunks"})
+#: Tools whose payload hydrates chunks. The same set ``citations.py`` trusts: an
+#: id list names candidates, not evidence the model could read. ``rerank_chunks``
+#: stays for runs recorded before the funnel became one tool.
+CHUNK_TOOLS = frozenset({"retrieval_funnel", "rerank_chunks", "fetch_chunks"})
 
 #: Local display names live beside the blob store, not inside a run directory.
 ALIASES_FILENAME = "aliases.json"

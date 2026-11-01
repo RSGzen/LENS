@@ -33,7 +33,7 @@ Two runtimes, **one-way imports**:
 | `src/lens/dataset/manifest.py` · `papers.py` · `chunks.py` · `fetch.py` · `paths.py` | Manifest builder (single-pass cs.AI filter), the two loaders, corpus download/convert, the path chain. | `config`, `chunking`, `embeddings` |
 | `src/lens/db/connect.py` · `schema.py` | Connection factory (`connect(readonly=…)` → psycopg, admin / `lens_ro`) and the idempotent pgvector migration. | `config` |
 | `src/lens/embeddings.py` · `reranking.py` | `nomic-embed-text-v1.5` (768 → 512, `halfvec`) and the `bge-reranker-v2-m3` cross-encoder; both lazy. | `config` |
-| `src/lens/tools/retrieval.py` | The T1 funnel and T2 fetches: `shallow_match`, `rerank_papers`, `deep_match`, `rerank_chunks`, `fetch_papers`, `fetch_chunks`. | `config`, DB driver, `embeddings`, `reranking` |
+| `src/lens/tools/retrieval.py` | The T1 funnel (`retrieval_funnel` = `shallow_match`, `rerank_papers`, `deep_match`, `rerank_chunks`) and T2 fetches (`fetch_papers`, `fetch_chunks`). | `config`, DB driver, `embeddings`, `reranking` |
 | `src/lens/tools/kg.py` | `build_kg`: extraction, post-process, verifier hook, ontology filter, graph + summary, cache. | `config`, `kg_*`, `retrieval` |
 | `src/lens/kg_extract.py` · `kg_postprocess.py` · `kg_verify.py` · `kg_query.py` · `kg_gold.py` | GLiNER/GLiREL extraction, the ordered quality layer, the three-tier direction verifier, pure traversal, the gold worksheet. | `config`, `models` |
 | `src/lens/tools/evaluate.py` · `sql.py` | The three-tier stage gate and the final claim gate; the gated T3 `query(sql)`. | `clients`, DB driver, `trajectory` |
@@ -618,7 +618,7 @@ sequenceDiagram
     R->>API: chat(root context)
     API-->>R: generated code
     R->>S: POST code
-    S->>R: rlm_api.tool("deep_match", …)
+    S->>R: rlm_api.tool("retrieval_funnel", …)
     R->>DB: query (lens_ro, read-only)
     DB-->>R: rows
     R-->>S: compact result

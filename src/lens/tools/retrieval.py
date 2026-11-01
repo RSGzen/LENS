@@ -4,8 +4,11 @@ Funnel — the graded path ::
 
     shallow_match   global HNSW over papers.abstract_embedding   -> k arxiv_ids
     rerank_papers   bge-reranker-v2-m3 (Stage A) over abstracts  -> n papers
-    deep_match      filtered HNSW over chunks within the n       -> C chunk_uuids
+    deep_match      exact cosine over the chunks of the n papers -> C chunk_uuids
     rerank_chunks   bge-reranker-v2-m3 (Stage B) over chunk_text -> c hydrated
+
+:func:`retrieval_funnel` runs all four in one call; it is the only retrieval tool
+the RLM is given.
 
 Design rules (do not deviate)
 -----------------------------
@@ -54,6 +57,7 @@ to the paper.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, TypeVar
 
@@ -364,7 +368,13 @@ def deep_match(
     embedder: Embedder,
     candidate_chunks: int = config.RETRIEVAL_C,
 ) -> list[str]:
-    """T1 Stage B candidate search — filtered HNSW over ``chunks`` within ``n`` papers.
+    """T1 Stage B candidate search — nearest chunks within the ``n`` papers.
+
+    The ``n`` papers hold a few hundred chunks (618 for a measured n=20), so the
+    planner answers this from the ``chunks_arxiv_id`` B-tree and sorts those rows
+    exactly; the chunk HNSW index is not used. Without that B-tree the same query
+    was a parallel sequential scan of all 4.1 M chunks (~0.8 s warm, 3.7 s cold).
+    The HNSW settings below only matter if a plan ever chooses the ANN index.
 
     Steps:
       1. Return ``[]`` for empty ``arxiv_ids`` or a blank formatted query.
@@ -493,3 +503,51 @@ def rerank_chunks(
     }
 
     return {"chunks": chunks, "papers": papers}
+
+
+def retrieval_funnel(
+    conn: Any,
+    buckets: QueryBuckets,
+    embedder: Embedder,
+    reranker: Reranker,
+    *,
+    k: int = config.RETRIEVAL_K,
+    n: int = config.RETRIEVAL_N,
+    candidate_chunks: int = config.RETRIEVAL_C,
+    top_chunks: int = config.RETRIEVAL_C_TOP,
+) -> dict[str, Any]:
+    """The whole T1 funnel in one call: ``k -> n -> C -> c``.
+
+    Runs :func:`shallow_match` -> :func:`rerank_papers` -> :func:`deep_match` ->
+    :func:`rerank_chunks` in that order and returns the ``rerank_chunks`` payload
+    ``{"chunks", "papers"}`` plus ``timings_ms`` (one wall-clock entry per stage).
+    The four stages are never useful apart to the RLM — exposing them let it re-run
+    the sequence with identical arguments on every turn — so this is the only
+    retrieval tool the root sees. The tool registry moves ``timings_ms`` onto the
+    trajectory event, so the payload stays the same bytes on every call.
+    """
+    timings: dict[str, int] = {}
+
+    def timed(stage: str, func: Any, *args: Any, **kwargs: Any) -> Any:
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        timings[stage] = int((time.perf_counter() - start) * 1000)
+        return result
+
+    candidates = timed("shallow_match", shallow_match, conn, buckets, embedder, k=k)
+    papers = timed("rerank_papers", rerank_papers, conn, candidates, buckets, reranker, n=n)
+    paper_ids = [row["arxiv_id"] for row in papers]
+    chunk_ids = timed(
+        "deep_match",
+        deep_match,
+        conn,
+        paper_ids,
+        buckets,
+        embedder,
+        candidate_chunks=candidate_chunks,
+    )
+    bundle = timed(
+        "rerank_chunks", rerank_chunks, conn, chunk_ids, buckets, reranker, top_chunks=top_chunks
+    )
+
+    return {**bundle, "timings_ms": timings}

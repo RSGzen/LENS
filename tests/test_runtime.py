@@ -458,6 +458,13 @@ class RuntimeTestCase(unittest.TestCase):
 
         self.assertNotIn("kg_neighbors", seed)
 
+    def _tool_events(self) -> list[dict]:
+        return [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+            if line and json.loads(line).get("action") == "tool.dispatch"
+        ]
+
     def test_replay_serves_the_recorded_tool_result(self) -> None:
         ref = self.trajectory.store_blob(json.dumps({"echo": "hi"}))
         self.trajectory.log_event(
@@ -468,10 +475,33 @@ class RuntimeTestCase(unittest.TestCase):
             args_hash=args_hash({"text": "hi"}),
             result_ref=ref,
         )
-        response = self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
+        with patch("lens.agent.runtime.REPLAYABLE_TOOLS", frozenset({"echo"})):
+            response = self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
         self.assertTrue(response["ok"])
         self.assertEqual(response["result"], {"echo": "hi"})
         self.assertTrue(response.get("replayed"))
+
+    def test_a_repeated_read_only_call_is_served_from_the_first_result(self) -> None:
+        # The live run recomputed the same funnel five times: the in-run cache was
+        # built from the log once, before any tool result existed, and never grew.
+        with patch("lens.agent.runtime.REPLAYABLE_TOOLS", frozenset({"echo"})):
+            first = self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
+            second = self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
+
+        self.assertFalse(first.get("replayed"))
+        self.assertTrue(second.get("replayed"))
+        self.assertEqual(second["result"], first["result"])
+
+        events = self._tool_events()
+        self.assertEqual(len(events), 2)  # the repeat stays visible in the log
+        self.assertEqual(events[1]["result_ref"], events[0]["result_ref"])
+        self.assertTrue(events[1]["extra"]["replayed"])
+
+    def test_a_state_changing_tool_is_never_replayed(self) -> None:
+        self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
+        second = self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
+
+        self.assertFalse(second.get("replayed"))
 
     def test_handle_rpc_budget(self) -> None:
         response = self.runtime.handle_rpc("/budget", {})
@@ -701,35 +731,17 @@ class FlatBaselineTestCase(unittest.TestCase):
         self.sandbox = FakeSandbox(self.trajectory.run_dir / "work")
         self.registry = ToolRegistry()
 
-        def shallow_match(buckets: object) -> list[str]:
-            """Stage A candidate ids."""
-            return ["p1"]
-
-        def rerank_papers(arxiv_ids: list[str], buckets: object) -> list[dict]:
-            """Stage A rows."""
-            return [{"arxiv_id": arxiv_ids[0]}]
-
-        def deep_match(arxiv_ids: list[str], buckets: object) -> list[str]:
-            """Stage B candidate chunk ids."""
-            return ["c1", "c2"]
-
-        def rerank_chunks(chunk_ids: list[str], buckets: object) -> dict:
-            """Stage B bundle."""
+        def retrieval_funnel(buckets: object) -> dict:
+            """The whole funnel."""
             return {
                 "chunks": [
-                    {"chunk_uuid": chunk_ids[0], "chunk_text": "alpha"},
-                    {"chunk_uuid": chunk_ids[1], "chunk_text": "beta"},
+                    {"chunk_uuid": "c1", "chunk_text": "alpha"},
+                    {"chunk_uuid": "c2", "chunk_text": "beta"},
                 ],
-                "papers": [],
+                "papers": {},
             }
 
-        for name, func in (
-            ("shallow_match", shallow_match),
-            ("rerank_papers", rerank_papers),
-            ("deep_match", deep_match),
-            ("rerank_chunks", rerank_chunks),
-        ):
-            self.registry.register(name, func)
+        self.registry.register("retrieval_funnel", retrieval_funnel)
 
         self.client = FakeClient(["The answer [c1]."], self.trajectory)
         self.runtime = Runtime(
@@ -768,13 +780,13 @@ class FlatBaselineTestCase(unittest.TestCase):
         ]
         tools = [event.get("tool") for event in events if event.get("action") == "tool.dispatch"]
 
-        self.assertEqual(tools, ["shallow_match", "rerank_papers", "deep_match", "rerank_chunks"])
+        self.assertEqual(tools, ["retrieval_funnel"])
 
     def test_the_prompt_is_the_flat_variant_with_the_chunks_inline(self) -> None:
         self.runtime.run_flat()
 
         messages = self.client.chat_calls[-1]["messages"]
-        self.assertNotIn("shallow_match", messages[0]["content"])
+        self.assertNotIn("retrieval_funnel", messages[0]["content"])
         self.assertIn("alpha", messages[1]["content"])
         self.assertIn("beta", messages[1]["content"])
 
@@ -807,7 +819,9 @@ class GateInputTestCase(unittest.TestCase):
                 }
                 for index in range(20)
             ],
-            "papers": [{"arxiv_id": "2511.02817"}, {"arxiv_id": "2601.00001"}],
+            # The funnel's real shape: a map keyed by arxiv id. A list here is how
+            # the bug that left ``paper_ids`` empty in every live run stayed hidden.
+            "papers": {"2511.02817": {"title": "a"}, "2601.00001": {"title": "b"}},
         }
 
         summary = _retrieval_gate_summary(result)

@@ -56,6 +56,22 @@ class ToolRegistryTestCase(unittest.TestCase):
         self.assertEqual(events[-1]["args_hash"], args_hash({"text": "hi"}))
         self.assertIn("result_ref", events[-1])
 
+    def test_stage_timings_move_from_the_payload_onto_the_event(self) -> None:
+        def timed() -> dict:
+            """Return a payload with per-stage timings."""
+            return {"chunks": [], "timings_ms": {"a": 5}}
+
+        self.registry.register("timed", timed)
+        first = self.registry.dispatch("timed", {}, trace_ctx=self.ctx, trajectory=self.trajectory)
+        second = self.registry.dispatch("timed", {}, trace_ctx=self.ctx, trajectory=self.trajectory)
+
+        self.assertNotIn("timings_ms", first.result)
+        self.assertEqual(first.result_ref, second.result_ref)  # identical payload bytes
+        event = json.loads(
+            self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()[-1]
+        )
+        self.assertEqual(event["extra"], {"timings_ms": {"a": 5}})
+
     def test_dispatch_unknown_tool_is_structured_error(self) -> None:
         result = self.registry.dispatch(
             "missing", {}, trace_ctx=self.ctx, trajectory=self.trajectory

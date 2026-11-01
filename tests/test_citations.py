@@ -132,7 +132,11 @@ class CitationTestCase(unittest.TestCase):
         (self.traj.run_dir / "answer.md").write_text(text, encoding="utf-8")
 
     def _bundle(self, extra_uuid: str | None = None) -> None:
-        """The shape ``rerank_chunks`` returns: {chunks, papers}."""
+        """The shape ``retrieval_funnel`` returns: {chunks, papers: {arxiv_id: {...}}}.
+
+        The ``papers`` map is keyed by id; it used to be read as a list of rows, so
+        titles and paper ids from this payload never resolved.
+        """
         extra = (
             [{"chunk_uuid": extra_uuid, "arxiv_id": "2512.24601", "section_type": "Methodology"}]
             if extra_uuid
@@ -140,7 +144,7 @@ class CitationTestCase(unittest.TestCase):
         )
         self._tool(
             1,
-            "rerank_chunks",
+            "retrieval_funnel",
             {
                 "chunks": [
                     {
@@ -155,10 +159,10 @@ class CitationTestCase(unittest.TestCase):
                     },
                     *extra,
                 ],
-                "papers": [
-                    {"arxiv_id": "2512.24601", "title": "Recursive Language Models"},
-                    {"arxiv_id": "2511.02817", "title": "OOLONG"},
-                ],
+                "papers": {
+                    "2512.24601": {"title": "Recursive Language Models"},
+                    "2511.02817": {"title": "OOLONG"},
+                },
             },
         )
 

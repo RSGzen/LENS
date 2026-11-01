@@ -43,7 +43,9 @@ _ARXIV_RE = re.compile(r"\b(\d{4}\.\d{4,5})(?:v\d+)?\b")
 _SHORT_ID_RE = re.compile(r"\[([0-9a-fA-F]{6,12})\]")
 
 # Tools whose payload hydrates chunks / papers. Only these carry the evidence map.
-_CHUNK_TOOLS = frozenset({"rerank_chunks", "fetch_chunks"})
+# ``rerank_chunks`` / ``rerank_papers`` stay listed so runs recorded before the
+# funnel became one tool still resolve.
+_CHUNK_TOOLS = frozenset({"retrieval_funnel", "rerank_chunks", "fetch_chunks"})
 _PAPER_TOOLS = frozenset({"rerank_papers", "fetch_papers"})
 
 #: Sentence and list-line boundaries. A claim unit is what sits between two of them.
@@ -285,6 +287,14 @@ def _evidence_index(turns: list[Turn], trajectory: Trajectory) -> tuple[dict, di
             elif isinstance(payload, dict):
                 rows = payload.get("chunks") or []
                 paper_rows = payload.get("papers") or []
+
+                # The funnel's ``papers`` is ``{arxiv_id: {title, ...}}``, not rows.
+                if isinstance(paper_rows, dict):
+                    paper_rows = [
+                        {"arxiv_id": key, **value}
+                        for key, value in paper_rows.items()
+                        if isinstance(value, dict)
+                    ]
             else:
                 continue
 

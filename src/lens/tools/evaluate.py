@@ -12,7 +12,7 @@ ablation.
 Two gates, same machinery (the "double" gate):
 
 1. **Per stage** — after the stage-completing tool, once per stage per run:
-   ``rerank_chunks`` → ``retrieval``, ``build_kg`` → ``kg``.
+   ``retrieval_funnel`` → ``retrieval``, ``build_kg`` → ``kg``.
 2. **Final** — on ``FINAL_ANSWER``, stage ``"final"``: is every claim supported by
    the cited chunks? A reject hands the failing criterion back for one more turn
    (inside ``MAX_ITERATIONS``), so a fabricated answer is not silently accepted.
@@ -57,13 +57,12 @@ from lens.observability.trajectory import TraceCtx
 
 Verdict = Literal["pass", "fail", "uncertain"]
 
-# Where the gate runs. Map **stage-completing** tool -> stage. Do not add the
-# earlier tools of a stage: ``shallow_match`` returns a bare ``list[str]`` of ids
-# and ``rerank_papers`` only ids too, so there is nothing to evaluate — the first
-# version of this map gated ``shallow_match`` and asked JEV whether 100 ids were
-# "sufficient". One gate per stage per run: rerunning it would only add cost.
+# Where the gate runs. Map **stage-completing** tool -> stage. A tool that returns
+# ids only has nothing to evaluate — the first version of this map gated the ANN
+# stage and asked JEV whether 100 ids were "sufficient". One gate per stage per
+# run: rerunning it would only add cost.
 GATED_STAGES: dict[str, str] = {
-    "rerank_chunks": "retrieval",
+    "retrieval_funnel": "retrieval",
     "build_kg": "kg",
 }
 
@@ -290,6 +289,22 @@ AGGREGATE_FAIL_PROBABILITY = 0.5
 #: event, so a reliability curve can re-fit both thresholds over recorded answers
 #: without re-running a single query.
 CLAIM_FAIL_PROBABILITY = 0.7
+
+#: How many claims a failed aggregate names when no claim crossed
+#: ``CLAIM_FAIL_PROBABILITY`` (feedback only; the verdict is unchanged).
+MAX_FLAGGED_CLAIMS = 3
+
+
+def flagged_claim_names(claim_scores: Mapping[str, float]) -> list[str]:
+    """Return the claims to name when the aggregate failed and no claim did.
+
+    Every claim at or above ``AGGREGATE_FAIL_PROBABILITY``, highest first, up to
+    ``MAX_FLAGGED_CLAIMS``; when none reaches it, the single highest-scoring claim.
+    """
+    ranked = sorted(claim_scores, key=lambda name: (-claim_scores[name], name))
+    over = [name for name in ranked if claim_scores[name] >= AGGREGATE_FAIL_PROBABILITY]
+
+    return (over or ranked[:1])[:MAX_FLAGGED_CLAIMS]
 
 
 def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:
@@ -647,6 +662,8 @@ def evaluate_stage(
         name: score for name, score in claim_scores.items() if score >= CLAIM_FAIL_PROBABILITY
     }
 
+    flagged_claims: list[str] = []
+
     if failed_claims:
         worst = max(failed_claims, key=lambda name: failed_claims[name])
         criterion = (
@@ -655,6 +672,17 @@ def evaluate_stage(
 
         if verdict_value != "fail":
             verdict_value = "fail"
+    elif verdict_value == "fail" and claim_scores:
+        # The aggregate failed but no single claim reached CLAIM_FAIL_PROBABILITY, so
+        # nothing was named and the root was told only "unsupported claim" — it then
+        # rewrote the whole answer blind. Name the likeliest culprits instead. This
+        # changes the feedback, never the verdict: ``claims_failed`` keeps meaning
+        # "overturned by the per-claim threshold".
+        flagged_claims = flagged_claim_names(claim_scores)
+        criterion = "; ".join(
+            f"{name} (P={claim_scores[name]:.2f}): {claim_text_by_id.get(name, '')[:160]}"
+            for name in flagged_claims
+        )
 
     verdict = StageVerdict(
         verdict=verdict_value,
@@ -671,6 +699,7 @@ def evaluate_stage(
                 "claims": len(claim_scores),
                 "claim_scores": claim_scores,
                 "claims_failed": sorted(failed_claims),
+                "claims_flagged": flagged_claims,
             }
         )
 

@@ -1,0 +1,26 @@
+{
+  "name": "m11-latency-v1",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "The m11-w1v-v3 rlm-full arm after the latency fixes (one funnel tool, in-run result cache, deep-stage B-tree, model warm-up, named gate claims, incremental-turn prompt, sticky compaction). Compared against m11-w1v-v3.rlm-full.aggregation.r1..r3."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "The same query as the latency baseline run m11-w1v-v3.rlm-full.aggregation.r2."
+    }
+  ]
+}

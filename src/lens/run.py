@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import secrets
 import sys
+import threading
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,14 +41,7 @@ from lens.observability.trajectory import Trajectory
 from lens.preflight import API_KEY, DB, require_environment
 from lens.reranking import Reranker
 from lens.tools.kg import build_kg
-from lens.tools.retrieval import (
-    deep_match,
-    fetch_chunks,
-    fetch_papers,
-    rerank_chunks,
-    rerank_papers,
-    shallow_match,
-)
+from lens.tools.retrieval import fetch_chunks, fetch_papers, retrieval_funnel
 from lens.tools.sql import query_sql, sql_is_allowed
 
 
@@ -157,8 +151,8 @@ def build_runtime(
          ``extractor`` outside the visible signature and give each closure its
          own docstring (the docstring is the manifest entry; ``partial`` has none
          and would expose the bound parameters as if the RLM had to supply them):
-         ``shallow_match`` · ``rerank_papers`` · ``deep_match`` · ``rerank_chunks``
-         · ``fetch_papers`` · ``fetch_chunks`` · ``build_kg`` · ``query(sql)``
+         ``retrieval_funnel`` · ``fetch_papers`` · ``fetch_chunks`` · ``build_kg`` ·
+         ``query(sql)``
          (only when ``sql_is_allowed(recorded=..., allow_sql=..., mode=...)``).
       5. ``token = secrets.token_urlsafe(32)``; ``sandbox = SandboxSession(run_id,
          workspace, token=token)``; ``server = ToolServer(runtime, token=token)``;
@@ -202,21 +196,17 @@ def build_runtime(
 
     registry = ToolRegistry()
 
-    def shallow_match_tool(buckets: dict[str, Any]) -> list[str]:
-        """Stage A: HNSW candidate arxiv ids for the query buckets."""
-        return shallow_match(conn, buckets, embedder)
+    # Loading both encoders (and the first CUDA forward pass) took ~27 s on the
+    # first funnel call. Warm them in the background while segmentation, the
+    # sandbox start and the first root call run; the funnel waits for it.
+    warmup = threading.Thread(target=_warm_models, args=(embedder, reranker), daemon=True)
+    if retrieve:
+        warmup.start()
 
-    def rerank_papers_tool(arxiv_ids: list[str], buckets: dict[str, Any]) -> list[dict[str, Any]]:
-        """Stage A: cross-encoder rerank of candidate papers; top n rows."""
-        return rerank_papers(conn, arxiv_ids, buckets, reranker)
-
-    def deep_match_tool(arxiv_ids: list[str], buckets: dict[str, Any]) -> list[str]:
-        """Stage B: chunk candidates inside the selected papers."""
-        return deep_match(conn, arxiv_ids, buckets, embedder)
-
-    def rerank_chunks_tool(chunk_ids: list[str], buckets: dict[str, Any]) -> dict[str, Any]:
-        """Stage B: rerank chunks and hydrate {chunks, papers}."""
-        return rerank_chunks(conn, chunk_ids, buckets, reranker)
+    def retrieval_funnel_tool(buckets: dict[str, Any]) -> dict[str, Any]:
+        """Run the whole retrieval funnel once; returns {chunks, papers} with chunk text."""
+        warmup.join()
+        return retrieval_funnel(conn, buckets, embedder, reranker)
 
     def fetch_papers_tool(arxiv_ids: list[str]) -> list[dict[str, Any]]:
         """Fetch full paper rows by arxiv_id."""
@@ -241,10 +231,7 @@ def build_runtime(
         return build_kg(conn, chunk_ids, extractor, verifier=verifier)
 
     if retrieve:
-        registry.register("shallow_match", shallow_match_tool)
-        registry.register("rerank_papers", rerank_papers_tool)
-        registry.register("deep_match", deep_match_tool)
-        registry.register("rerank_chunks", rerank_chunks_tool)
+        registry.register("retrieval_funnel", retrieval_funnel_tool)
         registry.register("fetch_papers", fetch_papers_tool)
         registry.register("fetch_chunks", fetch_chunks_tool)
 
@@ -455,6 +442,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"artifacts: {result.answer_path} | {result.trajectory_path} | {result.tasks_path}")
 
     return 0
+
+
+def _warm_models(embedder: Any, reranker: Any) -> None:
+    """Load both encoders and run one tiny forward pass each; never raise.
+
+    A failure here is not a run failure: the funnel call loads the model itself
+    and surfaces the real error as a tool error the model can read.
+    """
+    try:
+        embedder.encode_documents(
+            texts=["warm-up"], task_prefix=config.EMBEDDING_QUERY_PREFIX, batch_size=1
+        )
+        reranker.score("warm-up", ["warm-up"])
+    except Exception:  # noqa: BLE001 - see docstring
+        pass
 
 
 def _timestamp_run_id() -> str:

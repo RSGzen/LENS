@@ -22,6 +22,7 @@ from lens.tools.evaluate import (
     build_sufficiency_question,
     build_unsupported_claim_question,
     evaluate_stage,
+    flagged_claim_names,
 )
 
 
@@ -88,9 +89,8 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertLessEqual(question.instructions.count("z"), EVIDENCE_MAX_CHARS)
 
     def test_gated_stages_map_only_stage_completing_tools(self) -> None:
-        # shallow_match / rerank_papers return ids only: gating them asked JEV
-        # whether a list of arxiv_ids was "sufficient".
-        self.assertEqual(set(GATED_STAGES), {"rerank_chunks", "build_kg"})
+        # An id-only stage gives JEV nothing to judge; the funnel returns chunk text.
+        self.assertEqual(set(GATED_STAGES), {"retrieval_funnel", "build_kg"})
         self.assertEqual(set(GATED_STAGES.values()), {"retrieval", "kg"})
 
     def test_truncated_evidence_adds_a_scope_question(self) -> None:
@@ -173,6 +173,45 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertEqual(verdict.verdict, "fail")
         self.assertIn("claim-02", verdict.failing_criterion or "")
         self.assertIn("The cost stays bounded", verdict.failing_criterion or "")
+
+    def test_a_failed_aggregate_names_its_likeliest_claims(self) -> None:
+        # Measured: the aggregate failed at 0.65-0.88 four times while no claim
+        # reached 0.7, so the root was told only "unsupported claim".
+        one = "11111111-1111-5111-8111-111111111111"
+        two = "22222222-2222-5222-8222-222222222222"
+        client = _FakeJevClient(
+            {
+                "gate": {"noul": 0.88},
+                "claim-01": {"noul": 0.12},
+                "claim-02": {"noul": 0.65},
+            }
+        )
+
+        verdict = evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"ReCAP keeps a sliding window of K rounds [{one}]. "
+                    f"The cost stays bounded by that window [{two}].",
+                    "citations": [one, two],
+                    "evidence": {one: "a", two: "b"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "fail")
+        self.assertIn("claim-02 (P=0.65)", verdict.failing_criterion or "")
+        self.assertNotIn("claim-01", verdict.failing_criterion or "")
+
+    def test_flagged_claims_fall_back_to_the_highest(self) -> None:
+        self.assertEqual(flagged_claim_names({"claim-01": 0.2, "claim-02": 0.3}), ["claim-02"])
+        self.assertEqual(
+            flagged_claim_names({f"c{i}": 0.9 - i / 100 for i in range(5)}), ["c0", "c1", "c2"]
+        )
 
     def test_all_claims_supported_passes(self) -> None:
         one = "11111111-1111-5111-8111-111111111111"

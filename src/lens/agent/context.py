@@ -41,9 +41,11 @@ Tools
 
 Calling tools
 - Each tool above is also bound as a plain function in the namespace, so
-  ``shallow_match(buckets=..., k=100)`` works. ``rlm_api.tool("shallow_match", ...)``
+  ``retrieval_funnel(buckets=buckets)`` works. ``rlm_api.tool("retrieval_funnel", ...)``
   is the generic form and behaves identically — both go through one dispatch path.
   Keyword arguments bind by name; an omitted argument uses the tool's default.
+- ``buckets`` (the segmented query) is already defined in the namespace. Pass it
+  as-is; do not redefine it.
 
 Sandbox modules
 <<BEGIN:kg>>
@@ -61,9 +63,9 @@ Sandbox modules
   network, and no database driver.
 
 Payload shapes — do not guess them
-- ``shallow_match`` / ``deep_match`` -> ``list[str]``: ids only, no text.
-- ``rerank_papers`` / ``fetch_papers`` -> ``list[dict]``: paper rows.
-- ``rerank_chunks`` -> ``dict`` with keys ``chunks`` / ``papers``.
+- ``retrieval_funnel`` -> ``dict``: ``chunks`` (a list of chunk rows, best first)
+  and ``papers`` (a dict ``{arxiv_id: {"title", "authors", "year", "abstract"}}``).
+- ``fetch_papers`` -> ``list[dict]``: paper rows.
 - ``fetch_chunks`` -> ``list[dict]``: chunk rows.
 - A chunk row has ``chunk_uuid``, ``arxiv_id``, ``section_type``, ``chunk_text``.
 
@@ -72,15 +74,19 @@ Search the variable, not the digest you printed
   Filter it in code — ``hits = [c for c in bundle["chunks"]
   if "term" in c["chunk_text"].lower()]`` — then print ``len(hits)`` and the ids.
   A grep-style miss on a printed digest is not evidence of absence.
-- ``rerank_chunks`` **already returns the chunk text** (``chunk_text`` on every
-  row). Do not call ``fetch_chunks`` for ids you got from it, and when you do need
-  ids from ``deep_match``, pass them as **one list** — ``fetch_chunks(ids)`` takes
-  many ids per call.
-- **Run the funnel once.** ``shallow_match`` -> ``rerank_papers`` -> ``deep_match``
-  -> ``rerank_chunks`` is one retrieval; keep the bundle in a variable and reuse it.
-  Re-running the funnel is a *new* retrieval (seconds of GPU and megabytes of
-  payload), not a refresh — measured: the good `gpt-5` run spent 32 of its 48 tool
-  calls on eight identical funnel passes.
+- ``retrieval_funnel`` **already returns the chunk text** (``chunk_text`` on every
+  row). Do not call ``fetch_chunks`` for ids you got from it; ``fetch_chunks(ids)``
+  takes many ids per call.
+- **Run the funnel once.** Keep its result in a variable (``bundle``) and reuse it
+  in later turns. Calling it again with the same buckets returns the same chunks.
+
+Work incrementally
+- The namespace persists: every variable, function and ledger task id from an
+  earlier turn still exists. Each turn's block contains **only the new step** —
+  never re-define ``buckets``, re-create ledger tasks, re-run the funnel or re-paste
+  helper functions you already wrote.
+- Read the chunks before you classify them: print or sub-task the ``chunk_text`` of
+  the chunks you intend to cite. A keyword match is a lead, not a finding.
 
 Query buckets (query.json)
 <<QUERY_JSON>>
@@ -96,8 +102,8 @@ Output contract
 2. Print a compact summary of what you learned — at most ~15 lines. Large values
    belong in a variable or in rlm_api.emit(value, label=...); never print whole
    papers or raw tool payloads.
-3. **Retrieve first.** Run the funnel (`shallow_match` → `rerank_chunks`<<BEGIN:kg>>, and
-   `build_kg` when relations matter<<END:kg>>) and keep the returned chunks in a variable.
+3. **Retrieve first.** Run `retrieval_funnel`<<BEGIN:kg>> (and `build_kg` when relations
+   matter)<<END:kg>> and keep the returned chunks in a variable.
    Answering from memory is a failure: cite the real `chunk_uuid` + `arxiv_id` for
    every claim. "See the retrieved evidence" or "[above]" is not a citation.
 4. **Quote before you assert.** For every factual claim, be able to point at the
@@ -113,14 +119,16 @@ Output contract
    and the final gate is right to reject it.
 6. To finish, output a line beginning with ``FINAL_ANSWER:`` followed by the answer.
    A normal assistant message without code is NOT a final answer.
-7. **Never print ``FINAL_ANSWER:`` inside a ```python block.** Code wins over the
-   sentinel, so the turn keeps working and the answer is thrown away. Finish with
-   plain text after the block.
+7. **Never print ``FINAL_ANSWER:`` inside a ```python block**, and never write it
+   in the same message as a block: an answer written before its block ran cannot
+   use that block's output, so it is discarded and you are asked again. Answer in
+   a message of its own, after you have read the output you need.
 8. Record your work in the ledger, not only in prose: ``ledger_create("<what this
    step must establish>")`` when you start a step, ``ledger_update(task_id,
    "done")`` (or ``"failed"``) when it ends, and ``ledger_add_evidence(task_id,
-   [chunk_uuid, ...])`` when you have the ids. The ledger is what a reviewer reads
-   to see which claims you actually supported.
+   [chunk_uuid, ...])`` when you have the ids. Create each task once and keep its
+   id in a variable. The ledger is what a reviewer reads to see which claims you
+   actually supported.
 9. When asked to wrap up (budget nudge), answer from what you already have and
    list the claims you could not support. A labelled partial answer is a valid
    result; an over-budget run is not.
@@ -410,10 +418,12 @@ def context_trigger_tokens(remaining_tokens: int) -> int:
     """Return the prompt size at which compaction runs, from the budget that remains.
 
     Derived from the budget rather than from the model's window because the window
-    is not what binds: with a ten-turn cap and about 2,500 tokens added per turn the
-    largest prompt a run can reach is roughly 40,000 tokens against a 400,000-token
-    window. A quarter of what is left shrinks as a run spends down, so the last turns
-    stay affordable; the floor keeps a usable history when little budget remains.
+    is not what binds: with a ten-turn cap the largest prompt a run reaches is a few
+    tens of thousands of tokens against a 400,000-token window. The orchestrator
+    calls this **once**, at the start of the loop, and keeps the number: a trigger
+    recomputed every turn shrank as the run spent down, so it fired again on each of
+    the last turns and every firing re-wrote the start of the context, which is the
+    part the provider caches.
     """
     if remaining_tokens <= 0:
         return config.CONTEXT_TRIGGER_FLOOR
@@ -428,8 +438,14 @@ def compact_messages(
     messages: Sequence[Mapping[str, Any]],
     *,
     budget: int,
+    target: int | None = None,
+    start: int = 0,
 ) -> list[dict[str, Any]]:
     """Return a compacted message list when the estimated size crosses ``budget``.
+
+    ``target`` (default ``budget``) is the size a compaction shrinks to, and
+    ``start`` is how many non-system messages an earlier compaction already dropped
+    (see :func:`compaction_start`, which the orchestrator calls to keep it sticky).
 
     Policy: keep the system message and the most recent turns; replace or evict
     older observations. Compaction must be deterministic and must never drop the
@@ -437,14 +453,13 @@ def compact_messages(
 
     How it shrinks:
 
-    - the **target is the trigger point** itself, so there is headroom before the
-      next compaction. A budget derived from the *current* bloated size would grow
-      with the problem and never converge.
+    - the **target** is a fixed size (the trigger, unless the caller asks for less
+      headroom). A budget derived from the *current* bloated size would grow with
+      the problem and never converge.
     - the **system message is never a candidate** — it carries the output
       contract, the tool manifest and the final-answer instruction.
-    - messages are taken **newest-first** until the target is reached, so the turn
-      the model is about to act on always survives, and stale observations are
-      evicted before the (cheap) code blocks that explain which variables exist.
+    - the **oldest** messages are evicted until the rest fits the target, so the
+      turn the model is about to act on always survives.
     - the newest message is always kept, even if it alone exceeds the target: an
       empty history is worse than a slightly over-budget one.
     - one **omission marker** records how many turns went and that the sandbox
@@ -456,42 +471,71 @@ def compact_messages(
     The size test is :func:`estimate_tokens` — the **same estimator** the caller
     uses to decide *when* to compact, so the two decisions cannot disagree.
     """
-    if estimate_tokens(messages) <= budget:
-        return [dict(message) for message in messages]  # copies: never mutate the caller
-
     system = [dict(message) for message in messages if message.get("role") == "system"]
     rest = [dict(message) for message in messages if message.get("role") != "system"]
 
-    used = estimate_tokens(system)
-    kept: list[dict[str, Any]] = []
+    begin = compaction_start(
+        rest,
+        system_tokens=estimate_tokens(system),
+        start=start,
+        trigger=budget,
+        target=budget if target is None else target,
+    )
+    kept = rest[begin:]
 
-    for message in reversed(rest):
-        cost = count_tokens(str(message.get("content") or "")) + MESSAGE_OVERHEAD_TOKENS
-
-        if kept and used + cost > budget:
-            break
-
-        kept.append(message)
-        used += cost
-
-    kept.reverse()
-
-    dropped = len(rest) - len(kept)
-    if dropped:
-        marker = {
-            "role": "user",
-            "content": (
-                f"[{dropped} earlier messages omitted; sandbox variables persist across turns]"
-            ),
-        }
-
+    if begin:
         # Inserted even when it pushes the list a few tokens over budget. The
         # marker is ~30 tokens and it is the only trace that compaction happened:
         # skipping it when the budget was tight made a compacted run look like a run
         # whose model suddenly wrote shorter turns, to the analyst and to the model.
-        kept.insert(0, marker)
+        kept.insert(0, omission_marker(begin))
 
     return system + kept
+
+
+def omission_marker(dropped: int) -> dict[str, str]:
+    """Return the ``user`` message that stands in for ``dropped`` evicted messages."""
+    return {
+        "role": "user",
+        "content": f"[{dropped} earlier messages omitted; sandbox variables persist across turns]",
+    }
+
+
+def compaction_start(
+    memory: Sequence[Mapping[str, Any]],
+    *,
+    system_tokens: int,
+    start: int,
+    trigger: int,
+    target: int,
+) -> int:
+    """Return the index of the first ``memory`` message to keep.
+
+    **Sticky**: the index never moves back, and it only moves forward when the kept
+    history (from ``start``) is over ``trigger`` — then far enough that it fits
+    ``target``. Between two compactions the prompt is the previous prompt plus the
+    new turn, byte for byte, so the provider's prefix cache keeps hitting. Sliding
+    the window every turn instead re-wrote the message right after the system prompt
+    on every turn: measured, the cached share fell from 94 % to the system prompt
+    alone (2,176 of 17,553 tokens) on both compacted turns.
+
+    The newest message is always kept, even when it alone exceeds ``target``.
+    """
+    costs = [
+        count_tokens(str(message.get("content") or "")) + MESSAGE_OVERHEAD_TOKENS
+        for message in memory
+    ]
+    begin = min(max(0, start), max(0, len(memory) - 1))
+    size = system_tokens + sum(costs[begin:])
+
+    if size <= trigger:
+        return begin
+
+    while begin < len(memory) - 1 and size > target:
+        size -= costs[begin]
+        begin += 1
+
+    return begin
 
 
 WRAP_UP_NUDGE_TEMPLATE = """\
@@ -666,16 +710,18 @@ Answer the research query from the arXiv cs.AI corpus. You write Python; it runs
 in a persistent sandbox namespace, so variables survive between turns.
 
 ## Hard rules
-- **Retrieve before you answer.** Call the funnel first (`shallow_match` →
-  `rerank_chunks`, optionally `build_kg`) and cite the `chunk_uuid`s you actually
-  read. An answer with no citation is treated as unsupported by the final gate —
+- **Retrieve before you answer.** Call `retrieval_funnel` once (optionally
+  `build_kg`), keep the result, and cite the `chunk_uuid`s you actually read.
+- **Work incrementally.** Variables persist; never re-run the funnel or re-write
+  code from an earlier turn.
+- An answer with no citation is treated as unsupported by the final gate —
   "see the retrieved evidence" or "[above]" is not a citation.
 - **Search variables, not printed digests.** The observation is a truncated
   summary; the payload is in the namespace. Filter in code and print counts/ids.
   A grep miss on your own digest is not evidence of absence — and an uncited
   "not found" is indistinguishable from not having looked.
 - No shell, no network, no API key. The only effects are the bound tool functions
-  (`shallow_match(buckets=..., k=100)`), `rlm_api.tool(name, **kwargs)` (the same
+  (`retrieval_funnel(buckets=buckets)`), `rlm_api.tool(name, **kwargs)` (the same
   dispatch), `rlm_api.sub_extract()` / `sub_summarise()` / `sub_classify()`,
   `rlm_api.emit()`, `rlm_api.note()` and
   `rlm_api.budget()`.

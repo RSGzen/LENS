@@ -142,9 +142,9 @@ class ToolRegistry:
     def names(self) -> list[str]:
         """Return registered tool names in **registration** order.
 
-        Registration order is the order ``build_runtime`` wires the funnel in
-        (shallow → rerank → deep → rerank_chunks), so the manifest reads in
-        pipeline order. Sorting alphabetically would scramble that and would also
+        Registration order is the order ``build_runtime`` wires the tools in
+        (funnel, then fetches, then the KG), so the manifest reads in pipeline
+        order. Sorting alphabetically would scramble that and would also
         disagree with the order :meth:`manifest` prints.
         """
         return list(self._specs.keys())
@@ -231,6 +231,12 @@ class ToolRegistry:
             result = spec.func(**args)
             latency_ms = int((time.perf_counter() - start) * 1000)
 
+            # Per-stage timings are observability, not evidence: they go on the
+            # event, so identical calls still store byte-identical payloads.
+            timings = None
+            if isinstance(result, dict) and isinstance(result.get("timings_ms"), dict):
+                timings = result.pop("timings_ms")
+
             result_str = json.dumps(
                 result,
                 sort_keys=True,
@@ -256,6 +262,7 @@ class ToolRegistry:
                 result_ref=result_ref,
                 result_summary=result_summary,
                 latency_ms=latency_ms,
+                extra={"timings_ms": timings} if timings is not None else None,
             )
 
             return ToolCallResult(

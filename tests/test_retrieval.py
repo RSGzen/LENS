@@ -17,6 +17,7 @@ from unittest import mock
 import numpy as np
 
 from lens import config
+from lens.tools import retrieval
 from lens.tools.retrieval import (
     PAPER_COLUMNS,
     deep_match,
@@ -276,6 +277,34 @@ class RerankChunksTest(unittest.TestCase):
     def test_paper_columns_align_with_schema(self) -> None:
         self.assertIn("arxiv_id", PAPER_COLUMNS)
         self.assertEqual(len(PAPER_COLUMNS), 9)
+
+    def test_retrieval_funnel_chains_the_four_stages(self) -> None:
+        calls: list[str] = []
+        bundle = {"chunks": [{"chunk_uuid": "u1"}], "papers": {}}
+
+        def stage(name, result):
+            def run(*args, **kwargs):
+                calls.append(name)
+                return result
+
+            return run
+
+        with (
+            mock.patch.object(retrieval, "shallow_match", stage("shallow", ["p1", "p2"])),
+            mock.patch.object(
+                retrieval, "rerank_papers", stage("rerank_papers", [{"arxiv_id": "p2"}])
+            ),
+            mock.patch.object(retrieval, "deep_match", stage("deep", ["u1"])),
+            mock.patch.object(retrieval, "rerank_chunks", stage("rerank_chunks", bundle)),
+        ):
+            out = retrieval.retrieval_funnel(None, "q", None, None)
+
+        self.assertEqual(calls, ["shallow", "rerank_papers", "deep", "rerank_chunks"])
+        self.assertEqual(out["chunks"], bundle["chunks"])
+        self.assertEqual(
+            set(out["timings_ms"]),
+            {"shallow_match", "rerank_papers", "deep_match", "rerank_chunks"},
+        )
 
 
 if __name__ == "__main__":

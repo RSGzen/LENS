@@ -394,10 +394,14 @@ FLAT_EVIDENCE_TOKEN_LIMIT = int(os.environ.get("LENS_FLAT_EVIDENCE_TOKENS", "400
 # 2,500 tokens added per turn the largest prompt a run can reach is ~40,000 tokens
 # against a 400,000 window, so a window-relative trigger would never fire -- and if
 # it did, one such prompt would spend most of a query's token budget on one turn.
-# A quarter of what is left keeps the last turns affordable and shrinks as the run
-# spends down. The floor stops it compacting below a useful history.
+# The trigger is a quarter of what is left **when the loop starts**, fixed for the
+# run; the floor stops it compacting below a useful history. A compaction evicts the
+# oldest messages down to ``CONTEXT_COMPACT_TARGET_RATIO`` of the trigger, and the
+# eviction point never moves back, so the context's prefix stays cacheable until
+# the next compaction instead of changing on every turn.
 CONTEXT_TRIGGER_RATIO_OF_REMAINING = float(os.environ.get("LENS_CONTEXT_TRIGGER_RATIO", "0.25"))
 CONTEXT_TRIGGER_FLOOR = int(os.environ.get("LENS_CONTEXT_TRIGGER_FLOOR", "12000"))
+CONTEXT_COMPACT_TARGET_RATIO = float(os.environ.get("LENS_CONTEXT_COMPACT_TARGET", "0.5"))
 # Wrap-up nudge (see ``agent.context.budget_warning``): at this fraction of any
 # cap the orchestrator asks the root to land the plane, so hitting a cap produces
 # a labelled partial answer instead of a truncation mid-thought.

@@ -12,10 +12,11 @@ which every claim carries a `chunk_uuid` that resolves back to the retrieved tex
          |
    segmentation (one JSON call -> objectives / problems / constraints / requirements)
          |
-   shallow_match        HNSW over abstracts            k = 100 candidates
-   rerank_papers        cross-encoder                  n = 20 papers
-   deep_match           HNSW over chunks in those n    C = 100 candidates
-   rerank_chunks        cross-encoder                  c = 100 chunks (+ paper rows)
+   retrieval_funnel     one tool call, four stages:
+     shallow_match      HNSW over abstracts            k = 200 candidates
+     rerank_papers      cross-encoder                  n = 20 papers
+     deep_match         exact, chunks of those n       C = 400 candidates (B-tree on arxiv_id)
+     rerank_chunks      cross-encoder                  c = 100 chunks (+ paper map)
          |
    build_kg             GLiNER + GLiREL over those chunks -> networkx variable
          |

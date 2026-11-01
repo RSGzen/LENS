@@ -83,12 +83,20 @@ class ToolBindingTestCase(unittest.TestCase):
         # integers` (guessing return shapes) and then concluded "no chunk contains
         # OOLONG" while 88 retrieved chunks did — it had searched its printed digest
         # instead of the namespace variable.
-        prompt = context.build_system_prompt("1. shallow_match(buckets)", {}, {})
+        prompt = context.build_system_prompt("1. retrieval_funnel(buckets)", {}, {})
 
         self.assertIn("Payload shapes", prompt)
-        self.assertIn("list[str]", prompt)
+        self.assertIn("list[dict]", prompt)
         self.assertIn("Search the variable, not the digest", prompt)
         self.assertIn("negative finding is a claim", prompt)
+
+    def test_prompt_asks_for_incremental_turns(self) -> None:
+        # Measured: five of five code turns re-wrote the whole script (buckets,
+        # ledger tasks, funnel, classifiers) and appended a FINAL_ANSWER beside it.
+        prompt = context.build_system_prompt("1. retrieval_funnel(buckets)", {}, {})
+
+        self.assertIn("Work incrementally", prompt)
+        self.assertIn("never write it\n   in the same message as a block", prompt)
 
 
 class ContextTestCase(unittest.TestCase):
@@ -218,6 +226,27 @@ class ContextTestCase(unittest.TestCase):
         self.assertEqual(compacted[0]["role"], "system")
         self.assertEqual(compacted[-1]["content"], "latest")
         self.assertLessEqual(len(compacted), len(messages))
+
+    def test_compaction_is_sticky_so_the_prefix_stays_cacheable(self) -> None:
+        # Measured: a trigger that moved every turn re-wrote the message after the
+        # system prompt on both compacted turns, and only the system prompt cached.
+        memory = [{"role": "user", "content": "word " * 100} for _ in range(10)]
+        each = context.count_tokens("word " * 100) + context.MESSAGE_OVERHEAD_TOKENS
+
+        first = context.compaction_start(
+            memory, system_tokens=0, start=0, trigger=8 * each, target=4 * each
+        )
+        self.assertEqual(first, 6)  # compacted down to the target, not the trigger
+
+        # Two new turns later the kept history (4 + 2) is still under the trigger:
+        # nothing moves, so the next prompt extends the previous one byte for byte.
+        grown = [*memory, *memory[:2]]
+        self.assertEqual(
+            context.compaction_start(
+                grown, system_tokens=0, start=first, trigger=8 * each, target=4 * each
+            ),
+            first,
+        )
 
     def test_write_context_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
