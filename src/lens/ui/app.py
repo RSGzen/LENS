@@ -70,6 +70,14 @@ PAGE_RECORDED = "Recorded Runs"
 PAGE_LIVE = "Live Query"
 PAGES: list[str] = [PAGE_RECORDED, PAGE_LIVE]
 
+#: Corpus lookups. Separate from the pages above because they are not part of a run:
+#: they answer "does this paper exist" and "what does this chunk say" from the
+#: database, in a child process, with no model and no artifact written.
+PAGE_TOOL_PAPER = "Paper lookup"
+PAGE_TOOL_CHUNK = "Chunk lookup"
+TOOL_PAGES: list[str] = [PAGE_TOOL_PAPER, PAGE_TOOL_CHUNK]
+TOOL_NONE = "— no tool —"
+
 #: ``st.session_state`` contract. Every unit reads and writes these keys and
 #: nothing else, so a page can be filled (or replaced) without touching another.
 STATE: dict[str, Any] = {
@@ -152,6 +160,16 @@ def _sidebar() -> None:
             st.caption(" · ".join(f"{n} {status}" for status, n in sorted(counts.items())))
 
         st.caption(f"runs root: `{runstore.runs_root()}`")
+
+        st.divider()
+        st.subheader("Tools")
+        st.radio(
+            "Corpus lookup",
+            [TOOL_NONE, *TOOL_PAGES],
+            index=0,
+            key="tool_choice",
+            help="Read-only queries against the corpus, in a child process.",
+        )
         st.divider()
         st.caption(
             "Recorded runs are read-only. The live page shells out to the CLI and "
@@ -180,6 +198,16 @@ def main() -> None:
     st.set_page_config(page_title="LENS", page_icon="🔎", layout="wide")
     _init_state()
     _sidebar()
+
+    tool = st.session_state.get("tool_choice", TOOL_NONE)
+
+    if tool == PAGE_TOOL_PAPER:
+        page_paper_lookup()
+        return
+
+    if tool == PAGE_TOOL_CHUNK:
+        page_chunk_lookup()
+        return
 
     if st.session_state["page"] == PAGE_LIVE:
         page_run()
@@ -830,6 +858,121 @@ def render_answer(view: data.RunView) -> None:
             data=(run_dir / "report.md").read_text(encoding="utf-8", errors="replace"),
             file_name=f"{view.run_id}-report.md",
             key="download_report",
+        )
+
+
+def page_paper_lookup() -> None:
+    """One paper by arXiv id, read straight from the corpus.
+
+    The point of the page is the **existence** answer: a paper that is not in the
+    corpus is not a failed query, and a run over a query that names it would fail
+    differently. The row is shown as field/value pairs because a single wide row puts
+    the abstract in a column nobody can read.
+    """
+    st.subheader(PAGE_TOOL_PAPER)
+    st.caption(
+        "Reads the corpus in a child process: nothing is written, no model is called, "
+        "and embedding columns are not returned."
+    )
+
+    arxiv_id = st.text_input("arXiv id", placeholder="2407.21049", key="paper_lookup_id")
+
+    if not st.button("Look up paper", key="paper_lookup_button"):
+        return
+
+    if not arxiv_id.strip():
+        st.info("Type an arXiv id first, for example 2407.21049.")
+        return
+
+    result = data.lookup_paper(arxiv_id)
+
+    if not result.get("ok"):
+        st.error(result.get("error") or "lookup failed")
+        return
+
+    found = result.get("found") or []
+
+    if not found:
+        st.warning(f"No paper with id `{arxiv_id.strip()}` is in the corpus.")
+        return
+
+    row = dict(found[0])
+    abstract = str(row.pop("abstract") or "")
+
+    st.success(f"`{row.get('arxiv_id')}` — {row.get('title')}")
+    st.dataframe(
+        [{"field": key, "value": value} for key, value in row.items()],
+        hide_index=True,
+        width="stretch",
+    )
+
+    if abstract:
+        with st.expander("abstract"):
+            st.write(abstract)
+
+
+def page_chunk_lookup() -> None:
+    """Chunks by id: what the corpus holds, and the full text of one."""
+    st.subheader(PAGE_TOOL_CHUNK)
+    st.caption(
+        "Paste chunk ids (one per line, or comma-separated). The text below is what the "
+        "corpus stores, so it is also what a run over that chunk would have read."
+    )
+
+    raw = st.text_area(
+        "chunk ids",
+        height=120,
+        placeholder="9db55e2a-afdf-5842-bbbb-80e36dc75bce",
+        key="chunk_lookup_ids",
+    )
+
+    if not st.button("Look up chunks", key="chunk_lookup_button"):
+        return
+
+    ids = [part for part in re.split(r"[\s,]+", raw or "") if part]
+
+    if not ids:
+        st.info("Paste at least one chunk id.")
+        return
+
+    result = data.lookup_chunks(ids)
+
+    if not result.get("ok"):
+        st.error(result.get("error") or "lookup failed")
+        return
+
+    rows = result.get("found") or []
+    missing = result.get("missing") or []
+
+    if rows:
+        st.dataframe(
+            [
+                {
+                    "chunk": str(row.get("chunk_uuid"))[:8],
+                    "paper": row.get("arxiv_id"),
+                    "section": row.get("section_type"),
+                    "tokens": row.get("token_count"),
+                    "chars": len(str(row.get("chunk_text") or "")),
+                    "starts": str(row.get("chunk_text") or "")[:120].replace("\n", " "),
+                }
+                for row in rows
+            ],
+            hide_index=True,
+            width="stretch",
+        )
+
+        labels = [
+            f"{str(row.get('chunk_uuid'))[:8]} · {row.get('arxiv_id')} · "
+            f"{row.get('section_type')} · {len(str(row.get('chunk_text') or '')):,} chars"
+            for row in rows
+        ]
+        chosen = st.selectbox("full text", labels, key="chunk_lookup_choice")
+        st.code(str(rows[labels.index(chosen)].get("chunk_text") or ""), language="text")
+
+    if missing:
+        st.warning(
+            f"{len(missing)} id(s) are not in the corpus: "
+            + ", ".join(f"`{chunk_id}`" for chunk_id in missing[:5])
         )
 
 

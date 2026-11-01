@@ -18,6 +18,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import lens.config as config_module
 import lens.observability.trajectory as trajectory_module
@@ -35,6 +36,22 @@ else:
     HAS_STREAMLIT = False
 
 APP = Path(__file__).resolve().parents[1] / "src" / "lens" / "ui" / "app.py"
+
+
+def data_page_paper() -> str:
+    """The paper-lookup page label, read from the app so a rename is caught."""
+    from lens.ui import app as app_module
+
+    return app_module.PAGE_TOOL_PAPER
+
+
+def data_page_chunk() -> str:
+    """The chunk-lookup page label."""
+    from lens.ui import app as app_module
+
+    return app_module.PAGE_TOOL_CHUNK
+
+
 CHUNK = "11111111-1111-5111-8111-111111111111"
 
 
@@ -239,6 +256,80 @@ class UiAppTestCase(unittest.TestCase):
         self.assertTrue(
             any(button.label == "Download Full Payload" for button in at.download_button)
         )
+
+    # ------------------------------------------------------------- tool pages
+    def test_the_paper_lookup_reports_a_paper_it_found(self) -> None:
+        # The lookup itself runs in a child process; the page is patched here so the
+        # test needs no database, which is the point of the split.
+        found = {
+            "ok": True,
+            "found": [
+                {
+                    "arxiv_id": "2407.21049",
+                    "title": "Evaluating Long Range Dependency Handling",
+                    "abstract": "a long abstract",
+                }
+            ],
+            "missing": [],
+        }
+
+        with patch("lens.ui.data.lookup_paper", return_value=found):
+            at = self._app()
+            at.radio(key="tool_choice").set_value(data_page_paper()).run()
+            at.text_input(key="paper_lookup_id").set_value("2407.21049").run()
+            at.button(key="paper_lookup_button").click().run()
+
+        self.assertEqual([str(exception.value) for exception in at.exception], [])
+        self.assertTrue(any("2407.21049" in item.value for item in at.success))
+
+    def test_the_paper_lookup_reports_a_paper_it_did_not_find(self) -> None:
+        missing = {"ok": True, "found": [], "missing": ["0000.00000"]}
+
+        with patch("lens.ui.data.lookup_paper", return_value=missing):
+            at = self._app()
+            at.radio(key="tool_choice").set_value(data_page_paper()).run()
+            at.text_input(key="paper_lookup_id").set_value("0000.00000").run()
+            at.button(key="paper_lookup_button").click().run()
+
+        self.assertEqual([str(exception.value) for exception in at.exception], [])
+        self.assertTrue(any("is in the corpus" in item.value for item in at.warning))
+
+    def test_the_chunk_lookup_shows_the_text_of_a_found_chunk(self) -> None:
+        chunk = "11111111-1111-5111-8111-111111111111"
+        found = {
+            "ok": True,
+            "found": [
+                {
+                    "chunk_uuid": chunk,
+                    "arxiv_id": "2511.02817",
+                    "section_type": "Results",
+                    "token_count": 512,
+                    "chunk_text": "the chunk the corpus stores",
+                }
+            ],
+            "missing": [],
+        }
+
+        with patch("lens.ui.data.lookup_chunks", return_value=found):
+            at = self._app()
+            at.radio(key="tool_choice").set_value(data_page_chunk()).run()
+            at.text_area(key="chunk_lookup_ids").set_value(chunk).run()
+            at.button(key="chunk_lookup_button").click().run()
+
+        self.assertEqual([str(exception.value) for exception in at.exception], [])
+        self.assertTrue(any("the chunk the corpus stores" in block.value for block in at.code))
+
+    def test_a_lookup_failure_is_shown_not_raised(self) -> None:
+        failed = {"ok": False, "error": "database unavailable: OperationalError"}
+
+        with patch("lens.ui.data.lookup_paper", return_value=failed):
+            at = self._app()
+            at.radio(key="tool_choice").set_value(data_page_paper()).run()
+            at.text_input(key="paper_lookup_id").set_value("2407.21049").run()
+            at.button(key="paper_lookup_button").click().run()
+
+        self.assertEqual([str(exception.value) for exception in at.exception], [])
+        self.assertTrue(any("database unavailable" in item.value for item in at.error))
 
     def test_page_names_separate_recording_from_live(self) -> None:
         from lens.ui.app import PAGE_LIVE, PAGE_RECORDED, PAGES
