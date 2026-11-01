@@ -13,9 +13,11 @@ Run:  .\.venv\Scripts\python.exe -m unittest tests.test_ui_data -v
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import lens.config as config_module
 import lens.observability.trajectory as trajectory_module
@@ -399,6 +401,45 @@ class UiDataTestCase(unittest.TestCase):
         assert view is not None
 
         self.assertEqual(len(data.cited_chunks(view)), 1)
+
+    # ---------------------------------------------------------- corpus lookups
+    def test_lookup_paper_parses_the_child_s_json(self) -> None:
+        finished = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"ok": true, "found": [{"arxiv_id": "1"}], "missing": []}',
+            stderr="",
+        )
+
+        with patch("lens.ui.data.subprocess.run", return_value=finished) as run:
+            payload = data.lookup_paper("2407.21049")
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["found"], [{"arxiv_id": "1"}])
+        self.assertIn("lens.lookup", " ".join(run.call_args[0][0]))
+
+    def test_a_child_that_returns_no_json_is_an_error_envelope(self) -> None:
+        finished = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
+
+        with patch("lens.ui.data.subprocess.run", return_value=finished):
+            payload = data.lookup_paper("2407.21049")
+
+        self.assertFalse(payload["ok"])
+        self.assertIn("boom", payload["error"])
+
+    def test_a_child_that_cannot_start_is_an_error_envelope(self) -> None:
+        with patch("lens.ui.data.subprocess.run", side_effect=OSError("missing python")):
+            payload = data.lookup_paper("2407.21049")
+
+        self.assertFalse(payload["ok"])
+        self.assertIn("did not run", payload["error"])
+
+    def test_lookup_chunks_does_not_spawn_for_an_empty_list(self) -> None:
+        with patch("lens.ui.data.subprocess.run") as run:
+            payload = data.lookup_chunks(["  ", ""])
+
+        self.assertFalse(payload["ok"])
+        run.assert_not_called()
 
     # ------------------------------------------------------------------ gates
     def test_gate_calls_pair_the_request_with_the_verdict(self) -> None:

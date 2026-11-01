@@ -26,9 +26,11 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from lens import config
 from lens.agent.runstore import (
@@ -591,6 +593,61 @@ def _evidence_by_turn(turns: list[Turn], trajectory: Trajectory) -> dict[int, li
             evidence[turn.turn] = rows
 
     return evidence
+
+
+#: How long one lookup may take. The query is a single indexed row or a list of ids;
+#: a slow answer means the database is unreachable, and a page should say so.
+LOOKUP_TIMEOUT_S = 30
+
+
+def _run_lookup(*args: str) -> dict[str, Any]:
+    """Run one lookup in a child process and parse its JSON envelope.
+
+    A child process rather than a connection in this module: the UI process must not
+    hold a database pool open for the lifetime of a browser tab, which is the same
+    reason the Live page shells out to the CLI. Everything below returns an envelope
+    -- ``{"ok": False, "error": ...}`` -- because a page must render the failure, not
+    raise it.
+    """
+    command = [sys.executable, "-m", "lens.lookup", *args]
+
+    try:
+        finished = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=LOOKUP_TIMEOUT_S,
+            cwd=config.REPO_ROOT,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"ok": False, "error": f"lookup did not run: {type(exc).__name__}"}
+
+    try:
+        payload = json.loads(finished.stdout or "")
+    except ValueError:
+        last = (finished.stderr or "").strip().splitlines()
+
+        return {
+            "ok": False,
+            "error": "lookup returned no JSON" + (f": {last[-1][:200]}" if last else ""),
+        }
+
+    return payload if isinstance(payload, dict) else {"ok": False, "error": "unexpected reply"}
+
+
+def lookup_paper(arxiv_id: str) -> dict[str, Any]:
+    """Return ``{"ok", "found", "missing"}`` for one arXiv id."""
+    return _run_lookup("paper", str(arxiv_id or "").strip())
+
+
+def lookup_chunks(chunk_ids: Sequence[str]) -> dict[str, Any]:
+    """Return ``{"ok", "found", "missing"}`` for a list of chunk ids."""
+    cleaned = [str(chunk_id).strip() for chunk_id in chunk_ids if str(chunk_id).strip()]
+
+    if not cleaned:
+        return {"ok": False, "error": "no chunk ids given"}
+
+    return _run_lookup("chunk", *cleaned)
 
 
 def run_dir(run_id: str) -> Path | None:
