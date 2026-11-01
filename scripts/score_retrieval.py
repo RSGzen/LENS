@@ -178,6 +178,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--qrels", required=True, help="CSV: query_id,doc_id,rel")
     parser.add_argument("--rankings", required=True, help="CSV: config,query_id,rank,doc_id")
     parser.add_argument("--out", default=None, help="write scores.csv here")
+    parser.add_argument(
+        "--config",
+        nargs="*",
+        default=None,
+        help="score only these configurations. Required when the rankings file holds "
+        "configurations that were not pooled: an unjudged document counts as not "
+        "relevant, so scoring an unpooled configuration measures the pool, not it",
+    )
     args = parser.parse_args(argv)
 
     qrels = load_qrels(args.qrels)
@@ -186,7 +194,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{args.qrels}: no judgments", file=sys.stderr)
         return 2
 
-    rows = score_config(load_rankings(args.rankings), qrels)
+    rankings = load_rankings(args.rankings)
+
+    if args.config:
+        wanted = set(args.config)
+        present = {config for config, _query in rankings}
+        missing = wanted - present
+
+        if missing:
+            print(f"not in the rankings file: {sorted(missing)}", file=sys.stderr)
+            return 2
+
+        rankings = {key: value for key, value in rankings.items() if key[0] in wanted}
+
+    rows = score_config(rankings, qrels)
     sys.stdout.write(write_scores(rows, args.out))
 
     return 0
