@@ -23,6 +23,46 @@ OTHER = "22222222-2222-5222-8222-222222222222"
 GHOST = "99999999-9999-5999-8999-999999999999"
 
 
+class UncitedUnitTestCase(unittest.TestCase):
+    """The claims the aggregate sees and the per-claim questions could not."""
+
+    ONE = "11111111-1111-5111-8111-111111111111"
+
+    def test_a_scope_sentence_without_ids_becomes_a_unit(self) -> None:
+        answer = (
+            "From the 15 cited chunks we inspected, drawn from 100 reranked chunks "
+            "across 19 papers, the text supports the following methods.\n"
+            f"- A method with evidence [{self.ONE}]\n"
+        )
+
+        units = claim_units(answer, include_uncited=True)
+
+        self.assertEqual(len(units), 2)
+        self.assertEqual(units[0][1], [self.ONE])
+        self.assertEqual(units[1][1], [])
+        self.assertIn("15 cited chunks", units[1][0])
+
+    def test_the_same_text_without_the_flag_is_cited_only(self) -> None:
+        answer = (
+            "From the 15 cited chunks we inspected, drawn from 100 reranked chunks "
+            "across 19 papers, the text supports the following methods.\n"
+            f"- A method with evidence [{self.ONE}]\n"
+        )
+
+        self.assertEqual(len(claim_units(answer)), 1)
+
+    def test_structure_lines_are_not_uncited_claims(self) -> None:
+        answer = (
+            "# A heading long enough to look like a sentence about the evidence\n"
+            "- A bullet that names a method but carries no citation at all\n"
+        )
+
+        self.assertEqual(claim_units(answer, include_uncited=True), [])
+
+    def test_a_short_line_is_not_a_claim(self) -> None:
+        self.assertEqual(claim_units("Scope inspected:", include_uncited=True), [])
+
+
 class ClaimUnitShapeTestCase(unittest.TestCase):
     """The answer shapes the model actually writes."""
 

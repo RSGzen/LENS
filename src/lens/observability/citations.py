@@ -59,6 +59,16 @@ _ID_TOKEN_RE = re.compile(
 #: A unit whose words are shorter than this is an id dump, not a claim.
 MIN_CLAIM_WORDS = 12
 
+#: An **uncited** claim needs this many words to be worth a question. Fifteen is the
+#: observed length of the sentences that matter here ("From the 15 cited chunks we
+#: inspected, drawn from 100 reranked chunks across 19 papers, the text supports?"),
+#: and it keeps headings and one-line labels out.
+MIN_UNCITED_WORDS = 12
+
+#: A line that is a bullet, a heading, a table row or a quote. Bullets are handled as
+#: whole units (above), and the rest are structure rather than prose.
+_STRUCTURE = re.compile(r"^(?:[-*\u2022#|>]|\d+\.)\s")
+
 #: Punctuation left behind when the ids are removed.
 _RESIDUE = re.compile(r"[\s\-–—•*:;,.()\[\]/|<>\"'`]+")
 
@@ -72,7 +82,42 @@ def _bullet_blocks(text: str) -> list[str]:
     return [match.group(0) for match in _BULLET_BLOCK.finditer(text)]
 
 
-def claim_units(text: str) -> list[tuple[str, list[str]]]:
+def uncited_units(text: str) -> list[tuple[str, list[str]]]:
+    """Return prose lines that assert something with **no citation at all**.
+
+    The aggregate question asks whether the answer contains a claim its citations do
+    not support, and it judges the whole text. The per-claim questions were built only
+    from **cited** bullets, so an answer could be rejected for an uncited sentence that
+    no claim question ever mentioned ? measured on a recorded answer whose opening
+    scope sentence ("From the 15 cited chunks we inspected?") carried three numbers and
+    no id.
+
+    Only non-structure lines qualify: a bullet, heading, table row or quote is handled
+    elsewhere, and a bullet's claim is already covered by its own unit, citations and
+    all.
+    """
+    units: list[tuple[str, list[str]]] = []
+
+    for line in (text or "").splitlines():
+        unit = " ".join(line.split())
+
+        if not unit or _STRUCTURE.match(unit):
+            continue
+
+        if cited_ids(unit):
+            continue
+
+        if len(unit.split()) < MIN_UNCITED_WORDS:
+            continue
+
+        units.append((unit, []))
+
+    return units
+
+
+def claim_units(
+    text: str, *, include_uncited: bool = False
+) -> list[tuple[str, list[str]]]:
     """Split an answer into claim-sized units with the ids each one cites.
 
     A *claim* is a sentence (or a list line) with **words and** a source. Two kinds
@@ -89,6 +134,10 @@ def claim_units(text: str) -> list[tuple[str, list[str]]]:
     Returns ``[(unit_text, [id, ...]), ...]`` in reading order. An answer with no
     claim at all collapses to one unit with an empty id list, so it is still judged
     once rather than silently skipped.
+
+    ``include_uncited`` appends :func:`uncited_units` after the cited ones: those are
+    the claims the aggregate can see and the per-claim questions could not, which is
+    why a coverage failure used to name nothing.
     """
     units: list[tuple[str, list[str]]] = []
 
@@ -114,10 +163,10 @@ def claim_units(text: str) -> list[tuple[str, list[str]]]:
 
             units.append((unit, ids))
 
-        if units:
-            return units
-
-    for piece in _SENTENCE_SPLIT.split(text or ""):
+    # The sentence path is the fallback for prose without bullets; it is skipped when
+    # the bullet path produced units, because a bullet's own sentence would otherwise
+    # be counted twice.
+    for piece in ([] if units else _SENTENCE_SPLIT.split(text or "")):
         unit = " ".join(piece.split())
 
         if not unit:
@@ -135,11 +184,17 @@ def claim_units(text: str) -> list[tuple[str, list[str]]]:
 
         units.append((unit, ids))
 
-    if not units:
+    # The whole-answer fallback exists so an answer with no claim is still judged
+    # once. With uncited units requested it would double-count them, and an answer
+    # whose every line is structure or two words has nothing to ask about.
+    if not units and not include_uncited:
         body = " ".join((text or "").split())
 
         if body:
             units.append((body, []))
+
+    if include_uncited:
+        units.extend(uncited_units(text))
 
     return units
 

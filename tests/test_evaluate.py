@@ -308,6 +308,34 @@ class EvaluateTestCase(unittest.TestCase):
             "A claim [c-1].",
         )
 
+    def test_an_uncited_sentence_gets_its_own_question(self) -> None:
+        # The aggregate can reject an answer for a sentence with no citation; without
+        # a question for it, the rejection named nothing.
+        one = "11111111-1111-5111-8111-111111111111"
+        client = _FakeJevClient({"gate": {"noul": 0.9}})
+
+        evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": (
+                        "From the 15 cited chunks we inspected, drawn from 100 reranked "
+                        "chunks across 19 papers, the text supports the following.\n"
+                        f"- A method with evidence [{one}]\n"
+                    ),
+                    "citations": [one],
+                    "evidence": {one: "text"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        questions = client.questions[0]
+        self.assertIn("claim-02", questions)
+        self.assertIn("cites nothing", questions["claim-02"].instructions)
+
     def test_the_question_tells_the_gate_that_a_gap_is_not_a_claim(self) -> None:
         question = evaluate_module.build_unsupported_claim_question("answer", ["c-1"], {})
 

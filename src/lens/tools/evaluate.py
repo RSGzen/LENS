@@ -393,11 +393,18 @@ def build_claim_question(claim_id: str, text: str, citations: Sequence[str]) -> 
     if len(body) > 600:
         body = body[:600] + " …"
 
+    opening = (
+        f"Claim {claim_id} cites: {cited}. Decide whether that citation supports it, "
+        "using the excerpt for each cited id in the state."
+        if citations
+        else f"Claim {claim_id} cites nothing. Decide whether it is a factual claim about "
+        "the evidence that carries no citation at all."
+    )
+
     return Question(
         type="noul",
         instructions=(
-            f"Claim {claim_id} cites: {cited}. Decide whether that citation supports it, "
-            "using the excerpt for each cited id in the state. Answer true only if the "
+            f"{opening} Answer true only if the "
             "claim is NOT supported — it states a number, dataset, comparison or "
             "attribution the excerpt does not contain, or it cites an id with no excerpt. "
             "Answer false if the excerpt supports it. A claim that the evidence does not "
@@ -558,7 +565,9 @@ def evaluate_stage(
         # against one state, so per-claim scoring costs a few hundred input tokens
         # and returns *which* claim failed. The aggregate question stays as a
         # cross-check; the two disagree in the log rather than being averaged.
-        claims = claim_units(answer)[:MAX_GATE_CLAIMS]
+        # Uncited units are included: the aggregate judges the whole text, so an
+        # answer could be rejected for a sentence no claim question ever mentioned.
+        claims = claim_units(answer, include_uncited=True)[:MAX_GATE_CLAIMS]
         summary = {
             **summary,
             "answer": answer,
