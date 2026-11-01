@@ -171,10 +171,16 @@ def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> d
 
 
 def _dirty_paths() -> list[str]:
-    """Return the repository-relative paths git reports as changed."""
-    text = git_value("status", "--porcelain") or ""
+    """Return the repository-relative paths that differ from ``HEAD`` or are untracked.
 
-    return [line[3:].strip() for line in text.splitlines() if line.strip()]
+    Two plain listings rather than ``status --porcelain``: the porcelain format
+    prefixes each line with a two-character status code, and a stripped line then
+    loses a character of the path.
+    """
+    changed = (git_value("diff", "--name-only", "HEAD") or "").splitlines()
+    untracked = (git_value("ls-files", "--others", "--exclude-standard") or "").splitlines()
+
+    return [path.strip() for path in [*changed, *untracked] if path.strip()]
 
 
 def _ignore_own_output(record: dict[str, Any], out: Path) -> None:
