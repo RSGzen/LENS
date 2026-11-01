@@ -324,6 +324,76 @@ class RuntimeTestCase(unittest.TestCase):
         contents = " ".join(str(m.get("content", "")) for m in state.messages)
         self.assertIn("step", contents)  # the observation of the executed block
 
+    def test_a_rejected_answer_is_not_rewritten_forever(self) -> None:
+        # Measured on a recorded run: five turns of rewriting an unchanged answer,
+        # 48 % of the run's cost, and the rejection was the aggregate's alone every
+        # time. Past the cap the answer stands and the verdicts stay in the log.
+        from lens.agent.runtime import MAX_FINAL_GATE_REJECTIONS
+
+        client = FakeClient(
+            [f"FINAL_ANSWER: draft {index}" for index in range(1, 7)], self.trajectory
+        )
+        client.jev = lambda state, questions, **kw: JevResult(  # type: ignore[method-assign]
+            answers={"gate": {"noul": 0.9}},
+            model="typesafe/jev-1.13",
+            provider="TypeSafe",
+            tokens_in=1,
+            cost_usd=0.0,
+            latency_ms=1,
+        )
+        self.runtime.client = client
+
+        with patch.object(config, "GATE_ENABLED", True):
+            result = self.runtime.run()
+
+        root_calls = [call for call in client.chat_calls if call["role"] == "root"]
+        self.assertEqual(len(root_calls), MAX_FINAL_GATE_REJECTIONS + 1)
+        self.assertIn(f"draft {MAX_FINAL_GATE_REJECTIONS + 1}", result.answer)
+        # The gate's disagreement does not become the run's stop reason: it is not
+        # an acceptance criterion, and the status vocabulary stays
+        # iterations/tokens/cost/backtracks.
+        self.assertFalse(result.partial)
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+        ]
+        notes = [
+            (event.get("extra") or {}).get("text", "")
+            for event in events
+            if event.get("call_type") == "note"
+        ]
+
+        self.assertTrue(any("accepted with the verdicts recorded" in text for text in notes))
+
+    def test_the_rejection_names_the_threshold_that_fired(self) -> None:
+        # The root used to read "claim-10 (P=0.50)" with tau_claim nowhere in the
+        # message, so a claim the rule never rejected read as a failure.
+        client = FakeClient(["FINAL_ANSWER: draft one", "FINAL_ANSWER: draft two"])
+        client.jev = lambda state, questions, **kw: JevResult(  # type: ignore[method-assign]
+            answers={"gate": {"noul": 0.55}, "claim-01": {"noul": 0.5}},
+            model="typesafe/jev-1.13",
+            provider="TypeSafe",
+            tokens_in=1,
+            cost_usd=0.0,
+            latency_ms=1,
+        )
+        self.runtime.client = client
+
+        with patch.object(config, "GATE_ENABLED", True):
+            self.runtime.run()
+
+        rejection = " ".join(
+            str(message.get("content") or "")
+            for call in client.chat_calls[1:]
+            for message in call["messages"]
+            if "final gate rejected" in str(message.get("content") or "")
+        )
+
+        self.assertIn("failed on the answer as a whole", rejection)
+        self.assertIn("tau_agg=0.50", rejection)
+        self.assertIn("tau_claim=0.70", rejection)
+
     def test_manifest_records_terminal_status(self) -> None:
         result = self.runtime.run()
         from lens.agent import runstore
@@ -852,7 +922,7 @@ class GateInputTestCase(unittest.TestCase):
     """What the gate is shown, which is what decides whether it can answer."""
 
     def test_retrieval_summary_carries_content_not_just_counts(self) -> None:
-        from lens.agent.runtime import _retrieval_gate_summary
+        from lens.agent.runtime import GATE_SAMPLE_CHARS, _retrieval_gate_summary
 
         result = {
             "chunks": [
@@ -875,8 +945,39 @@ class GateInputTestCase(unittest.TestCase):
         # names": the gate needs something to read.
         self.assertEqual(summary["chunks"], 20)
         self.assertEqual(summary["paper_ids"], ["2511.02817", "2601.00001"])
-        self.assertEqual(len(summary["chunk_samples"]), 6)
-        self.assertEqual(len(summary["chunk_samples"][0]["text"]), 300)
+        # The old state was six 300-character samples — 1.2 % of the funnel's text —
+        # asked whether that output covered the query. The sample now runs to the
+        # character budget, capped per chunk.
+        self.assertGreater(len(summary["chunk_samples"]), 6)
+        self.assertEqual(len(summary["chunk_samples"][0]["text"]), 900)
+        self.assertLessEqual(
+            sum(len(sample["text"]) for sample in summary["chunk_samples"]), GATE_SAMPLE_CHARS
+        )
+
+    def test_the_retrieval_sample_spans_papers_not_just_the_top_ranked(self) -> None:
+        from lens.agent.runtime import _retrieval_gate_summary
+
+        # The question is coverage, so the sample must not be the best five chunks of
+        # one paper: that answers a narrower question and biases the verdict.
+        result = {
+            "chunks": [
+                {
+                    "chunk_uuid": f"id-{paper}-{index}",
+                    "arxiv_id": paper,
+                    "section_type": "methods",
+                    "chunk_text": "x" * 2000,
+                }
+                for paper in ("2511.02817", "2601.00001", "2602.00002")
+                for index in range(30)
+            ],
+            "papers": {},
+        }
+
+        summary = _retrieval_gate_summary(result)
+        papers = [sample["paper"] for sample in summary["chunk_samples"]]
+
+        self.assertGreaterEqual(len(set(papers)), 3)
+        self.assertEqual(papers[:3], ["2511.02817", "2601.00001", "2602.00002"])
 
     def test_a_tool_summary_is_passed_through_not_counted(self) -> None:
         from lens.agent.runtime import _bounded_artifact

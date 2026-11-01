@@ -79,13 +79,19 @@ Search the variable, not the digest you printed
 - ``retrieval_funnel`` **already returns the chunk text** (``chunk_text`` on every
   row). Do not call ``fetch_chunks`` for ids you got from it; ``fetch_chunks(ids)``
   takes many ids per call.
-- **Run the funnel once.** Keep its result in a variable (``bundle``) and reuse it
-  in later turns. Calling it again with the same buckets returns the same chunks.
+- **Run the funnel, then refine it only if you learned something.** The first call
+  is the retrieval; keep its result in a variable (``bundle``) and reuse it. If what
+  you read shows the query needs terms or papers the buckets do not name, copy them
+  first — ``mine = copy.deepcopy(buckets)``, then add or remove entries on ``mine`` —
+  and call ``retrieval_funnel(buckets=mine)``. Never edit ``buckets`` itself: it is
+  the query as segmented, it is what the run records, and every later turn refers to
+  it. Calling the funnel again with unchanged buckets returns the same chunks, so
+  that is a wasted turn rather than a new retrieval.
 
 Work incrementally
 - The namespace persists: every variable, function and ledger task id from an
   earlier turn still exists. Each turn's block contains **only the new step** —
-  never re-define ``buckets``, re-create ledger tasks, re-run the funnel or re-paste
+  never re-define ``buckets``, re-create ledger tasks, or re-paste
   helper functions you already wrote.
 - Read the chunks before you classify them: print or sub-task the ``chunk_text`` of
   the chunks you intend to cite. A keyword match is a lead, not a finding.
@@ -145,7 +151,7 @@ Guardrails
 <<BEGIN:gate>>
 - A ``[gate]`` line at the end of an observation is the decision layer's verdict on
   the stage that just finished. It is not calibrated: use it to decide whether to
-  check coverage in the chunks you hold.
+  check coverage in the chunks you hold, or to refine a **copy** of the buckets.
   Calling the funnel again with the same buckets returns the same chunks.
 <<END:gate>>
 """
@@ -724,8 +730,9 @@ in a persistent sandbox namespace, so variables survive between turns.
 - **Retrieve before you answer.** Call `retrieval_funnel` once (and `build_kg` only
   when you will traverse the graph), keep the result, and cite the full
   `chunk_uuid`s you actually read.
-- **Work incrementally.** Variables persist; never re-run the funnel or re-write
-  code from an earlier turn.
+- **Work incrementally.** Variables persist; never re-run the funnel with unchanged
+  buckets or re-write code from an earlier turn. To retrieve again, copy the buckets
+  (`copy.deepcopy(buckets)`) and edit the copy — `buckets` is the segmented query.
 - An answer with no citation is treated as unsupported by the final gate —
   "see the retrieved evidence" or "[above]" is not a citation.
 - **Search variables, not printed digests.** The observation is a truncated

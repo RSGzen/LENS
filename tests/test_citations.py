@@ -75,6 +75,31 @@ class UncitedUnitTestCase(unittest.TestCase):
 
         self.assertEqual([ids for _, ids in units], [[self.ONE]])
 
+    def test_a_heading_without_a_full_stop_is_not_a_claim(self) -> None:
+        # Both lines are verbatim from a recorded answer. They have no `:`, `#`, `-`
+        # or `*`, and each is at least twelve words, so they were asked about as
+        # uncited claims; an excerpt cannot support a heading, so both came back at
+        # exactly 0.50 — the aggregate threshold — and were named as the offenders.
+        answer = (
+            "Q2 — How these methods differ in where aggregation happens (grounded by quotes)\n"
+            "Strictly supported findings (each claim is followed by a verbatim sentence "
+            "from a retrieved chunk)\n"
+            f"- A method with evidence that is long enough to be a claim [{self.ONE}]\n"
+        )
+
+        units = claim_units(answer, include_uncited=True)
+
+        self.assertEqual([ids for _, ids in units], [[self.ONE]])
+
+    def test_a_scope_sentence_is_still_a_unit(self) -> None:
+        # The punctuation test must not remove the sentences it was introduced for.
+        sentence = (
+            "From the 12 chunks inspected, none of them states the figure that the "
+            "question asks about."
+        )
+
+        self.assertEqual(len(claim_units(sentence, include_uncited=True)), 1)
+
 
 class ExpandShortIdsTestCase(unittest.TestCase):
     """A model that prints 8-character prefixes cites the prefix it saw."""

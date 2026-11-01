@@ -106,6 +106,13 @@ EVIDENCE_FETCH_CHARS = 120000
 #: tools (ledger, backtrack) are never replayed.
 REPLAYABLE_TOOLS = frozenset({"retrieval_funnel", "fetch_papers", "fetch_chunks", "build_kg"})
 
+#: Revision turns one answer may be rejected into. The gate is a control rule with
+#: an uncalibrated threshold, so a rejection is a signal to re-read the answer once
+#: or twice — not a licence to spend the run on it. Past this the answer is accepted
+#: and the verdicts stay in the log; five recorded rewrites of an unchanged answer
+#: cost half of one run's spend and moved the aggregate 0.73 -> 0.39.
+MAX_FINAL_GATE_REJECTIONS = 3
+
 
 def _error_envelope(kind: str, message: str) -> dict[str, Any]:
     """Return the RPC failure shape the sandbox façade raises on."""
@@ -218,6 +225,9 @@ class Runtime:
         # Stage-gate verdicts produced while the current block ran, shown to the
         # root at the end of that block's observation.
         self._pending_gate_lines: list[str] = []
+        # Final-gate rejections that have bought a revision turn (see
+        # ``MAX_FINAL_GATE_REJECTIONS``).
+        self._final_rejections: int = 0
 
     # ------------------------------------------------------------------- run
     def run(self) -> RunResult:
@@ -768,7 +778,10 @@ class Runtime:
         )
 
         lines = [
-            "import json",
+            # ``copy`` is seeded because the prompt tells the root to refine retrieval
+            # through ``copy.deepcopy(buckets)`` — the instruction has to work as
+            # written, not send the model looking for an import.
+            "import copy, json",
             f"query = {self.query!r}",
             f"RUN_ID = {self.run_id!r}",
             f"WORKSPACE = {config.SANDBOX_WORKSPACE_PATH!r}",
@@ -1019,16 +1032,31 @@ class Runtime:
             answer = final
 
             if verdict is not None and verdict.verdict == "fail":
+                self._final_rejections += 1
+
+                if self._final_rejections > MAX_FINAL_GATE_REJECTIONS:
+                    # The gate is a control rule, not the definition of a finished
+                    # run: past the cap the answer is accepted and the disagreement
+                    # stays in the log. One recorded run spent five turns and half its
+                    # cost rewriting an answer whose verdict moved 0.73 -> 0.39 with the
+                    # content unchanged, so an unbounded loop buys revisions nobody can
+                    # attribute.
+                    self._note(
+                        "final gate rejected the answer "
+                        f"{self._final_rejections} times; accepted with the verdicts recorded"
+                    )
+                    self._after_turn()
+
+                    return (answer, False, None)
+
                 self._messages.append(
                     {
                         "role": "user",
                         "content": (
-                            f"The final gate rejected the answer: "
-                            f"{verdict.failing_criterion or 'unsupported claim'}. "
-                            "For each claim it points at, quote the sentence in the cited "
-                            "chunk that states it, or move it under the claims you could "
-                            "not support. Your retrieved chunks are still in the namespace; "
-                            "do not re-run retrieval. Then emit FINAL_ANSWER: again."
+                            "The final gate rejected the answer. "
+                            f"{verdict.feedback or verdict.failing_criterion or 'unsupported'} "
+                            "Your retrieved chunks are still in the namespace; do not re-run "
+                            "retrieval. Then emit FINAL_ANSWER: again."
                         ),
                     }
                 )
@@ -1549,9 +1577,14 @@ def _bounded_artifact(result: Any) -> dict[str, Any]:
     return {"score": None, "summary": summary}
 
 
-#: Chunks whose text the retrieval gate is shown, and how much of each.
-GATE_SAMPLE_CHUNKS = 6
-GATE_SAMPLE_CHARS = 300
+#: Characters of chunk text the retrieval gate is shown, and how much of one chunk.
+#: The earlier state was six 300-character samples: 1.2 % of a funnel's text, asked
+#: whether that output covered every objective of the query. It failed every recorded
+#: run at 0.03-0.18, which is the gate saying it cannot see, not a judgement of the
+#: retrieval. The decision layer is input-priced at roughly $0.04 per million tokens,
+#: so the whole sample costs about $0.0005 against a run that costs $0.30.
+GATE_SAMPLE_CHARS = 48000
+GATE_SAMPLE_CHUNK_CHARS = 1200
 
 #: Triples shown to the knowledge-graph gate. Counts cannot answer "do the entities
 #: and relations reflect what the chunks say"; a handful of real edges can.
@@ -1602,27 +1635,59 @@ def _retrieval_gate_summary(result: Any) -> dict[str, Any]:
 
     ``{"chunks": 100, "papers": 19}`` cannot answer "does this cover every
     objective the query names": counts carry no content. The gate gets the paper
-    ids plus a few real excerpts, bounded, so a sufficiency judgement has evidence
-    in front of it.
+    ids and the text of the retrieved chunks, up to ``GATE_SAMPLE_CHARS``.
+
+    The sample is taken **round-robin across papers**, not off the top of the
+    ranking, because the question is coverage: the best five chunks of one paper
+    answer a narrower question and would bias the verdict toward "insufficient".
     """
     if not isinstance(result, Mapping):
         return {"type": type(result).__name__}
 
-    chunks = result.get("chunks") or []
+    chunks = [row for row in (result.get("chunks") or []) if isinstance(row, Mapping)]
     papers = result.get("papers") or {}
     # The funnel's ``papers`` is a map keyed by arxiv id; reading it as a list of
     # rows yielded the keys as strings and left ``paper_ids`` always empty.
     paper_ids = [str(key) for key in papers][:8] if isinstance(papers, Mapping) else []
-    samples = [
-        {
-            "id": str(row.get("chunk_uuid") or ""),
-            "paper": str(row.get("arxiv_id") or ""),
-            "section": str(row.get("section_type") or ""),
-            "text": " ".join(str(row.get("chunk_text") or "").split())[:GATE_SAMPLE_CHARS],
-        }
-        for row in chunks[:GATE_SAMPLE_CHUNKS]
-        if isinstance(row, Mapping)
-    ]
+
+    by_paper: dict[str, list[Mapping[str, Any]]] = {}
+
+    for row in chunks:
+        by_paper.setdefault(str(row.get("arxiv_id") or ""), []).append(row)
+
+    samples: list[dict[str, str]] = []
+    used = 0
+    depth = 0
+
+    while used < GATE_SAMPLE_CHARS:
+        took_one = False
+
+        for rows in by_paper.values():
+            if depth >= len(rows):
+                continue
+
+            took_one = True
+            row = rows[depth]
+            text = " ".join(str(row.get("chunk_text") or "").split())[:GATE_SAMPLE_CHUNK_CHARS]
+
+            if text:
+                samples.append(
+                    {
+                        "id": str(row.get("chunk_uuid") or ""),
+                        "paper": str(row.get("arxiv_id") or ""),
+                        "section": str(row.get("section_type") or ""),
+                        "text": text,
+                    }
+                )
+                used += len(text)
+
+            if used >= GATE_SAMPLE_CHARS:
+                break
+
+        if not took_one:
+            break
+
+        depth += 1
 
     return {
         "chunks": len(chunks),

@@ -236,6 +236,114 @@ class EvaluateTestCase(unittest.TestCase):
             flagged_claim_names({f"c{i}": 0.9 - i / 100 for i in range(5)}), ["c0", "c1", "c2"]
         )
 
+    # -------------------------------------------------- threshold attribution
+    def test_a_failed_aggregate_records_the_threshold_that_fired(self) -> None:
+        # The recorded case: aggregate 0.55 fails, the best claim is 0.50, and the
+        # root was told "claim-10 (P=0.50)" — a claim the rule never rejected, with
+        # tau_claim absent from the message.
+        one = "11111111-1111-5111-8111-111111111111"
+        recorder = _RecordingTrajectory()
+        client = _FakeJevClient({"gate": {"noul": 0.55}, "claim-01": {"noul": 0.5}})
+        client.trajectory = recorder  # type: ignore[assignment]
+
+        verdict = evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"ReCAP keeps a sliding window of K rounds of the plan [{one}].",
+                    "citations": [one],
+                    "evidence": {one: "a"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "fail")
+        self.assertIn("failed on the answer as a whole", verdict.feedback or "")
+        self.assertIn("tau_agg=0.50", verdict.feedback or "")
+        self.assertIn("tau_claim=0.70", verdict.feedback or "")
+
+        extra = recorder.events[-1]["extra"]
+        self.assertEqual(extra["decision"], "aggregate")
+        self.assertEqual(extra["tau_agg"], 0.5)
+        self.assertEqual(extra["tau_claim"], 0.7)
+
+    def test_a_claim_over_the_claim_threshold_is_the_decision(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+        recorder = _RecordingTrajectory()
+        client = _FakeJevClient({"gate": {"noul": 0.1}, "claim-01": {"noul": 0.93}})
+        client.trajectory = recorder  # type: ignore[assignment]
+
+        verdict = evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"ReCAP keeps a sliding window of K rounds of the plan [{one}].",
+                    "citations": [one],
+                    "evidence": {one: "a"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        assert verdict is not None
+        self.assertIn("failed on one claim, not on the answer", verdict.feedback or "")
+        self.assertEqual(recorder.events[-1]["extra"]["decision"], "claim")
+
+    def test_both_thresholds_failing_is_recorded_as_such(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+        recorder = _RecordingTrajectory()
+        client = _FakeJevClient({"gate": {"noul": 0.88}, "claim-01": {"noul": 0.91}})
+        client.trajectory = recorder  # type: ignore[assignment]
+
+        verdict = evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"ReCAP keeps a sliding window of K rounds of the plan [{one}].",
+                    "citations": [one],
+                    "evidence": {one: "a"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        assert verdict is not None
+        self.assertIn("both thresholds", verdict.feedback or "")
+        self.assertEqual(recorder.events[-1]["extra"]["decision"], "both")
+
+    def test_a_pass_records_no_decision(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+        recorder = _RecordingTrajectory()
+        client = _FakeJevClient({"gate": {"noul": 0.2}, "claim-01": {"noul": 0.1}})
+        client.trajectory = recorder  # type: ignore[assignment]
+
+        verdict = evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"ReCAP keeps a sliding window of K rounds of the plan [{one}].",
+                    "citations": [one],
+                    "evidence": {one: "a"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "pass")
+        self.assertIsNone(verdict.feedback)
+        self.assertIsNone(recorder.events[-1]["extra"]["decision"])
+
     def test_all_claims_supported_passes(self) -> None:
         one = "11111111-1111-5111-8111-111111111111"
         two = "22222222-2222-5222-8222-222222222222"
@@ -413,6 +521,16 @@ class EvaluateTestCase(unittest.TestCase):
                 trace_ctx=TraceCtx(trace_id="t1", step_idx=0, actor="root"),
             )
         self.assertIsNone(verdict)
+
+
+class _RecordingTrajectory:
+    """Capture ``gate.verdict`` events: the log is where the decision rule lives."""
+
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def log_event(self, **kwargs) -> None:
+        self.events.append(kwargs)
 
 
 class _FakeJevClient:

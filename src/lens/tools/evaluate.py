@@ -75,6 +75,11 @@ class StageVerdict:
     confidence: float | None = None
     failing_criterion: str | None = None
     tier: str | None = None
+    #: The rejection sentence handed to the root: which threshold failed, at what
+    #: value, and against which limit. Kept out of :meth:`to_dict` because it is
+    #: derived from ``failing_criterion`` plus the logged numbers, and the envelope
+    #: shape is read by every tool consumer.
+    feedback: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable verdict for the trajectory.
@@ -319,6 +324,62 @@ NO_CLAIM_NAMED = (
     "but no single claim scored {limit:.2f} or more on its own (highest {top}). Check "
     "uncited summary sentences and claims whose quote is only on the topic"
 )
+
+
+def _feedback(
+    *,
+    rule: str,
+    aggregate: float | None,
+    failed: Mapping[str, float],
+    flagged: Sequence[str],
+    claim_scores: Mapping[str, float],
+) -> str:
+    """Return the sentence the root is given when the final gate rejects the answer.
+
+    It names the threshold that failed and nothing else. The root used to receive
+    ``claim-10 (P=0.50)`` with ``tau_claim`` never in the message, so a claim the rule
+    never rejected read as a failure and the only visible lever was to rewrite; six
+    consecutive rewrites of an unchanged answer followed, five of them rejected on the
+    aggregate alone.
+    """
+    tau_agg = f"tau_agg={AGGREGATE_FAIL_PROBABILITY:.2f}"
+    tau_claim = f"tau_claim={CLAIM_FAIL_PROBABILITY:.2f}"
+    aggregate_text = "P not recorded" if aggregate is None else f"P={aggregate:.2f}"
+    named = list(failed) or list(flagged)
+    highest = max(claim_scores, key=lambda name: claim_scores[name]) if claim_scores else None
+
+    if rule == "claim":
+        worst = named[0]
+        return (
+            f"The final gate failed on one claim, not on the answer: {worst} scored "
+            f"P={claim_scores.get(worst, float('nan')):.2f} against {tau_claim}, while "
+            f"the answer as a whole scored {aggregate_text} (under {tau_agg}). Quote the "
+            f"sentence in the chunk that states {worst}, or move it under the claims you "
+            "could not support, and leave the other claims alone."
+        )
+
+    if rule == "both":
+        return (
+            f"The final gate failed on both thresholds: the answer as a whole scored "
+            f"{aggregate_text} against {tau_agg}, and "
+            + ", ".join(f"{name} scored P={failed[name]:.2f}" for name in named)
+            + f" against {tau_claim}. Quote the sentence in the chunk that states each "
+            "named claim, or move it under the claims you could not support."
+        )
+
+    top = (
+        f"highest {highest} at {claim_scores[highest]:.2f}"
+        if highest
+        else "no claim was scored on its own"
+    )
+    return (
+        f"The final gate failed on the answer as a whole: {aggregate_text} against "
+        f"{tau_agg}. No individual claim reached {tau_claim} ({top}), so no "
+        "single claim is proven unsupported and there is nothing to fix claim by claim. "
+        "Re-read the answer for sentences that assert something about the evidence "
+        "without a citation, and for quotes that only share the topic with their claim; "
+        "delete an assertion you cannot quote rather than reword it."
+    )
 
 
 def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:
@@ -677,6 +738,10 @@ def evaluate_stage(
     }
 
     flagged_claims: list[str] = []
+    # Which threshold produced the rejection. The root cannot infer it (the criterion
+    # names a claim at whatever score the feedback rule used), and neither can a
+    # reader of the log, which is why it is recorded rather than re-derived.
+    aggregate_failed = verdict_value == "fail"
 
     if failed_claims:
         worst = max(failed_claims, key=lambda name: failed_claims[name])
@@ -707,14 +772,40 @@ def evaluate_stage(
                 top=f"{top} at {claim_scores[top]:.2f}",
             )
 
+    if failed_claims and aggregate_failed:
+        rule: str | None = "both"
+    elif failed_claims:
+        rule = "claim"
+    elif verdict_value == "fail":
+        rule = "aggregate"
+    else:
+        rule = None
+
+    feedback = (
+        _feedback(
+            rule=rule,
+            aggregate=confidence,
+            failed=failed_claims,
+            flagged=flagged_claims,
+            claim_scores=claim_scores,
+        )
+        if rule is not None
+        else None
+    )
+
     verdict = StageVerdict(
         verdict=verdict_value,
         confidence=confidence,
         # A criterion is only meaningful when the gate did not pass.
         failing_criterion=criterion if verdict_value != "pass" else None,
         tier="jev",
+        feedback=feedback,
     )
-    scope_extra: dict[str, Any] = {}
+    scope_extra: dict[str, Any] = {
+        "decision": rule,
+        "tau_agg": AGGREGATE_FAIL_PROBABILITY,
+        "tau_claim": CLAIM_FAIL_PROBABILITY,
+    }
 
     if claim_scores:
         scope_extra.update(

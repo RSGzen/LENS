@@ -79,6 +79,13 @@ _STRUCTURE = re.compile(r"^(?:[-*\u2022#|>]|\d+\.)\s")
 #: Punctuation left behind when the ids are removed.
 _RESIDUE = re.compile(r"[\s\-–—•*:;,.()\[\]/|<>\"'`]+")
 
+#: A prose line ends with sentence-final punctuation, possibly behind a closing
+#: quote or bracket. A line that does not is a heading or a label however many
+#: words it holds: measured on a recorded answer, `Q2 — How these methods differ in
+#: where aggregation happens (grounded by quotes)` was asked about as an uncited
+#: claim, scored 0.50 for asserting nothing, and was then named as the culprit.
+_TERMINAL = re.compile(r"[.!?][\"'”’)\]]*$")
+
 
 #: A top-level bullet and everything under it, up to the next bullet.
 _BULLET_BLOCK = re.compile(r"(?m)^(?:[-*\u2022]\s+).*?(?=^[-*\u2022]\s+|\Z)", re.DOTALL)
@@ -101,7 +108,9 @@ def uncited_units(text: str) -> list[tuple[str, list[str]]]:
 
     Only non-structure lines qualify: a bullet, heading, table row or quote is handled
     elsewhere, and a bullet's claim is already covered by its own unit, citations and
-    all. A line that ends with ``:`` is a lead-in to what follows, not a claim.
+    all. A line that ends with ``:`` is a lead-in to what follows, not a claim, and a
+    line without sentence-final punctuation is a heading or a label: a claim is
+    something the answer *states*, so it ends like a sentence.
     """
     units: list[tuple[str, list[str]]] = []
 
@@ -115,6 +124,13 @@ def uncited_units(text: str) -> list[tuple[str, list[str]]]:
         # aggregation happens:"). It scored highest of every unit because it cites
         # nothing, so the gate's feedback kept naming headings for the model to fix.
         if unit.endswith(":"):
+            continue
+
+        # A heading asserts nothing, so asking whether an excerpt supports it can only
+        # produce an ambiguous score that lands on the aggregate threshold. Requiring
+        # sentence-final punctuation is the cheapest test that separates a sentence
+        # from a heading; it also drops table rows and bare labels.
+        if not _TERMINAL.search(unit):
             continue
 
         if cited_ids(unit):
