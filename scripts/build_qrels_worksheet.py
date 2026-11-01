@@ -29,17 +29,29 @@ ABSTRACT_CHARS = 900
 SHUFFLE_SEED = 20261101
 
 
-def load_rankings(path: Path) -> dict[str, set[str]]:
-    """Return ``{query_id: {doc_id}}`` for the pooled candidates."""
+def load_rankings(path: Path, configs: Sequence[str] = ()) -> dict[str, set[str]]:
+    """Return ``{query_id: {doc_id}}`` for the pooled candidates.
+
+    ``configs`` restricts the pool to the configurations being judged: pooling every
+    point in the grid would judge papers no shipped configuration returns, and the
+    plan allows at most three.
+    """
     pool: dict[str, set[str]] = {}
+    wanted = set(configs)
 
     with path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
             query_id = (row.get("query_id") or "").strip()
             doc_id = (row.get("doc_id") or "").strip()
+            config = (row.get("config") or "").strip()
 
-            if query_id and doc_id:
-                pool.setdefault(query_id, set()).add(doc_id)
+            if not query_id or not doc_id:
+                continue
+
+            if wanted and config not in wanted:
+                continue
+
+            pool.setdefault(query_id, set()).add(doc_id)
 
     return pool
 
@@ -62,13 +74,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--rankings", required=True, help="config,query_id,rank,doc_id CSV")
     parser.add_argument("--out", required=True, help="worksheet CSV (fill the rel column)")
     parser.add_argument(
+        "--config",
+        nargs="*",
+        default=None,
+        help="pool only these configurations (the plan allows at most three)",
+    )
+    parser.add_argument(
         "--queries",
         default=None,
         help="campaign JSON with the query texts, so the sheet can show them",
     )
     args = parser.parse_args(argv)
 
-    pool = load_rankings(Path(args.rankings))
+    pool = load_rankings(Path(args.rankings), args.config or ())
     texts: dict[str, str] = {}
 
     if args.queries:

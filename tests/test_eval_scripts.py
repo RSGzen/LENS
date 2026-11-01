@@ -242,6 +242,23 @@ class QrelsWorksheetTests(unittest.TestCase):
 
         self.assertEqual(pool, {})
 
+    def test_only_the_pooled_configurations_are_judged(self) -> None:
+        # The plan allows at most three configurations in the pool; judging a point
+        # that no shipped configuration runs would spend the human's time on it.
+        text = (
+            "config,query_id,rank,doc_id\n"
+            "a1-dense,q1,1,2401.00001\n"
+            "k200-n20,q1,1,2401.00002\n"
+            "k100-n50,q1,1,2401.00003\n"
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rankings.csv"
+            path.write_text(text, encoding="utf-8")
+            pool = build_qrels_worksheet.load_rankings(path, ["a1-dense", "k200-n20"])
+
+        self.assertEqual(sorted(pool["q1"]), ["2401.00001", "2401.00002"])
+
 
 class FreezeTests(unittest.TestCase):
     def record(self, **overrides: object) -> dict:
