@@ -56,6 +56,7 @@ from lens.agent.context import (
     build_messages,
     build_system_prompt,
     compact_messages,
+    context_trigger_tokens,
     count_tokens,
     extract_final_answer,
     extract_python_block,
@@ -318,7 +319,7 @@ class Runtime:
 
         chunks: list[dict[str, Any]] = []
         dropped = 0
-        budget = config.CONTEXT_TOKEN_LIMIT
+        budget = config.FLAT_EVIDENCE_TOKEN_LIMIT
 
         for row in bundle.get("chunks") or []:
             cost = count_tokens(str(row.get("chunk_text") or "")) + 8
@@ -838,7 +839,8 @@ class Runtime:
             question=self.query,
         )
         messages = build_messages(system_prompt=system_prompt, memory=self._messages)
-        messages = compact_messages(messages)
+        remaining = self.budget.limits.max_tokens - (self.budget.tokens_in + self.budget.tokens_out)
+        messages = compact_messages(messages, budget=context_trigger_tokens(remaining))
 
         # The tail, always: the usage line (it changes every turn, which is why it
         # must not live in the system prompt) and, near a cap, the wrap-up nudge.

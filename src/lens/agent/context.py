@@ -401,13 +401,30 @@ def estimate_tokens(messages: Sequence[Mapping[str, Any]]) -> int:
     )
 
 
+def context_trigger_tokens(remaining_tokens: int) -> int:
+    """Return the prompt size at which compaction runs, from the budget that remains.
+
+    Derived from the budget rather than from the model's window because the window
+    is not what binds: with a ten-turn cap and about 2,500 tokens added per turn the
+    largest prompt a run can reach is roughly 40,000 tokens against a 400,000-token
+    window. A quarter of what is left shrinks as a run spends down, so the last turns
+    stay affordable; the floor keeps a usable history when little budget remains.
+    """
+    if remaining_tokens <= 0:
+        return config.CONTEXT_TRIGGER_FLOOR
+
+    return max(
+        config.CONTEXT_TRIGGER_FLOOR,
+        int(remaining_tokens * config.CONTEXT_TRIGGER_RATIO_OF_REMAINING),
+    )
+
+
 def compact_messages(
     messages: Sequence[Mapping[str, Any]],
     *,
-    token_limit: int = config.CONTEXT_TOKEN_LIMIT,
-    ratio: float = config.CONTEXT_COMPACT_RATIO,
+    budget: int,
 ) -> list[dict[str, Any]]:
-    """Return a compacted message list when the estimated size crosses the limit.
+    """Return a compacted message list when the estimated size crosses ``budget``.
 
     Policy: keep the system message and the most recent turns; replace or evict
     older observations. Compaction must be deterministic and must never drop the
@@ -415,9 +432,9 @@ def compact_messages(
 
     How it shrinks:
 
-    - the **target is the trigger point** (``token_limit * ratio``), so there is
-      headroom before the next compaction. A budget derived from the *current*
-      bloated size would grow with the problem and never converge.
+    - the **target is the trigger point** itself, so there is headroom before the
+      next compaction. A budget derived from the *current* bloated size would grow
+      with the problem and never converge.
     - the **system message is never a candidate** — it carries the output
       contract, the tool manifest and the final-answer instruction.
     - messages are taken **newest-first** until the target is reached, so the turn
@@ -433,8 +450,6 @@ def compact_messages(
     The size test is :func:`estimate_tokens` — the **same estimator** the caller
     uses to decide *when* to compact, so the two decisions cannot disagree.
     """
-    budget = max(1, int(token_limit * ratio))
-
     if estimate_tokens(messages) <= budget:
         return [dict(message) for message in messages]  # copies: never mutate the caller
 

@@ -779,7 +779,7 @@ class FlatBaselineTestCase(unittest.TestCase):
         self.assertIn("beta", messages[1]["content"])
 
     def test_an_over_size_chunk_is_dropped_and_counted(self) -> None:
-        with patch.object(config, "CONTEXT_TOKEN_LIMIT", 1):
+        with patch.object(config, "FLAT_EVIDENCE_TOKEN_LIMIT", 1):
             self.runtime.run_flat()
 
         events = [

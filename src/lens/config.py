@@ -357,13 +357,20 @@ BLOB_FORMAT_VERSION = 2
 # minutes is well above the 120 s exec cap and a full turn on this hardware.
 RUN_HEARTBEAT_STALE_S = float(os.environ.get("LENS_RUN_HEARTBEAT_STALE_S", "300"))
 
-# Context assembly. Compaction triggers when the estimated root context exceeds
-# ``CONTEXT_COMPACT_RATIO * CONTEXT_TOKEN_LIMIT`` (= 30,000 tokens by default).
-# 40k is ~10% of gpt-5's window and ~15% of qwen3-coder's. A turn needs far less:
-# the retrieved evidence stays a sandbox variable, so the context only carries a
-# printed digest (~1.5k tokens), the tool manifest, query.json and budget.md.
-CONTEXT_TOKEN_LIMIT = int(os.environ.get("LENS_CONTEXT_TOKEN_LIMIT", "40000"))
-CONTEXT_COMPACT_RATIO = float(os.environ.get("LENS_CONTEXT_COMPACT_RATIO", "0.75"))
+# Inline evidence budget for the flat (naive RAG) arm: how many tokens of chunk text
+# are pasted into one prompt. It is not a context ceiling and the looping arms never
+# use it -- those keep evidence in a sandbox variable and print a digest.
+FLAT_EVIDENCE_TOKEN_LIMIT = int(os.environ.get("LENS_FLAT_EVIDENCE_TOKENS", "40000"))
+
+# Compaction trigger, derived from the **budget that remains**, not from the model's
+# window. The window was never the binding constraint: with 10 iterations and about
+# 2,500 tokens added per turn the largest prompt a run can reach is ~40,000 tokens
+# against a 400,000 window, so a window-relative trigger would never fire -- and if
+# it did, one such prompt would spend most of a query's token budget on one turn.
+# A quarter of what is left keeps the last turns affordable and shrinks as the run
+# spends down. The floor stops it compacting below a useful history.
+CONTEXT_TRIGGER_RATIO_OF_REMAINING = float(os.environ.get("LENS_CONTEXT_TRIGGER_RATIO", "0.25"))
+CONTEXT_TRIGGER_FLOOR = int(os.environ.get("LENS_CONTEXT_TRIGGER_FLOOR", "12000"))
 # Wrap-up nudge (see ``agent.context.budget_warning``): at this fraction of any
 # cap the orchestrator asks the root to land the plane, so hitting a cap produces
 # a labelled partial answer instead of a truncation mid-thought.
@@ -376,23 +383,19 @@ ROOT_MAX_OUTPUT_TOKENS = int(os.environ.get("LENS_ROOT_MAX_OUTPUT_TOKENS", "8000
 # the observation becomes a message.
 TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "3000"))
 
-# Cumulative token cap, DERIVED (not tuned): the root's turns plus an allowance
-# for sub-task calls, because both are billed against the same budget.
-#   root:       iterations x compacted-context target x 1.25 overhead
-#               10 x 30,000 x 1.25 = 375,000
-#   sub-tasks:  MAX_SUB_TASKS x tokens per call (4 chunks ~ 2,700 in + 400 out)
-#               40 x 3,125 = 125,000
-#   total:      500,000
-# The sub-task half is an estimate from the item size, not a measurement: the first
-# runs that use sub-tasks are what tell us whether it is generous or tight.
-SUB_TASK_TOKENS_ESTIMATE = int(os.environ.get("LENS_SUB_TASK_TOKENS", "3125"))
+# Cumulative token cap, DERIVED from a **measurement** rather than from a chosen
+# context ceiling: iterations x measured tokens per turn x 1.25 overhead.
+#   tokens per turn = 14,000 (p90 of 432 recorded root calls; median 7,756)
+#   10 x 14,000 x 1.25 = 175,000
+# The previous form took the compaction trigger as "the average turn", which is a
+# chosen number, so the cap moved whenever that choice did. Sub-task calls spend
+# this same budget rather than carrying their own allowance: an allowance for a
+# capability nothing used is a number pretending to be a measurement.
+CONTEXT_TURN_TOKENS_ESTIMATE = int(os.environ.get("LENS_CONTEXT_TURN_TOKENS", "14000"))
 MAX_TOKENS_PER_QUERY = int(
     os.environ.get(
         "LENS_MAX_TOKENS",
-        str(
-            int(MAX_ITERATIONS * CONTEXT_TOKEN_LIMIT * CONTEXT_COMPACT_RATIO * 1.25)
-            + MAX_SUB_TASKS * SUB_TASK_TOKENS_ESTIMATE
-        ),
+        str(int(MAX_ITERATIONS * CONTEXT_TURN_TOKENS_ESTIMATE * 1.25)),
     )
 )
 

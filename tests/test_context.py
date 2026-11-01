@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from lens import config
 from lens.agent import context
 
 
@@ -183,13 +184,21 @@ class ContextTestCase(unittest.TestCase):
         self.assertEqual(messages[0], {"role": "system", "content": "sys"})
         self.assertEqual(messages[-1]["content"], "hi")
 
+    def test_the_context_trigger_is_a_quarter_of_what_remains(self) -> None:
+        self.assertEqual(context.context_trigger_tokens(200_000), 50_000)
+
+    def test_the_trigger_never_falls_below_the_floor(self) -> None:
+        self.assertEqual(context.context_trigger_tokens(1_000), config.CONTEXT_TRIGGER_FLOOR)
+        self.assertEqual(context.context_trigger_tokens(0), config.CONTEXT_TRIGGER_FLOOR)
+        self.assertEqual(context.context_trigger_tokens(-5), config.CONTEXT_TRIGGER_FLOOR)
+
     def test_compact_messages_keeps_system_and_recent_turn(self) -> None:
         messages = [
             {"role": "system", "content": "sys"},
             *[{"role": "assistant", "content": "x" * 100} for _ in range(20)],
             {"role": "user", "content": "latest"},
         ]
-        compacted = context.compact_messages(messages, token_limit=10, ratio=0.5)
+        compacted = context.compact_messages(messages, budget=10)
         self.assertEqual(compacted[0]["role"], "system")
         self.assertEqual(compacted[-1]["content"], "latest")
         self.assertLessEqual(len(compacted), len(messages))
