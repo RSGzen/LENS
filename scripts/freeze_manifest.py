@@ -51,7 +51,11 @@ REQUIRED = (
     "prompt",
     "run_mode",
 )
-INSTRUMENT_SUFFIXES = (".jsonl",)
+#: Instrument files that a reported number depends on. The query set, the capacity
+#: grid and the judging rubric are JSON/Markdown, not JSONL: a freeze that hashed
+#: only ``.jsonl`` recorded an empty block while the wave's definitions sat beside it
+#: in the same directory.
+INSTRUMENT_SUFFIXES = (".jsonl", ".json", ".md")
 
 
 def _run(command: Sequence[str], *, cwd: Path | None = None) -> str | None:
