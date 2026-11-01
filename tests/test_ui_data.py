@@ -135,6 +135,9 @@ class UiDataTestCase(unittest.TestCase):
                 "criterion": criterion,
                 "polarity": "unsupported",
                 "tier": "jev",
+                "decision": "claim",
+                "tau_agg": 0.5,
+                "tau_claim": 0.7,
             },
         )
 
@@ -458,6 +461,12 @@ class UiDataTestCase(unittest.TestCase):
         self.assertAlmostEqual(call.confidence, 0.96)
         self.assertEqual(call.claims_failed, ("claim-01",))
         self.assertAlmostEqual(call.claim_scores["claim-01"], 0.92)
+        # The rule that produced the verdict, and the thresholds in force: the page
+        # cannot infer either (a claim at 0.50 is named as feedback but is not a
+        # failure), and re-deriving them is how a panel starts contradicting the gate.
+        self.assertEqual(call.decision, "claim")
+        self.assertAlmostEqual(call.tau_agg or 0.0, 0.5)
+        self.assertAlmostEqual(call.tau_claim or 0.0, 0.7)
         self.assertIn("unsupported claim", call.question or "")
         self.assertIn("candidate answer", call.state or "")
         self.assertAlmostEqual(call.cost_usd, 0.0004)

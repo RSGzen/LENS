@@ -317,6 +317,7 @@ def render_playback(view: data.RunView) -> None:
     _advance(view)
     render_controls(view)
     render_meters(view)
+    render_gate_summary(view)
     render_timeline(view)
     render_evidence(view)
 
@@ -544,6 +545,48 @@ def render_meters(view: data.RunView) -> None:
         )
 
 
+def render_gate_summary(view: data.RunView) -> None:
+    """Every gate call up to the cursor, one row each, side by side.
+
+    The question a reader has is "which threshold rejected this answer, and did the
+    next draft move it". A per-turn panel answers neither, and the two thresholds mean
+    opposite things: a claim at 0.50 is *not* a failure while a 0.70 claim is.
+    """
+    cursor = st.session_state["cursor"]
+    rows = [
+        {
+            "turn": turn,
+            "stage": call.stage or "",
+            "rule that decided": call.decision or "",
+            "P(answer)": None if call.confidence is None else round(call.confidence, 2),
+            "tau_agg": call.tau_agg if call.tau_agg is not None else TAU_AGGREGATE,
+            "top claim P": (
+                round(max(call.claim_scores.values()), 2) if call.claim_scores else None
+            ),
+            "tau_claim": call.tau_claim if call.tau_claim is not None else TAU_CLAIM,
+            "claims failed": len(call.claims_failed),
+            "verdict": call.verdict,
+        }
+        for turn, calls in sorted(view.gates.items())
+        if turn <= cursor
+        for call in calls
+    ]
+
+    if not rows:
+        return
+
+    st.markdown("**Gate verdicts**")
+    st.dataframe(rows, hide_index=True, width="stretch")
+    st.caption(
+        "One row per decision-layer call. **rule that decided** is the threshold the "
+        "verdict came from: `aggregate` (the answer as a whole), `claim` (one claim at "
+        f"≥ {TAU_CLAIM:.2f}), or `both`. A claim between {TAU_AGGREGATE:.2f} and "
+        f"{TAU_CLAIM:.2f} is named as feedback only — it is not what rejected the "
+        "answer. Recorded runs from before the gate logged its rule leave that column "
+        "empty."
+    )
+
+
 def render_timeline(view: data.RunView) -> None:
     """The turn timeline (U4): every turn up to the cursor."""
     cursor = st.session_state["cursor"]
@@ -674,6 +717,7 @@ def render_gate(run_id: str, turn: int, gates: Sequence[data.GateCall]) -> None:
             st.markdown(
                 f"**{index}. {call.stage or 'stage not recorded'} — {call.verdict}**"
                 f"{probability} · ${call.cost_usd:.6f}"
+                + (f" · rule: {call.decision}" if call.decision else "")
                 + (f" · {_duration(call.latency_ms)}" if call.latency_ms else "")
                 + (f" · {call.tokens_in:,} tokens in" if call.tokens_in else "")
             )

@@ -124,6 +124,12 @@ class GateCall:
     confidence: float | None
     criterion: str | None
     polarity: str | None
+    #: Which threshold produced the verdict: ``aggregate``, ``claim`` or ``both``.
+    #: ``None`` on runs recorded before the gate logged it, and on a pass.
+    decision: str | None
+    #: The thresholds in force when the call was made (``None`` on older runs).
+    tau_agg: float | None
+    tau_claim: float | None
     claims_failed: tuple[str, ...]
     #: claim id -> probability the claim is unsupported.
     claim_scores: dict[str, float]
@@ -465,6 +471,9 @@ def _gate_call(event: dict[str, Any], request: dict[str, Any]) -> GateCall:
         confidence=event.get("confidence"),
         criterion=extra.get("criterion"),
         polarity=extra.get("polarity"),
+        decision=extra.get("decision"),
+        tau_agg=extra.get("tau_agg"),
+        tau_claim=extra.get("tau_claim"),
         claims_failed=tuple(str(name) for name in extra.get("claims_failed") or ()),
         claim_scores={
             str(key): float(value)
