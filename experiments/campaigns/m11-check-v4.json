@@ -1,0 +1,26 @@
+{
+  "name": "m11-check-v4",
+  "repeats": 1,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "One live check of rig v4 (d790440): expanded short ids at the gate, [gate] lines in the observation, sub_extract guidance past the observation cap, build_kg only to traverse, no chunk HNSW index."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Same query as m11-latency-v1 and m11-w1v-v3, so the run is comparable to six recorded ones."
+    }
+  ]
+}
