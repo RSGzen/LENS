@@ -272,6 +272,12 @@ ANSWER_MAX_CHARS = 8000
 #: building an enormous question map.
 MAX_GATE_CLAIMS = 40
 
+#: The aggregate verdict boundary: a ``noul`` probability at or above this fails the
+#: question it was asked. It is read by the UI as well, so the page states the number
+#: the gate actually applies instead of restating it.
+AGGREGATE_FAIL_PROBABILITY = 0.5
+
+
 #: A claim at or above this probability of being unsupported overturns a **passing**
 #: aggregate verdict, and is then named as the failing criterion.
 #:
@@ -342,7 +348,8 @@ def _read_answer(
         and not isinstance(answer.get("noul"), bool)
     ):
         noul = float(answer["noul"])
-        raw = (noul < 0.5) if polarity == "unsupported" else (noul >= 0.5)
+        limit = AGGREGATE_FAIL_PROBABILITY
+        raw = (noul < limit) if polarity == "unsupported" else (noul >= limit)
         answer = {**answer, "confidence": noul}
     confidence = answer.get("confidence")
 

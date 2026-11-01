@@ -101,7 +101,11 @@ class UiDataTestCase(unittest.TestCase):
                     },
                     "claim-01": {
                         "type": "noul",
-                        "instructions": f"Claim claim-01 cites: {CHUNK_A}",
+                        "instructions": (
+                            f"Claim claim-01 cites: {CHUNK_A}. "
+                            "Decide whether that citation supports it.\n"
+                            "Claim: the recorded claim text"
+                        ),
                     },
                 },
             }
@@ -458,6 +462,43 @@ class UiDataTestCase(unittest.TestCase):
         self.assertIn("candidate answer", call.state or "")
         self.assertAlmostEqual(call.cost_usd, 0.0004)
         self.assertEqual(call.tokens_in, 1234)
+
+    def test_the_claim_text_is_recovered_from_the_question(self) -> None:
+        # The state lists ids and citations only; the claim itself travels in the
+        # question, so without this a reader sees "claim-01" and no claim.
+        self._make_run("run-gate-text")
+        self._gate("run-gate-text", 1)
+
+        call = data.gate_calls("run-gate-text")[1][0]
+
+        self.assertIn("claim-01", call.claim_texts)
+        self.assertIn("recorded claim text", call.claim_texts["claim-01"])
+
+    def test_the_gate_keeps_its_blob_refs(self) -> None:
+        self._make_run("run-gate-refs")
+        self._gate("run-gate-refs", 1)
+
+        call = data.gate_calls("run-gate-refs")[1][0]
+
+        self.assertTrue(call.prompt_ref)
+        self.assertTrue(call.completion_ref)
+
+    def test_blob_text_reads_a_gate_payload(self) -> None:
+        self._make_run("run-gate-blob")
+        self._gate("run-gate-blob", 1)
+        call = data.gate_calls("run-gate-blob")[1][0]
+
+        text = data.blob_text("run-gate-blob", call.completion_ref)
+
+        self.assertIsNotNone(text)
+        self.assertIn("answers", text or "")
+
+    def test_blob_text_answers_none_for_a_missing_or_bad_ref(self) -> None:
+        self._make_run("run-gate-blob-missing")
+
+        self.assertIsNone(data.blob_text("run-gate-blob-missing", None))
+        self.assertIsNone(data.blob_text("run-gate-blob-missing", "sha256:deadbeef"))
+        self.assertIsNone(data.blob_text("../etc", "sha256:deadbeef"))
 
     def test_gate_call_keeps_the_ids_each_claim_was_judged_against(self) -> None:
         self._make_run("run-gate-ids")

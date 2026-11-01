@@ -46,6 +46,7 @@ import streamlit as st
 
 from lens.agent import runstore
 from lens.observability.replay import ToolStep, Turn
+from lens.tools import evaluate
 from lens.ui import data
 
 #: Playback cadence: one turn per fragment tick. ``st.fragment`` needs
@@ -602,7 +603,7 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
             st.code(turn.observation, language="text")
 
         if gates:
-            render_gate(gates)
+            render_gate(run_id, turn.turn, gates)
 
         chips = []
 
@@ -629,7 +630,27 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
             )
 
 
-def render_gate(gates: Sequence[data.GateCall]) -> None:
+#: The two thresholds the panel explains. Read from the gate module rather than
+#: retyped, so a re-fit shows up on the page instead of contradicting it.
+TAU_AGGREGATE = evaluate.AGGREGATE_FAIL_PROBABILITY
+TAU_CLAIM = evaluate.CLAIM_FAIL_PROBABILITY
+
+#: Characters of a claim shown in the table. A unit can be a whole bullet with its
+#: explanation; the column identifies the claim, it does not replace reading it.
+CLAIM_PREVIEW_CHARS = 160
+
+
+def _claim_preview(text: str | None) -> str:
+    """Return one line of the claim, or an empty string when the log lacks it."""
+    if not text:
+        return ""
+
+    line = " ".join(text.split())
+
+    return line if len(line) <= CLAIM_PREVIEW_CHARS else line[:CLAIM_PREVIEW_CHARS] + "…"
+
+
+def render_gate(run_id: str, turn: int, gates: Sequence[data.GateCall]) -> None:
     """The gate panel: every gate call in this turn, what it was asked, what it cost.
 
     A verdict is only checkable against its own inputs, so each call shows the
@@ -639,15 +660,22 @@ def render_gate(gates: Sequence[data.GateCall]) -> None:
     """
     spend = sum(call.cost_usd for call in gates)
 
-    with st.expander(f"Gate ? {len(gates)} call(s), ${spend:.6f}"):
+    with st.expander(f"Gate — {len(gates)} call(s), ${spend:.6f}"):
+        st.caption(
+            "One decision-layer call per row. **stage** is what was being judged, **verdict** "
+            "is the outcome, **P** is the aggregate probability that the answer contains an "
+            f"unsupported or uncited claim (fail at P ≥ {TAU_AGGREGATE:.2f}), and the "
+            f"per-claim table fails a claim only at P ≥ {TAU_CLAIM:.2f}."
+        )
+
         for index, call in enumerate(gates, start=1):
-            probability = "" if call.confidence is None else f" ? P={call.confidence:.2f}"
+            probability = "" if call.confidence is None else f" · P={call.confidence:.2f}"
 
             st.markdown(
-                f"**{index}. {call.stage or 'stage not recorded'} ? {call.verdict}**"
-                f"{probability} ? ${call.cost_usd:.6f}"
-                + (f" ? {_duration(call.latency_ms)}" if call.latency_ms else "")
-                + (f" ? {call.tokens_in:,} tokens in" if call.tokens_in else "")
+                f"**{index}. {call.stage or 'stage not recorded'} — {call.verdict}**"
+                f"{probability} · ${call.cost_usd:.6f}"
+                + (f" · {_duration(call.latency_ms)}" if call.latency_ms else "")
+                + (f" · {call.tokens_in:,} tokens in" if call.tokens_in else "")
             )
 
             if call.criterion:
@@ -660,8 +688,9 @@ def render_gate(gates: Sequence[data.GateCall]) -> None:
                     [
                         {
                             "claim": claim,
+                            "what it says": _claim_preview(call.claim_texts.get(claim)),
                             "P(unsupported)": round(score, 2),
-                            "failed": claim in failed,
+                            f"failed (P ≥ {TAU_CLAIM:.2f})": claim in failed,
                             "cited ids in the question": _cited_ids_in(
                                 call.claim_questions.get(claim)
                             ),
@@ -673,12 +702,70 @@ def render_gate(gates: Sequence[data.GateCall]) -> None:
                 )
 
             if call.question:
-                st.caption("question asked for the whole answer")
+                st.caption(
+                    "question asked for the whole answer: does it contain a claim its "
+                    "citations do not support (clipped below)"
+                )
                 st.code(call.question, language="text")
 
             if call.state:
-                st.caption(f"state the verdict was based on ({len(call.state):,} characters shown)")
+                st.caption(
+                    "state the verdict was based on: query, stage, answer, claims and the "
+                    f"cited excerpts ({len(call.state):,} characters shown, clipped)"
+                )
                 st.code(call.state, language="json")
+
+            _render_gate_payload(run_id, f"{turn}-{index}", call)
+
+
+def _render_gate_payload(run_id: str, slot: str, call: data.GateCall) -> None:
+    """Load the gate's whole request and reply behind one toggle.
+
+    The clipped text above is enough to read, not enough to audit: the request is the
+    state plus every question (tens of thousands of characters), and the reply is the
+    probability for each one. Same shape as a tool's full payload -- opt-in, with a
+    download -- because a gate request is one of the largest blobs a run writes.
+    """
+    if not call.prompt_ref and not call.completion_ref:
+        return
+
+    toggle_key = f"gate-payload::{run_id}::{slot}"
+
+    if not st.checkbox(
+        "Full payload",
+        key=toggle_key,
+        help="Show the whole request (state + questions) and the whole reply",
+    ):
+        return
+
+    for label, ref, name in (
+        ("request (state + questions)", call.prompt_ref, "request"),
+        ("reply (answers)", call.completion_ref, "reply"),
+    ):
+        text = data.blob_text(run_id, ref)
+
+        st.caption(f"{label}")
+
+        if text is None:
+            st.warning(f"{name} blob missing from the bundle")
+
+            continue
+
+        st.download_button(
+            f"Download {name}",
+            data=text,
+            file_name=f"{run_id}-gate-{slot}-{name}.json",
+            key=f"download::{toggle_key}::{name}",
+        )
+
+        if len(text) > PAYLOAD_PREVIEW_CHARS:
+            st.caption(
+                f"{len(text):,} chars — previewing the first "
+                f"{PAYLOAD_PREVIEW_CHARS:,}; the button above has all of it."
+            )
+            text = text[:PAYLOAD_PREVIEW_CHARS]
+
+        st.code(text, language="json")
 
 
 def _cited_ids_in(question: str | None) -> str:
@@ -770,7 +857,7 @@ def render_evidence(view: data.RunView) -> None:
         [
             {
                 "new": "●" if row.get("chunk_uuid") in newest else "",
-                "chunk": str(row.get("chunk_uuid"))[:8],
+                "chunk": str(row.get("chunk_uuid")),
                 "paper": row.get("arxiv_id"),
                 "section": row.get("section_type"),
                 "tokens": row.get("token_count"),
@@ -803,7 +890,7 @@ def render_answer(view: data.RunView) -> None:
         st.dataframe(
             [
                 {
-                    "cited id": citation.token if len(citation.token) <= 20 else citation.token[:8],
+                    "cited id": citation.token,
                     "kind": citation.kind,
                     "paper": citation.arxiv_id,
                     "section": citation.section_type,
@@ -830,7 +917,7 @@ def render_answer(view: data.RunView) -> None:
         # of them with the whole text inside.
         with st.expander(f"Source text behind the citations ({len(chunks)} chunks)"):
             labels = [
-                f"{row['chunk_uuid'][:8]} · {row['arxiv_id']} · "
+                f"{row['chunk_uuid']} · {row['arxiv_id']} · "
                 f"{row['section_type']} · {row['chars']:,} chars"
                 for row in chunks
             ]
@@ -948,7 +1035,7 @@ def page_chunk_lookup() -> None:
         st.dataframe(
             [
                 {
-                    "chunk": str(row.get("chunk_uuid"))[:8],
+                    "chunk": str(row.get("chunk_uuid")),
                     "paper": row.get("arxiv_id"),
                     "section": row.get("section_type"),
                     "tokens": row.get("token_count"),
@@ -962,7 +1049,7 @@ def page_chunk_lookup() -> None:
         )
 
         labels = [
-            f"{str(row.get('chunk_uuid'))[:8]} · {row.get('arxiv_id')} · "
+            f"{str(row.get('chunk_uuid'))} · {row.get('arxiv_id')} · "
             f"{row.get('section_type')} · {len(str(row.get('chunk_text') or '')):,} chars"
             for row in rows
         ]

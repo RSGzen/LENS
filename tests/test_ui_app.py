@@ -157,28 +157,34 @@ class UiAppTestCase(unittest.TestCase):
         self.assertEqual(labels["cap"], "$1.00")  # from the manifest, not config
         self.assertTrue(any("Recorded playback" in c.value for c in at.caption))
 
-    def test_the_gate_panel_shows_what_was_asked_and_answered(self) -> None:
-        # A verdict is only checkable against its inputs, so the page must show the
-        # probability, the named claim and the question the gate was asked. The gate
-        # is on turn 0 because the timeline renders only up to the cursor.
-        traj = Trajectory("run-ui")
+    def _add_gate(self, run_id: str, step: int = 0) -> None:
+        """One gate call: a request blob, a reply blob and the verdict."""
+        traj = Trajectory(run_id)
         body = {
             "model": "typesafe/jev-1.13",
             "state": json.dumps({"stage": "final", "summary": {"answer": "candidate"}}),
-            "questions": {"gate": {"type": "noul", "instructions": "unsupported claim?"}},
+            "questions": {
+                "gate": {"type": "noul", "instructions": "unsupported claim?"},
+                "claim-01": {
+                    "type": "noul",
+                    "instructions": (
+                        "Claim claim-01 cites: " + CHUNK + ".\nClaim: the recorded claim text"
+                    ),
+                },
+            },
         }
         traj.log_event(
-            trace_ctx=TraceCtx("run-ui", 0, "root"),
+            trace_ctx=TraceCtx(run_id, step, "root"),
             call_type="jev",
             action="jev.decisions",
             prompt_ref=traj.store_blob(json.dumps(body)),
-            completion_ref=traj.store_blob("{}"),
+            completion_ref=traj.store_blob(json.dumps({"answers": {"gate": {"noul": 0.91}}})),
             tokens_in=99,
             cost_usd=0.0003,
             latency_ms=700,
         )
         traj.log_event(
-            trace_ctx=TraceCtx("run-ui", 0, "root"),
+            trace_ctx=TraceCtx(run_id, step, "root"),
             call_type="note",
             action="gate.verdict",
             stage="final",
@@ -186,6 +192,12 @@ class UiAppTestCase(unittest.TestCase):
             confidence=0.91,
             extra={"claim_scores": {"claim-01": 0.91}, "claims_failed": ["claim-01"]},
         )
+
+    def test_the_gate_panel_shows_what_was_asked_and_answered(self) -> None:
+        # A verdict is only checkable against its inputs, so the page must show the
+        # probability, the claim and the question the gate was asked. The gate is on
+        # turn 0 because the timeline renders only up to the cursor.
+        self._add_gate("run-ui")
 
         at = self._app()
 
@@ -195,18 +207,23 @@ class UiAppTestCase(unittest.TestCase):
         self.assertTrue(any("final" in value and "fail" in value for value in headings))
         self.assertTrue(any("P=0.91" in value for value in headings))
         self.assertTrue(any("call(s)" in expander.label for expander in at.expander))
+        # The panel states the two thresholds it applies, so a re-fit cannot leave the
+        # page contradicting the gate.
+        captions = " ".join(caption.value for caption in at.caption)
+        self.assertIn("fails a claim only at", captions)
 
-    def test_the_answer_panel_shows_the_text_behind_a_citation(self) -> None:
-        # The answer names a chunk_uuid; without this the reader has an id and no way
-        # to check what it actually says.
+    def test_the_gate_payload_loads_behind_a_toggle(self) -> None:
+        # The clipped text cannot be audited; the whole request is a blob.
+        self._add_gate("run-ui")
+
         at = self._app()
+        at.checkbox(key="gate-payload::run-ui::0-1").check().run()
 
         self.assertEqual([str(exception.value) for exception in at.exception], [])
-        self.assertTrue(
-            any("Source text behind the citations" in item.label for item in at.expander)
-        )
-        codes = [block.value for block in at.code]
-        self.assertIn("the recorded chunk text", codes)
+        rendered = " ".join(block.value for block in at.code)
+
+        self.assertIn("unsupported claim?", rendered)
+        self.assertIn("answers", rendered)
 
     def test_step_advances_the_cursor(self) -> None:
         at = self._app()

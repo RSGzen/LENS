@@ -128,11 +128,18 @@ class GateCall:
     claim_scores: dict[str, float]
     #: claim id -> the question text sent for it (clipped).
     claim_questions: dict[str, str]
+    #: claim id -> the claim itself, as the gate was told it. The state carries only
+    #: ids and citations, so without this a reader sees "claim-03" and no claim.
+    claim_texts: dict[str, str]
     question: str | None
     state: str | None
     cost_usd: float
     latency_ms: int | None
     tokens_in: int | None
+    #: Blob refs for the request and the reply, kept so the page can load the whole
+    #: payload on demand instead of only showing the clipped text.
+    prompt_ref: str | None
+    completion_ref: str | None
 
 
 @dataclass
@@ -400,6 +407,8 @@ def _gate_request(trajectory: Trajectory, event: dict[str, Any]) -> dict[str, An
         "cost_usd": float(event.get("cost_usd") or 0.0),
         "latency_ms": event.get("latency_ms"),
         "tokens_in": event.get("tokens_in"),
+        "prompt_ref": event.get("prompt_ref"),
+        "completion_ref": event.get("completion_ref"),
     }
 
     payload = _blob_json(trajectory, event.get("prompt_ref"))
@@ -424,11 +433,22 @@ def _gate_request(trajectory: Trajectory, event: dict[str, Any]) -> dict[str, An
                 str(aggregate.get("instructions") or ""), GATE_QUESTION_CHARS
             )
 
-        request["claim_questions"] = {
-            str(key): _clip(str(value.get("instructions") or ""), GATE_QUESTION_CHARS)
-            for key, value in questions.items()
-            if str(key).startswith("claim-") and isinstance(value, dict)
-        }
+        for key, value in questions.items():
+            if not str(key).startswith("claim-") or not isinstance(value, dict):
+                continue
+
+            instructions = str(value.get("instructions") or "")
+            request.setdefault("claim_questions", {})[str(key)] = _clip(
+                instructions, GATE_QUESTION_CHARS
+            )
+
+            # The claim is the tail of the question ("... answer false.\nClaim: <text>"),
+            # which is the only place it appears: the state lists ids, not claims.
+            marker = "\nClaim: "
+            if marker in instructions:
+                request.setdefault("claim_texts", {})[str(key)] = instructions.split(marker, 1)[
+                    1
+                ].strip()
 
     return request
 
@@ -451,11 +471,14 @@ def _gate_call(event: dict[str, Any], request: dict[str, Any]) -> GateCall:
             if isinstance(value, (int, float))
         },
         claim_questions=request.get("claim_questions") or {},
+        claim_texts=request.get("claim_texts") or {},
         question=request.get("question"),
         state=request.get("state"),
         cost_usd=float(request.get("cost_usd") or 0.0),
         latency_ms=request.get("latency_ms"),
         tokens_in=request.get("tokens_in"),
+        prompt_ref=request.get("prompt_ref"),
+        completion_ref=request.get("completion_ref"),
     )
 
 
@@ -549,12 +572,12 @@ def evidence_upto(view: RunView, cursor: int) -> list[dict[str, Any]]:
     return rows
 
 
-def tool_payload(run_id: str, ref: str | None) -> str | None:
-    """Return the raw text of a tool result blob, or ``None`` if it is gone.
+def blob_text(run_id: str, ref: str | None) -> str | None:
+    """Return the raw text of one content-addressed blob, or ``None`` if it is gone.
 
-    The caller (the ``Show full payload`` toggle) decides how much to render: a
-    ``build_kg`` node-link is the largest blob in a run, and a collapsed
-    ``st.expander`` still builds its DOM, so this stays opt-in.
+    Callers decide how much to render: a ``build_kg`` node-link or a gate state is
+    the largest thing in a run, and a collapsed ``st.expander`` still builds its DOM,
+    so the full payload stays behind a toggle.
     """
     if not ref or not is_run_id(run_id):
         return None
@@ -563,6 +586,11 @@ def tool_payload(run_id: str, ref: str | None) -> str | None:
         return Trajectory(str(run_id)).load_blob(ref)
     except (OSError, KeyError, ValueError, IndexError):
         return None
+
+
+def tool_payload(run_id: str, ref: str | None) -> str | None:
+    """Return the raw text of a tool result blob (the tool-panel name for a blob)."""
+    return blob_text(run_id, ref)
 
 
 def _evidence_by_turn(turns: list[Turn], trajectory: Trajectory) -> dict[int, list[dict[str, Any]]]:
