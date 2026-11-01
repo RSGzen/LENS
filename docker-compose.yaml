@@ -44,7 +44,22 @@ services:
       - "5433:5432"
     volumes:
       - lens-pgdata:/var/lib/postgresql/data
-    command: ["-c", "shared_buffers=4GB"]
+    # jit=off: every query here is a short index lookup, and JIT compilation alone
+    # cost ~310 ms on one funnel query. effective_cache_size tells the planner the
+    # WSL2 page cache exists (~10 GB of it sits under this container).
+    # pg_prewarm.autoprewarm reloads the buffer cache's contents after a restart,
+    # so the first query after `compose up` does not read the indexes from disk.
+    command:
+      - "-c"
+      - "shared_buffers=4GB"
+      - "-c"
+      - "effective_cache_size=10GB"
+      - "-c"
+      - "jit=off"
+      - "-c"
+      - "shared_preload_libraries=pg_prewarm"
+      - "-c"
+      - "pg_prewarm.autoprewarm=on"
     shm_size: 2gb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${LENS_DB_USER:-lens} -d ${LENS_DB_NAME:-lens}"]

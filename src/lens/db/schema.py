@@ -69,6 +69,8 @@ def apply_schema(conn: psycopg.Connection) -> None:
             CREATE INDEX IF NOT EXISTS chunks_chunk_embedding_hnsw
                 ON chunks USING hnsw (chunk_embedding halfvec_cosine_ops);
 
+       plus a B-tree ``chunks_arxiv_id`` on ``chunks (arxiv_id)`` for the deep
+       stage's per-paper filter.
     5. The read-only role ``config.LENS_DB_RO_USER`` with ``LOGIN PASSWORD``
        ``config.LENS_DB_RO_PASSWORD``. ``CREATE ROLE`` has no ``IF NOT EXISTS``,
        so its presence is checked against ``pg_roles`` first; the name and
@@ -169,6 +171,9 @@ def apply_schema(conn: psycopg.Connection) -> None:
                 "ON chunks USING hnsw (chunk_embedding {ops})"
             ).format(ops=index_ops_sql)
         )
+        # The deep stage filters on a few papers; without this the planner scans
+        # the whole chunks table for them.
+        cur.execute("CREATE INDEX IF NOT EXISTS chunks_arxiv_id ON chunks (arxiv_id)")
 
         # Guard the role creation (CREATE ROLE has no IF NOT EXISTS).
         cur.execute("SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = %s", (role_name,))
