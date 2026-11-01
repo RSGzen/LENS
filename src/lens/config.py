@@ -316,20 +316,24 @@ MAX_RETRIES = 3
 # 400,000 ctx / 128,000 max out, $1.25/1M in + $10/1M out; sub ``gpt-5-mini``
 # 400,000; dev ``qwen/qwen3-coder`` 262,144 / 65,536, $0.30 + $1.00. The
 # **narrowest** role (262k) bounds CONTEXT_TOKEN_LIMIT, not the root.
-MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "8"))
+MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "10"))
+#: Sub-task calls one query may make. A guard rather than a budget: each call is a
+#: few seconds of ``gpt-5-mini`` and ~$0.001, but a bad loop inside one code block
+#: could otherwise spend the whole per-query cost cap in a single turn. Exceeding it
+#: returns an error to the sandbox and the run continues -- it is not a stop reason.
+MAX_SUB_TASKS = int(os.environ.get("LENS_MAX_SUB_TASKS", "40"))
 MAX_EXEC_BLOCK_S = float(os.environ.get("LENS_MAX_EXEC_BLOCK_S", "120"))
 MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
 # Per-query COST cap. Raised 0.50 -> 1.00 on 26 Oct 2026 because the
 # measured Tier-1 anchor spent **$0.436 in 8 iterations = 87 % of $0.50**: at that
 # ceiling the cap was one turn from becoming the *reason* a `gpt-5` run ended, so a
 # model-quality result would have been reported as an artefact of a number we
-# picked. $1.00 is the maximum that means anything at the current token cap
-# (300k tokens x ~$3.1/M blended ~= $0.93), so the binding cap is now
-# **iterations** or **tokens** - both of which are defensible results. Do not raise
-# tokens or iterations to "use" the extra headroom: each turn grows the context and
-# that is what costs money. artifacts were recorded at $0.50; state that
-# difference when reporting (the cap changes the stop-reason distribution, not the
-# pipeline).
+# picked. It stays at 1.00 while the token cap moves: measured runs bill about
+# $1.3 per million tokens (cached input plus ``gpt-5-mini`` output), so 500k tokens
+# is roughly $0.65 and the money cap is a backstop rather than the binding one.
+# Earlier artifacts were recorded at $0.50 and later ones at $1.00; state that
+# difference when reporting, because the cap changes the stop-reason distribution,
+# not the pipeline.
 MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "1.00"))
 
 # OpenRouter charges 5.5 % to load credit, so a reported "$/query" has two numbers:
@@ -365,23 +369,30 @@ CONTEXT_COMPACT_RATIO = float(os.environ.get("LENS_CONTEXT_COMPACT_RATIO", "0.75
 # a labelled partial answer instead of a truncation mid-thought.
 CONTEXT_WARN_RATIO = float(os.environ.get("LENS_CONTEXT_WARN_RATIO", "0.80"))
 # Output is the expensive half (gpt-5: $10/1M out vs $1.25/1M in), so each root
-# call gets a hard output cap. Long summarisation belongs in ``sub_call`` (mini).
+# call gets a hard output cap. Long summarisation belongs in a sub-task (mini).
 ROOT_MAX_OUTPUT_TOKENS = int(os.environ.get("LENS_ROOT_MAX_OUTPUT_TOKENS", "8000"))
 # Context-side observation cap (chars). The runner caps captured stdout too
 # (``SANDBOX_STDOUT_MAX_CHARS``); this is the second, tighter cut applied before
 # the observation becomes a message.
 TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "3000"))
 
-# Cumulative token cap, DERIVED (not tuned): iterations x compacted-context
-# target x 1.25 overhead (system prompt + tool manifest + final answer).
-# Default 8 x 30,000 x 1.25 = 300,000. With the cost cap at $1.00 this is
-# the cap most likely to bind on a measured gpt-5 run (the anchor used 141k tokens
-# and $0.436), which is a defensible stop reason; a measured estimate, not a result
-# - reports the observed distribution.
+# Cumulative token cap, DERIVED (not tuned): the root's turns plus an allowance
+# for sub-task calls, because both are billed against the same budget.
+#   root:       iterations x compacted-context target x 1.25 overhead
+#               10 x 30,000 x 1.25 = 375,000
+#   sub-tasks:  MAX_SUB_TASKS x tokens per call (4 chunks ~ 2,700 in + 400 out)
+#               40 x 3,125 = 125,000
+#   total:      500,000
+# The sub-task half is an estimate from the item size, not a measurement: the first
+# runs that use sub-tasks are what tell us whether it is generous or tight.
+SUB_TASK_TOKENS_ESTIMATE = int(os.environ.get("LENS_SUB_TASK_TOKENS", "3125"))
 MAX_TOKENS_PER_QUERY = int(
     os.environ.get(
         "LENS_MAX_TOKENS",
-        str(int(MAX_ITERATIONS * CONTEXT_TOKEN_LIMIT * CONTEXT_COMPACT_RATIO * 1.25)),
+        str(
+            int(MAX_ITERATIONS * CONTEXT_TOKEN_LIMIT * CONTEXT_COMPACT_RATIO * 1.25)
+            + MAX_SUB_TASKS * SUB_TASK_TOKENS_ESTIMATE
+        ),
     )
 )
 
@@ -416,7 +427,7 @@ PROMPT_VARIANT = (
 )
 PROMPT_VARIANTS = ("full", "naive", "document")
 
-# ``0`` removes the ``/sub_call`` route instead of merely not mentioning it: an
+# ``0`` removes the ``/sub_task`` route instead of merely not mentioning it: an
 # arm that must not recurse has to be unable to, otherwise it measures prompt
 # obedience.
 SUB_CALLS_ENABLED = os.environ.get("LENS_SUB_CALLS", "1").strip().lower() not in {
