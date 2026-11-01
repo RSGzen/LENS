@@ -14,6 +14,7 @@ from unittest.mock import patch
 from lens import config
 from lens.models import Question
 from lens.observability.trajectory import TraceCtx
+from lens.tools import evaluate as evaluate_module
 from lens.tools.evaluate import (
     EVIDENCE_MAX_CHARS,
     GATED_STAGES,
@@ -201,6 +202,84 @@ class EvaluateTestCase(unittest.TestCase):
         assert verdict is not None
         self.assertEqual(verdict.verdict, "pass")
         self.assertIsNone(verdict.failing_criterion)
+
+    # -------------------------------------------------- self-reported gaps
+    def test_a_self_reported_gap_section_is_not_what_the_gate_judges(self) -> None:
+        # Two recorded answers were rejected by the aggregate alone while every
+        # claim scored 0.26-0.56: the gate was reading the answer's own list of
+        # unsupported items as unsupported claims.
+        one = "11111111-1111-5111-8111-111111111111"
+        answer = (
+            f"ReCAP keeps a sliding window of K rounds [{one}].\n"
+            "\n"
+            "**Claims I could not support**\n"
+            "- Retrieval-augmented selection with an explicit index.\n"
+        )
+        client = _FakeJevClient({"gate": {"noul": 0.9}})
+
+        evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {"answer": answer, "citations": [one], "evidence": {one: "text"}},
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        state = json.loads(client.calls[0][0])
+        judged = state["summary"]["answer"]
+
+        self.assertNotIn("Claims I could not support", judged)
+        self.assertIn("ReCAP keeps a sliding window", judged)
+        self.assertTrue(state["summary"]["self_reported_gaps_removed"])
+
+    def test_an_answer_without_a_gap_section_is_judged_whole(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+        client = _FakeJevClient({"gate": {"noul": 0.1}})
+
+        evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"One claim [{one}].",
+                    "citations": [one],
+                    "evidence": {one: "text"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        state = json.loads(client.calls[0][0])
+
+        self.assertEqual(state["summary"]["answer"], f"One claim [{one}].")
+        self.assertNotIn("self_reported_gaps_removed", state["summary"])
+
+    def test_prose_that_mentions_the_phrase_is_not_a_heading(self) -> None:
+        # Only a short standalone line is a heading; a sentence that happens to
+        # contain the words is part of the answer and stays in front of the gate.
+        one = "11111111-1111-5111-8111-111111111111"
+        answer = (
+            "we counted five chunks [" + one + "] and, as noted, the second half of this "
+            "answer lists the claims i could not support so that a reviewer can see them"
+        )
+
+        self.assertEqual(evaluate_module.strip_self_reported_gaps(answer), answer)
+
+    def test_a_second_heading_spelling_is_recognised(self) -> None:
+        answer = "A claim [c-1].\n\nUnsupported claims\n- something\n"
+
+        self.assertEqual(
+            evaluate_module.strip_self_reported_gaps(answer),
+            "A claim [c-1].",
+        )
+
+    def test_the_question_tells_the_gate_that_a_gap_is_not_a_claim(self) -> None:
+        question = evaluate_module.build_unsupported_claim_question("answer", ["c-1"], {})
+
+        self.assertIn("self-reported gap", question.instructions)
 
     def test_gate_disabled_returns_none_without_a_client(self) -> None:
         # The ablation arm: no verdict, no JEV call, no `gate` key.

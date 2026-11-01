@@ -147,6 +147,47 @@ def build_sufficiency_question(
     )
 
 
+#: Headings an answer uses to announce the claims it could not support. Matched as a
+#: whole short line, never inside prose: the list under one is a **labelled
+#: limitation**, and an answer should not be failed for disclosing it.
+GAP_HEADINGS: tuple[str, ...] = (
+    "claims i could not support",
+    "claims i could not verify",
+    "claims that could not be supported",
+    "unsupported claims",
+    "what i could not support",
+)
+
+#: Longest line treated as a heading rather than as prose that happens to match.
+GAP_HEADING_MAX_CHARS = 80
+
+
+def strip_self_reported_gaps(answer: str) -> str:
+    """Return ``answer`` without a trailing section that lists unsupported claims.
+
+    An answer that ends with "claims I could not support: ..." is being honest about
+    its own limits. The aggregate gate question asks whether the answer *contains* an
+    unsupported claim, and a list of disclaimed items reads as exactly that -- measured
+    on three recorded answers, two were rejected by the aggregate alone while every
+    claim unit scored 0.26-0.56.
+
+    Nothing is deleted from the run: this only decides what the gate is asked about.
+    The full answer stays in ``answer.md`` and in the trajectory.
+    """
+    lines = answer.splitlines()
+
+    for index, line in enumerate(lines):
+        heading = line.strip().strip("*_#`: ").strip().lower()
+
+        if not heading or len(heading) > GAP_HEADING_MAX_CHARS:
+            continue
+
+        if heading in GAP_HEADINGS:
+            return "\n".join(lines[:index]).rstrip()
+
+    return answer
+
+
 def build_unsupported_claim_question(
     answer: str,
     citations: Sequence[str],
@@ -184,7 +225,9 @@ def build_unsupported_claim_question(
             "comparison or attribution that its citation does not contain, or that "
             "cites nothing. Answer false if every factual claim is backed by the "
             "excerpts below. An answer that only reports what it inspected, and says "
-            "so, has no unsupported claim. "
+            "so, has no unsupported claim. A **self-reported gap** is not a claim: "
+            "if the answer lists items it could not support, that list is a labelled "
+            "limitation and must not be counted against it. "
             f"Cited excerpts: {evidence_text} "
             f"Answer under review:\n{excerpt}"
         ),
@@ -479,8 +522,14 @@ def evaluate_stage(
             return verdict
 
     if stage == "final":
+        full_answer = str(summary.get("answer") or "")
+        # The gate is asked about the answer minus any list of its own gaps. Both the
+        # question and the state carry the same text, because a state that still
+        # showed the list would let the gate read what the question was told to
+        # ignore.
+        answer = strip_self_reported_gaps(full_answer)
         question = build_unsupported_claim_question(
-            str(summary.get("answer") or ""),
+            answer,
             list(summary.get("citations") or []),
             summary.get("evidence") or (),
         )
@@ -489,14 +538,18 @@ def evaluate_stage(
         # against one state, so per-claim scoring costs a few hundred input tokens
         # and returns *which* claim failed. The aggregate question stays as a
         # cross-check; the two disagree in the log rather than being averaged.
-        claims = claim_units(str(summary.get("answer") or ""))[:MAX_GATE_CLAIMS]
+        claims = claim_units(answer)[:MAX_GATE_CLAIMS]
         summary = {
             **summary,
+            "answer": answer,
             "claims": [
                 {"id": f"claim-{index:02d}", "citations": ids}
                 for index, (_text, ids) in enumerate(claims, start=1)
             ],
         }
+
+        if answer != full_answer:
+            summary["self_reported_gaps_removed"] = True
     else:
         claims = []
         question = build_sufficiency_question(stage, artifact, query=query)
