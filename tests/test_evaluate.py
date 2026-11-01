@@ -275,6 +275,20 @@ class EvaluateTestCase(unittest.TestCase):
                 heading,
             )
 
+    def test_a_longer_heading_is_still_a_heading(self) -> None:
+        # The longest recorded wording; the earlier 80-character bound missed it and the
+        # run was judged with its own limitations list in front of the gate.
+        one = "11111111-1111-5111-8111-111111111111"
+        heading = (
+            "Unsupported or omitted claims (not sufficiently evidenced in the retrieved chunks):"
+        )
+        answer = f"One claim [{one}].\n\n{heading}\n- something\n"
+
+        self.assertEqual(
+            evaluate_module.strip_self_reported_gaps(answer),
+            f"One claim [{one}].",
+        )
+
     def test_prose_that_mentions_the_phrase_is_not_a_heading(self) -> None:
         # Only a short standalone line is a heading; a sentence that happens to
         # contain the words is part of the answer and stays in front of the gate.

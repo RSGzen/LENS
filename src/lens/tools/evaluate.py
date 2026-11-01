@@ -162,10 +162,10 @@ GAP_PHRASES: tuple[str, ...] = (
 )
 
 #: Longest line treated as a heading rather than as prose that happens to match.
-#: Recorded headings run 18-64 characters; a sentence carrying the same words runs
-#: over 100, and the cost of missing a heading is only that the gate keeps reading
-#: the list, while the cost of matching prose is a truncated answer.
-GAP_HEADING_MAX_CHARS = 80
+#: Recorded headings run 18-84 characters, so the bound has to clear the longest of
+#: them. What separates a heading from prose that happens to contain the words is
+#: the first letter: a heading starts a line with a capital.
+GAP_HEADING_MAX_CHARS = 120
 
 
 def strip_self_reported_gaps(answer: str) -> str:
@@ -188,8 +188,9 @@ def strip_self_reported_gaps(answer: str) -> str:
         if not heading or len(heading) > GAP_HEADING_MAX_CHARS:
             continue
 
-        # A heading, not a sentence: short, and it does not end in a full stop.
-        if heading.endswith("."):
+        # A heading, not a sentence: short, starts a line with a capital, and does not
+        # end in a full stop.
+        if heading.endswith(".") or not heading[:1].isupper():
             continue
 
         lowered = heading.lower()
