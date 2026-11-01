@@ -1,0 +1,26 @@
+{
+  "name": "m11-subtask-probe-v3",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Third pass. v2 ran with the gap-strip inert (its heading matcher missed the wording the model actually writes), so the gate half of the change was untested; the matcher and the compaction marker are fixed here. Same query and arm as v1 and v2."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Unchanged again so all three probes pair run for run. Two things to read: whether a gap list is stripped from the gate's state, and whether the sub-tasks are used at all."
+    }
+  ]
+}

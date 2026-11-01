@@ -46,7 +46,6 @@ like a gate that always passes.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping, Sequence
 
@@ -148,23 +147,25 @@ def build_sufficiency_question(
     )
 
 
-#: Headings an answer uses to announce the claims it could not support, matched at
-#: the **start** of a short line and never inside prose: the list under one is a
-#: labelled limitation, and an answer should not be failed for disclosing it.
-#:
-#: Patterns rather than strings because the wording varies and the first version
-#: missed every real answer by demanding an exact match: recorded headings read
-#: "Claims **we** could not support from the inspected chunks" and "Claims we could
-#: not support with the retrieved chunks:".
-GAP_HEADING_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"^claims? (?:i|we) (?:could|can) ?not (?:support|verify)", re.IGNORECASE),
-    re.compile(r"^claims that (?:could|can) ?not be supported", re.IGNORECASE),
-    re.compile(r"^unsupported claims?\b", re.IGNORECASE),
-    re.compile(r"^what (?:i|we) (?:could|can) ?not support", re.IGNORECASE),
+#: Phrases that mark a line as the heading of the answer's own limitations section.
+#: Substring matching, not a whitelist of headings: three recorded runs produced
+#: three different wordings ("Claims I could not support with the verified chunks in
+#: this pass", "Claims we could not support from the inspected chunks", "Unsupported
+#: with current evidence (not claimed above)"), so any list of exact strings goes
+#: stale on the next run.
+GAP_PHRASES: tuple[str, ...] = (
+    "unsupported",
+    "could not support",
+    "cannot support",
+    "could not verify",
+    "not supported by",
 )
 
 #: Longest line treated as a heading rather than as prose that happens to match.
-GAP_HEADING_MAX_CHARS = 120
+#: Recorded headings run 18-64 characters; a sentence carrying the same words runs
+#: over 100, and the cost of missing a heading is only that the gate keeps reading
+#: the list, while the cost of matching prose is a truncated answer.
+GAP_HEADING_MAX_CHARS = 80
 
 
 def strip_self_reported_gaps(answer: str) -> str:
@@ -182,12 +183,18 @@ def strip_self_reported_gaps(answer: str) -> str:
     lines = answer.splitlines()
 
     for index, line in enumerate(lines):
-        heading = line.strip().strip("*_#`: ").strip().lower()
+        heading = line.strip().strip("*_#`: ").strip()
 
         if not heading or len(heading) > GAP_HEADING_MAX_CHARS:
             continue
 
-        if any(pattern.match(heading) for pattern in GAP_HEADING_PATTERNS):
+        # A heading, not a sentence: short, and it does not end in a full stop.
+        if heading.endswith("."):
+            continue
+
+        lowered = heading.lower()
+
+        if any(phrase in lowered for phrase in GAP_PHRASES):
             return "\n".join(lines[:index]).rstrip()
 
     return answer
