@@ -86,7 +86,7 @@ class SchemaLiveTest(unittest.TestCase):
 
     def test_embedding_index_uses_matching_op_class(self) -> None:
         with self.admin.cursor() as cur:
-            for index in ("papers_abstract_embedding_hnsw", "chunks_chunk_embedding_hnsw"):
+            for index in ("papers_abstract_embedding_hnsw",):
                 cur.execute(
                     "SELECT indexdef FROM pg_indexes WHERE indexname = %s", (index,)
                 )

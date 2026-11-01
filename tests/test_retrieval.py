@@ -140,11 +140,6 @@ class HnswConfigSqlTest(unittest.TestCase):
         self.assertEqual(len(stmts), 1)
         self.assertIn("64", stmts[0])
 
-    def test_iterative_scan_adds_relaxed_order(self) -> None:
-        stmts = " ".join(hnsw_config_sql(40, iterative_scan=True))
-        self.assertIn("iterative_scan", stmts)
-        self.assertIn("relaxed_order", stmts)
-
 
 class TopByScoreTest(unittest.TestCase):
     def test_sorts_desc_and_truncates(self) -> None:
@@ -198,7 +193,9 @@ class ShallowMatchTest(unittest.TestCase):
 
 
 class DeepMatchTest(unittest.TestCase):
-    def test_filtered_search_uses_iterative_scan(self) -> None:
+    def test_is_an_exact_search_with_no_hnsw_settings(self) -> None:
+        # The chunk HNSW index was never chosen by the planner and was dropped; the
+        # search is a B-tree lookup of the n papers' chunks plus an exact sort.
         conn = FakeConn([("uuid-1",), ("uuid-2",)])
         emb = FakeEmbedder()
 
@@ -206,16 +203,8 @@ class DeepMatchTest(unittest.TestCase):
 
         self.assertEqual(ids, ["uuid-1", "uuid-2"])
         sql_blob = " ".join(s for s, _ in conn._cursor.statements).lower()
-        self.assertIn("iterative_scan", sql_blob)
-
-    def test_ef_search_is_raised_to_candidate_chunks(self) -> None:
-        conn = FakeConn([("uuid-1",)])
-        emb = FakeEmbedder()
-
-        deep_match(conn, ["2101.00001"], "q", emb, candidate_chunks=100)
-
-        sql_blob = " ".join(s for s, _ in conn._cursor.statements).lower()
-        self.assertIn(f"ef_search = {max(config.HNSW_EF_SEARCH, 100)}", sql_blob)
+        self.assertNotIn("hnsw", sql_blob)
+        self.assertIn("arxiv_id = any", sql_blob)
 
     def test_empty_papers_returns_empty_without_embedding(self) -> None:
         conn = FakeConn([])

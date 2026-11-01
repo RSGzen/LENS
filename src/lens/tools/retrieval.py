@@ -195,23 +195,9 @@ def vector_literal(vec: np.ndarray) -> str:
     return "[" + ",".join(repr(float(x)) for x in flat) + "]"
 
 
-def hnsw_config_sql(ef_search: int, iterative_scan: bool = False) -> list[str]:
-    """The ``SET`` statements to run before an HNSW query.
-
-    Always sets ``hnsw.ef_search`` from ``ef_search``; when ``iterative_scan`` is
-    true also sets ``hnsw.iterative_scan = relaxed_order``. Iterative scan is
-    required for the **filtered** Stage-B (deep) scan, because HNSW applies the
-    SQL ``WHERE`` *after* the graph scan and can otherwise under-return
-    (pgvector >= 0.8). Return the statements in execution order.
-    """
-    # Set the initial candidate graph pool
-    set_statement_list = [f"SET hnsw.ef_search = {ef_search};"]
-
-    # Enable iterative scanning (Scans until reaches enough matching rows / hit safety limit)
-    if iterative_scan:
-        set_statement_list.append("SET hnsw.iterative_scan = 'relaxed_order';")
-
-    return set_statement_list
+def hnsw_config_sql(ef_search: int) -> list[str]:
+    """The ``SET`` statements to run before the (unfiltered) Stage-A HNSW query."""
+    return [f"SET hnsw.ef_search = {ef_search};"]
 
 
 def top_by_score(items: Sequence[T], scores: Sequence[float], top: int) -> list[tuple[T, float]]:
@@ -370,24 +356,22 @@ def deep_match(
 ) -> list[str]:
     """T1 Stage B candidate search — nearest chunks within the ``n`` papers.
 
-    The ``n`` papers hold a few hundred chunks (618 for a measured n=20), so the
-    planner answers this from the ``chunks_arxiv_id`` B-tree and sorts those rows
-    exactly; the chunk HNSW index is not used. Without that B-tree the same query
-    was a parallel sequential scan of all 4.1 M chunks (~0.8 s warm, 3.7 s cold).
-    The HNSW settings below only matter if a plan ever chooses the ANN index.
+    The ``n`` papers hold a few hundred chunks (618 for a measured n=20), so this
+    is an **exact** search: the ``chunks_arxiv_id`` B-tree finds those rows and
+    Postgres sorts them by distance. There is no ANN index on chunk embeddings —
+    it was never chosen by the planner and was dropped. Without the B-tree the same
+    query was a parallel sequential scan of all 4.1 M chunks (~0.8 s warm, 3.7 s
+    cold).
 
     Steps:
       1. Return ``[]`` for empty ``arxiv_ids`` or a blank formatted query.
       2. Embed the query with :data:`config.EMBEDDING_QUERY_PREFIX` (as in
          :func:`shallow_match`).
-      3. Run :func:`hnsw_config_sql` with ``iterative_scan=True`` —
-         ``hnsw.ef_search`` **and** ``hnsw.iterative_scan = relaxed_order`` — the
-         WHERE filter is applied after the graph scan.
-      4. ``SELECT chunk_uuid::text FROM chunks
+      3. ``SELECT chunk_uuid::text FROM chunks
          WHERE arxiv_id = ANY(%s) AND chunk_embedding IS NOT NULL
          ORDER BY chunk_embedding <=> %s::<type> LIMIT %s`` (``candidate_chunks``).
 
-    Returns ``chunk_uuid`` strings (cast to text) in ANN order.
+    Returns ``chunk_uuid`` strings (cast to text), nearest first.
     """
     if not arxiv_ids:
         return []
@@ -401,11 +385,6 @@ def deep_match(
     )
 
     with conn.cursor() as cur:
-        # Filtered HNSW applies the WHERE after the graph scan -> iterative scan.
-        # `ef_search` must also be >= the LIMIT (see shallow_match).
-        for stmt in hnsw_config_sql(ef_search=hnsw_ef_for(candidate_chunks), iterative_scan=True):
-            cur.execute(stmt)
-
         cur.execute(
             "SELECT chunk_uuid::text FROM chunks "
             "WHERE arxiv_id = ANY(%s) AND chunk_embedding IS NOT NULL "
@@ -414,7 +393,7 @@ def deep_match(
             (arxiv_ids, vector_literal(vec), candidate_chunks),
         )
 
-        # chunk_uuids are already in ANN order (nearest first).
+        # Already in distance order (nearest first).
         return [r[0] for r in cur.fetchall()]
 
 

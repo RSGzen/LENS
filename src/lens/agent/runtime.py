@@ -88,7 +88,7 @@ from lens.agent.sub_tasks import (
 from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.clients import LensClient
 from lens.experiments.arm import arm_fingerprint
-from lens.observability.citations import cited_ids
+from lens.observability.citations import cited_ids, expand_short_ids, recorded_chunk_ids
 from lens.observability.trajectory import Actor, TraceCtx, Trajectory
 from lens.tools.evaluate import GATED_STAGES, evaluate_stage
 
@@ -200,7 +200,6 @@ class Runtime:
         self._trace_id = run_id
         self._query_buckets: dict[str, list[str]] = {}
         self._messages: list[dict[str, Any]] = []
-        self._ontology_summary: dict[str, Any] | None = None
         self._manifest: RunManifest | None = None
         # Stage gate bookkeeping: one gate per stage per run (see
         # ``tools.evaluate.GATED_STAGES``).
@@ -216,6 +215,9 @@ class Runtime:
         # history messages already evicted only grows (see ``compaction_start``).
         self._compaction_trigger: int | None = None
         self._compact_start: int = 0
+        # Stage-gate verdicts produced while the current block ran, shown to the
+        # root at the end of that block's observation.
+        self._pending_gate_lines: list[str] = []
 
     # ------------------------------------------------------------------- run
     def run(self) -> RunResult:
@@ -747,8 +749,9 @@ class Runtime:
         """Write context files and seed the sandbox namespace.
 
         Context files via :func:`lens.agent.context.write_context_files`
-        (``AGENTS.md``, ``tools.md``, ``budget.md``, ``ontology.md`` when the KG is
-        on) — **not** ``query.json``, which already wrote here.
+        (``AGENTS.md``, ``tools.md``, ``budget.md``) — **not** ``query.json``, which
+        segmentation already wrote here. Nothing here builds the knowledge graph: it
+        exists only when the root calls ``build_kg``.
 
         Then run one block that defines at least ``query``, ``RUN_ID`` and
         ``WORKSPACE`` so later code does not re-read ``query.json`` on every turn.
@@ -761,7 +764,6 @@ class Runtime:
             self.workspace,
             tool_manifest=self.registry.manifest(),
             budget_snapshot=self.budget.snapshot(),
-            ontology_summary=self._ontology_summary,
             kg_helpers=config.KG_ENABLED,
         )
 
@@ -967,7 +969,14 @@ class Runtime:
                 self._after_turn()
                 continue
 
-            citations = cited_ids(final)
+            # The gate reads the answer with abbreviated chunk ids expanded to the
+            # uuids this run retrieved; ``answer.md`` keeps the model's own text.
+            gate_answer = (
+                final
+                if config.RUN_MODE == "document"
+                else expand_short_ids(final, recorded_chunk_ids(self.trajectory))
+            )
+            citations = cited_ids(gate_answer)
 
             if config.RUN_MODE == "document":
                 # Document mode has no corpus behind it: the cited ids are record
@@ -981,13 +990,15 @@ class Runtime:
                 verdict = None
             else:
                 cited_chunks = [citation for citation in citations if "-" in citation]
-                evidence, evidence_truncated = self._citation_evidence(citations, answer=final)
+                evidence, evidence_truncated = self._citation_evidence(
+                    citations, answer=gate_answer
+                )
                 verdict = self._evaluate(
                     "final",
                     {
                         "score": None,
                         "summary": {
-                            "answer": final,
+                            "answer": gate_answer,
                             # Real ids: the gate was previously handed a hard-coded
                             # empty list, so "is every claim supported by the cited
                             # chunks" was asked about citations it never saw.
@@ -1014,8 +1025,8 @@ class Runtime:
                         "content": (
                             f"The final gate rejected the answer: "
                             f"{verdict.failing_criterion or 'unsupported claim'}. "
-                            "Fix the named claims: quote the sentence in the cited chunk "
-                            "that states each one, or move it under the claims you could "
+                            "For each claim it points at, quote the sentence in the cited "
+                            "chunk that states it, or move it under the claims you could "
                             "not support. Your retrieved chunks are still in the namespace; "
                             "do not re-run retrieval. Then emit FINAL_ANSWER: again."
                         ),
@@ -1073,6 +1084,11 @@ class Runtime:
             chunks.append(result.stderr)
 
         observation = truncate_observation("\n".join(part for part in chunks if part).strip())
+
+        if self._pending_gate_lines:
+            # After the truncation, so a long digest cannot cut the verdict off.
+            observation = "\n".join([observation, *self._pending_gate_lines]).strip()
+            self._pending_gate_lines = []
 
         self.trajectory.log_event(
             trace_ctx=trace_ctx,
@@ -1189,6 +1205,9 @@ class Runtime:
             if verdict is not None:
                 envelope["gate"] = verdict.to_dict()
                 self._gate_verdicts[stage] = envelope["gate"]
+                # The sandbox façade returns only ``result``, so the envelope's gate
+                # never reached the model; it rides on this turn's observation.
+                self._pending_gate_lines.append(_gate_line(stage, verdict))
 
         return envelope
 
@@ -1479,6 +1498,18 @@ class Runtime:
             tasks_path=Path(getattr(self.ledger, "path", self.run_dir / "tasks.json")),
             answer_path=answer_path,
         )
+
+
+def _gate_line(stage: str, verdict: Any) -> str:
+    """Return the one-line stage-gate verdict appended to the root's observation."""
+    confidence = verdict.confidence
+    score = f"P(sufficient)={confidence:.2f}" if confidence is not None else "no score"
+    criterion = f" - {verdict.failing_criterion}" if verdict.failing_criterion else ""
+
+    return (
+        f"[gate] {stage} stage: {verdict.verdict} ({score}; uncalibrated, so read it as a "
+        f"signal, not an instruction){criterion}"
+    )
 
 
 def _bounded_artifact(result: Any) -> dict[str, Any]:

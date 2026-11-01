@@ -13,6 +13,7 @@ import lens.observability.trajectory as trajectory_module
 from lens.observability.citations import (
     cited_ids,
     claim_units,
+    expand_short_ids,
     resolve_citations,
     write_sources_md,
 )
@@ -61,6 +62,43 @@ class UncitedUnitTestCase(unittest.TestCase):
 
     def test_a_short_line_is_not_a_claim(self) -> None:
         self.assertEqual(claim_units("Scope inspected:", include_uncited=True), [])
+
+    def test_a_lead_in_line_is_not_a_claim(self) -> None:
+        # Measured: these scored highest of every unit because they cite nothing, so
+        # the gate's feedback kept naming headings.
+        answer = (
+            "How they differ in where aggregation happens (stated via the quotes above):\n"
+            f"- A method with evidence that is long enough to be a claim [{self.ONE}]\n"
+        )
+
+        units = claim_units(answer, include_uncited=True)
+
+        self.assertEqual([ids for _, ids in units], [[self.ONE]])
+
+
+class ExpandShortIdsTestCase(unittest.TestCase):
+    """A model that prints 8-character prefixes cites the prefix it saw."""
+
+    KNOWN = [
+        "bc4e8dcb-1111-5111-8111-111111111111",
+        "92287ee9-2222-5222-8222-222222222222",
+        "92287ee0-3333-5333-8333-333333333333",
+    ]
+
+    def test_every_written_form_expands(self) -> None:
+        text = "x [chunk_uuid=bc4e8dcb, arxiv_id=2604.22294]; y [bc4e8dcb]; z bc4e8dcb…"
+
+        out = expand_short_ids(text, self.KNOWN)
+
+        self.assertEqual(out.count(self.KNOWN[0]), 3)
+        self.assertEqual(cited_ids(out), [self.KNOWN[0], "2604.22294"])
+
+    def test_ambiguous_unknown_and_word_tokens_stay(self) -> None:
+        text = "92287ee [deadbeef] decade 2604.22294 " + self.KNOWN[1]
+
+        # 92287ee prefixes two ids; deadbeef matches none; "decade" has no digit;
+        # a full uuid is never rewritten.
+        self.assertEqual(expand_short_ids(text, self.KNOWN), text)
 
 
 class ClaimUnitShapeTestCase(unittest.TestCase):

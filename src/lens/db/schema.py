@@ -61,13 +61,15 @@ def apply_schema(conn: psycopg.Connection) -> None:
        ``chunk_embedding <config.EMBEDDING_PGVECTOR_TYPE>(<config.EMBEDDING_DIM>)``
        · ``token_count INT`` ·
        ``section_order INT`` · ``embedding_version TEXT``.
-     4. HNSW indexes on both embeddings with cosine distance — the op class
+     4. An HNSW index on the paper embeddings with cosine distance — the op class
         matches the stored type (``<config.EMBEDDING_INDEX_OPS>``)::
 
             CREATE INDEX IF NOT EXISTS papers_abstract_embedding_hnsw
                 ON papers USING hnsw (abstract_embedding halfvec_cosine_ops);
-            CREATE INDEX IF NOT EXISTS chunks_chunk_embedding_hnsw
-                ON chunks USING hnsw (chunk_embedding halfvec_cosine_ops);
+
+        There is **no** HNSW index on chunk embeddings: the deep stage searches only
+        the chunks of ``n`` papers, exactly, and the planner never chose the 6 GB
+        index it once had.
 
        plus a B-tree ``chunks_arxiv_id`` on ``chunks (arxiv_id)`` for the deep
        stage's per-paper filter.
@@ -163,12 +165,6 @@ def apply_schema(conn: psycopg.Connection) -> None:
             sql.SQL(
                 "CREATE INDEX IF NOT EXISTS papers_abstract_embedding_hnsw "
                 "ON papers USING hnsw (abstract_embedding {ops})"
-            ).format(ops=index_ops_sql)
-        )
-        cur.execute(
-            sql.SQL(
-                "CREATE INDEX IF NOT EXISTS chunks_chunk_embedding_hnsw "
-                "ON chunks USING hnsw (chunk_embedding {ops})"
             ).format(ops=index_ops_sql)
         )
         # The deep stage filters on a few papers; without this the planner scans

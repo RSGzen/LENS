@@ -51,8 +51,10 @@ Sandbox modules
 <<BEGIN:kg>>
 - ``kg_neighbors``, ``kg_triples``, ``kg_subgraph`` are bound as plain functions in
   the namespace (no import needed): ``kg_neighbors(graph, entity=...)``,
-  ``kg_triples(graph, head=...)``, ``kg_subgraph(graph, entities)``. Walk the graph
-  you get from ``build_kg``: build it once, then read it.
+  ``kg_triples(graph, head=...)``, ``kg_subgraph(graph, entities)``. Call
+  ``build_kg`` **only when you will traverse the graph** with these helpers: building
+  it takes about 20 s, and a graph you never read adds nothing to the answer. Build it
+  once, then read it.
 - Edges carry ``direction_verified`` / ``direction_confidence``. ``true`` means the
   decision layer confirmed the direction of the relation; unverified edges were
   kept but not confirmed, so do not state one as a fact.
@@ -102,10 +104,12 @@ Output contract
 2. Print a compact summary of what you learned — at most ~15 lines. Large values
    belong in a variable or in rlm_api.emit(value, label=...); never print whole
    papers or raw tool payloads.
-3. **Retrieve first.** Run `retrieval_funnel`<<BEGIN:kg>> (and `build_kg` when relations
-   matter)<<END:kg>> and keep the returned chunks in a variable.
+3. **Retrieve first.** Run `retrieval_funnel`<<BEGIN:kg>> (and `build_kg` only if you will
+   traverse the graph)<<END:kg>> and keep the returned chunks in a variable.
    Answering from memory is a failure: cite the real `chunk_uuid` + `arxiv_id` for
-   every claim. "See the retrieved evidence" or "[above]" is not a citation.
+   every claim. "See the retrieved evidence" or "[above]" is not a citation. Write
+   the **full** 36-character `chunk_uuid` in the answer, even if your digests print
+   a shortened one.
 4. **Quote before you assert.** For every factual claim, be able to point at the
    sentence in a retrieved chunk that states it. If you cannot quote it, do not
    write it as a finding: put it under what you could not support. A claim whose
@@ -138,6 +142,12 @@ Output contract
 Guardrails
 - Stay inside the budget. If a cap is reached, return the best partial answer and
   list what is still unsupported.
+<<BEGIN:gate>>
+- A ``[gate]`` line at the end of an observation is the decision layer's verdict on
+  the stage that just finished. It is not calibrated: use it to decide whether to
+  check coverage in the chunks you hold.
+  Calling the funnel again with the same buckets returns the same chunks.
+<<END:gate>>
 """
 
 
@@ -259,6 +269,7 @@ def build_system_prompt(
         _TEMPLATES[chosen],
         {
             "kg": config.KG_ENABLED if kg is None else kg,
+            "gate": config.GATE_ENABLED,
         },
     )
 
@@ -710,8 +721,9 @@ Answer the research query from the arXiv cs.AI corpus. You write Python; it runs
 in a persistent sandbox namespace, so variables survive between turns.
 
 ## Hard rules
-- **Retrieve before you answer.** Call `retrieval_funnel` once (optionally
-  `build_kg`), keep the result, and cite the `chunk_uuid`s you actually read.
+- **Retrieve before you answer.** Call `retrieval_funnel` once (and `build_kg` only
+  when you will traverse the graph), keep the result, and cite the full
+  `chunk_uuid`s you actually read.
 - **Work incrementally.** Variables persist; never re-run the funnel or re-write
   code from an earlier turn.
 - An answer with no citation is treated as unsupported by the final gate —
@@ -740,7 +752,6 @@ in a persistent sandbox namespace, so variables survive between turns.
 | `query.json` | the query split into objectives / problems / constraints / requirements |
 | `tools.md` | the host tools you can call, with signatures |
 | `budget.md` | this run's caps (snapshot at start; `rlm_api.budget()` gives live values) |
-| `ontology.md` | KG entity/relation types — only when the KG is enabled |
 | `emits/` | values you have offloaded with `emit()` |
 """
 

@@ -203,6 +203,51 @@ class RuntimeTestCase(unittest.TestCase):
         # The block still executed: evidence first, then the answer.
         self.assertIn("print('ran')", self.sandbox.executed)
 
+    def test_the_final_gate_sees_abbreviated_ids_as_full_uuids(self) -> None:
+        # Measured: an answer citing 8-character prefixes reached the gate with no
+        # chunk ids and no evidence, and was rejected four times.
+        full = "bc4e8dcb-1111-5111-8111-111111111111"
+
+        def retrieval_funnel(buckets: object) -> dict:
+            """The funnel."""
+            return {"chunks": [{"chunk_uuid": full, "chunk_text": "t"}], "papers": {}}
+
+        self.registry.register("retrieval_funnel", retrieval_funnel)
+        self.runtime.handle_rpc("/tool", {"name": "retrieval_funnel", "args": {"buckets": {}}})
+
+        states: list[str] = []
+        client = FakeClient(
+            ["FINAL_ANSWER: ReCAP re-injects the parent plan [chunk_uuid=bc4e8dcb]."],
+            self.trajectory,
+        )
+        client.jev = lambda state, questions, **kw: (  # type: ignore[method-assign]
+            states.append(state) or FakeClient.jev(client, state, questions)
+        )
+        self.runtime.client = client
+
+        with patch.object(config, "GATE_ENABLED", True):
+            result = self.runtime.run()
+
+        summary = json.loads(states[-1])["summary"]
+        self.assertEqual(summary["citations"], [full])
+        self.assertIn(full, summary["answer"])
+        self.assertIn("[chunk_uuid=bc4e8dcb]", result.answer)  # answer.md keeps the model's text
+
+    def test_a_stage_gate_verdict_reaches_the_observation(self) -> None:
+        # The façade returns only ``result``, so the envelope's gate never reached
+        # the model: 24 of 24 recorded retrieval-gate verdicts were invisible to it.
+        with (
+            patch.object(config, "GATE_ENABLED", True),
+            patch("lens.agent.runtime.GATED_STAGES", {"echo": "retrieval"}),
+        ):
+            self.runtime.handle_rpc("/tool", {"name": "echo", "args": {"text": "hi"}})
+            observation = self.runtime._execute_block("print('x')")
+            later = self.runtime._execute_block("print('y')")
+
+        self.assertTrue(observation.startswith("observation"))
+        self.assertIn("[gate] retrieval stage: uncertain", observation.splitlines()[-1])
+        self.assertNotIn("[gate]", later)  # shown once, on the turn that produced it
+
     def test_a_failed_block_stores_its_traceback(self) -> None:
         # stderr_ref was declared in the schema and never written, so nothing but
         # the next turn's text could say why a block failed: a replay showed the

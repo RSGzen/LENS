@@ -9,10 +9,6 @@ audited afterwards.
 Prereqs:
   * ``lens-pg`` running with the schema applied (``python scripts/setup_db.py``);
   * complete (every manifest ``arxiv_id`` present in ``papers`` -> FK safety);
-  * the ``chunks_chunk_embedding_hnsw`` index dropped for the load — this script
-    drops it, then **you rebuild it afterwards** with
-    ``python scripts/build_indexes.py`` (per-row HNSW maintenance would
-    otherwise dominate insert time).
 
 Run:  .\\.venv\\Scripts\\python.exe scripts\\load_chunks.py
 """
@@ -41,13 +37,6 @@ def _build_token_counter(embedder: Embedder):
         return len(tokenizer.encode(text, add_special_tokens=False, truncation=False))
 
     return count_tokens
-
-
-def _drop_chunks_index(conn) -> None:
-    """Drop the chunks HNSW index so bulk inserts stay fast (rebuild after)."""
-    with conn.cursor() as cur:
-        cur.execute("DROP INDEX IF EXISTS chunks_chunk_embedding_hnsw")
-    print("dropped chunks_chunk_embedding_hnsw (rebuild after with build_indexes.py)")
 
 
 def _filter_loaded(conn, entries):
@@ -99,7 +88,6 @@ def main() -> None:
     with connect(autocommit=True) as conn:
         if config.RESUME:
             entries = _filter_loaded(conn, entries)
-        _drop_chunks_index(conn)
         papers, chunks = load_chunks(
             conn=conn,
             entries=entries,

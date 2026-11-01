@@ -20,10 +20,9 @@ durable (the loop prints one timing line per batch for the run log).
 
 Insert speed
 ------------
-The ``chunks_chunk_embedding_hnsw`` index already exists. Per-row HNSW graph
-maintenance makes bulk inserts slow, so — exactly as did for ``papers`` —
-**drop the chunks HNSW index before the load and rebuild with**
-``scripts/build_indexes.py`` after.
+There is no ANN index on ``chunks``: the deep stage searches the chunks of a
+few papers exactly, through the ``chunks_arxiv_id`` B-tree, so inserts pay only
+for that B-tree and the primary key.
 
 ``tests/DESTRUCTIVE_db_tests/test_chunks.py`` is the contract — it drops the
 schema, so run it only against a throwaway ``lens_test`` (no API key, zero cost).

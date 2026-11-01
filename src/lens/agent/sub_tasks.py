@@ -424,13 +424,24 @@ def render_prompt_block() -> str:
     ]
 
     for task in SUB_TASKS.values():
-        lines.append(f"- ``rlm_api.{task.signature}`` — {task.summary}.")
+        lines.append(
+            f"- ``rlm_api.{task.signature}`` — {task.summary}. "
+            f"At most {task.max_items} chunk ids per call."
+        )
 
         if task.name == "extract":
             lines.append("  ``fields`` is a subset of: " + ", ".join(EXTRACT_FIELDS) + ".")
 
     lines.extend(
         [
+            # Measured: the root read 100 retrieved chunks through this keyhole, so it
+            # keyword-filtered in code instead of reading, and never called a sub-task.
+            f"- **When to use them:** the observation you get back is capped at "
+            f"{config.TOOL_RESULT_SUMMARY_CHARS:,} characters (about four chunk "
+            "excerpts). To read more chunks than that, do not print their text: call "
+            "``rlm_api.sub_extract`` on the top chunk ids in batches (no more than four "
+            "calls per code block, over one or two turns), keep the records in a variable, "
+            "and print only the parts you need.",
             f"- At most {config.MAX_SUB_TASKS} sub-task calls per query.",
             "- The ids in a result are stamped from the ids you passed, so a record",
             "  cannot invent evidence. A sub-task answer is a derived record: cite the",

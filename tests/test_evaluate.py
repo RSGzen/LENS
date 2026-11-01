@@ -207,8 +207,31 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertIn("claim-02 (P=0.65)", verdict.failing_criterion or "")
         self.assertNotIn("claim-01", verdict.failing_criterion or "")
 
-    def test_flagged_claims_fall_back_to_the_highest(self) -> None:
-        self.assertEqual(flagged_claim_names({"claim-01": 0.2, "claim-02": 0.3}), ["claim-02"])
+    def test_a_failed_aggregate_with_no_weak_claim_says_so(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+        client = _FakeJevClient({"gate": {"noul": 0.68}, "claim-01": {"noul": 0.2}})
+
+        verdict = evaluate_stage(
+            "final",
+            {
+                "score": None,
+                "summary": {
+                    "answer": f"ReCAP keeps a sliding window of K rounds of the plan [{one}].",
+                    "citations": [one],
+                    "evidence": {one: "a"},
+                },
+            },
+            client=client,
+            trace_ctx=TraceCtx(trace_id="t", step_idx=0, actor="root"),
+        )
+
+        assert verdict is not None
+        self.assertEqual(verdict.verdict, "fail")
+        self.assertIn("no single claim", verdict.failing_criterion or "")
+
+    def test_flagged_claims_name_only_claims_over_the_aggregate_threshold(self) -> None:
+        # Naming the "least good" supported claim sent the model to rewrite headings.
+        self.assertEqual(flagged_claim_names({"claim-01": 0.2, "claim-02": 0.3}), [])
         self.assertEqual(
             flagged_claim_names({f"c{i}": 0.9 - i / 100 for i in range(5)}), ["c0", "c1", "c2"]
         )

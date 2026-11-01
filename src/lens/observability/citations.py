@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,10 @@ _ARXIV_RE = re.compile(r"\b(\d{4}\.\d{4,5})(?:v\d+)?\b")
 # Abbreviated chunk ids as a model writes them: [3b4365f9]. Six to twelve hex
 # characters in brackets, which a hyphenated uuid cannot match.
 _SHORT_ID_RE = re.compile(r"\[([0-9a-fA-F]{6,12})\]")
+# The same prefix written anywhere: ``chunk_uuid=bc4e8dcb``, ``[92287ee9, 2603.15653]``,
+# ``a861854f…``. A neighbouring letter, digit or hyphen means it is part of a longer
+# token (a full uuid, a word), so it is not a prefix.
+_LOOSE_SHORT_ID_RE = re.compile(r"(?<![0-9A-Za-z-])([0-9a-fA-F]{6,12})(?![0-9A-Za-z-])")
 
 # Tools whose payload hydrates chunks / papers. Only these carry the evidence map.
 # ``rerank_chunks`` / ``rerank_papers`` stay listed so runs recorded before the
@@ -96,7 +101,7 @@ def uncited_units(text: str) -> list[tuple[str, list[str]]]:
 
     Only non-structure lines qualify: a bullet, heading, table row or quote is handled
     elsewhere, and a bullet's claim is already covered by its own unit, citations and
-    all.
+    all. A line that ends with ``:`` is a lead-in to what follows, not a claim.
     """
     units: list[tuple[str, list[str]]] = []
 
@@ -104,6 +109,12 @@ def uncited_units(text: str) -> list[tuple[str, list[str]]]:
         unit = " ".join(line.split())
 
         if not unit or _STRUCTURE.match(unit):
+            continue
+
+        # A line ending in ":" introduces what follows ("How they differ in where
+        # aggregation happens:"). It scored highest of every unit because it cites
+        # nothing, so the gate's feedback kept naming headings for the model to fix.
+        if unit.endswith(":"):
             continue
 
         if cited_ids(unit):
@@ -344,6 +355,70 @@ def cited_ids(text: str) -> list[str]:
     return tokens
 
 
+def expand_short_ids(text: str, known_ids: Iterable[str]) -> str:
+    """Return ``text`` with every abbreviated chunk id replaced by its full uuid.
+
+    A model that prints ``c["chunk_uuid"][:8]`` in its digests cites the prefix it
+    saw. Every id-based check (:func:`cited_ids`, the final gate's evidence fetch,
+    the per-claim questions) recognises only the full uuid, so such an answer
+    reached the gate with **no evidence at all** and was rejected four times for a
+    reason that had nothing to do with its claims.
+
+    A token expands only when it is unambiguous: exactly one of ``known_ids`` (the
+    chunks this run retrieved) starts with it. It must also mix letters and digits,
+    so ordinary words ("decade", "facade") and plain numbers stay as written.
+    """
+    known = [str(full) for full in known_ids if full]
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(1)
+
+        # shortcut: an all-letter or all-digit prefix (~2 % of uuids) stays
+        # unexpanded; widen this if answers are seen citing one.
+        if token.isdigit() or not any(char.isdigit() for char in token):
+            return token
+
+        key = token.lower()
+        matches = [full for full in known if full.lower().startswith(key)]
+
+        return matches[0] if len(matches) == 1 else token
+
+    return _LOOSE_SHORT_ID_RE.sub(replace, text or "")
+
+
+def recorded_chunk_ids(trajectory: Trajectory) -> set[str]:
+    """Return every chunk uuid a hydrating tool returned in this run's log."""
+    ids: set[str] = set()
+
+    if not trajectory.trajectory_path.is_file():
+        return ids
+
+    for line in trajectory.trajectory_path.read_text(encoding="utf-8").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+
+        if not isinstance(event, dict) or event.get("tool") not in _CHUNK_TOOLS:
+            continue
+
+        if not event.get("result_ref"):
+            continue
+
+        try:
+            payload = json.loads(trajectory.load_blob(event["result_ref"]))
+        except (OSError, KeyError, ValueError, IndexError):
+            continue
+
+        rows = payload.get("chunks") if isinstance(payload, dict) else payload
+
+        for row in rows or []:
+            if isinstance(row, dict) and row.get("chunk_uuid"):
+                ids.add(str(row["chunk_uuid"]))
+
+    return ids
+
+
 def resolve_citations(run_id: str) -> CitationReport:
     """Join ``answer.md`` against the evidence the run recorded.
 
@@ -374,6 +449,7 @@ def resolve_citations(run_id: str) -> CitationReport:
 
     turns = replay_turns(trajectory)
     chunks, papers, provenance = _evidence_index(turns, trajectory)
+    answer = expand_short_ids(answer, chunks)
 
     seen: set[str] = set()
 

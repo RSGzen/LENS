@@ -38,7 +38,7 @@ DEFAULT_QUERY = (
     "How do retrieval-augmented language models aggregate evidence across a long context?"
 )
 
-HNSW_INDEX_NAMES = ("papers_abstract_embedding_hnsw", "chunks_chunk_embedding_hnsw")
+HNSW_INDEX_NAMES = ("papers_abstract_embedding_hnsw",)
 
 
 def _report_hnsw(conn) -> None:

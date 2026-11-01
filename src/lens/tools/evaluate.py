@@ -299,12 +299,26 @@ def flagged_claim_names(claim_scores: Mapping[str, float]) -> list[str]:
     """Return the claims to name when the aggregate failed and no claim did.
 
     Every claim at or above ``AGGREGATE_FAIL_PROBABILITY``, highest first, up to
-    ``MAX_FLAGGED_CLAIMS``; when none reaches it, the single highest-scoring claim.
+    ``MAX_FLAGGED_CLAIMS``. None when no claim reaches it: naming the "least good"
+    of a set of supported claims sent the model to rewrite lines that were fine
+    (measured: every flagged claim in three runs scored 0.38-0.46, most of them
+    lead-in lines).
     """
     ranked = sorted(claim_scores, key=lambda name: (-claim_scores[name], name))
-    over = [name for name in ranked if claim_scores[name] >= AGGREGATE_FAIL_PROBABILITY]
 
-    return (over or ranked[:1])[:MAX_FLAGGED_CLAIMS]
+    return [name for name in ranked if claim_scores[name] >= AGGREGATE_FAIL_PROBABILITY][
+        :MAX_FLAGGED_CLAIMS
+    ]
+
+
+#: The criterion when the aggregate failed and every claim, asked on its own, did
+#: not. Said plainly, because the two disagree on a large share of answers and the
+#: root cannot fix a claim nobody named.
+NO_CLAIM_NAMED = (
+    "the answer as a whole scored P={aggregate:.2f} of containing an unsupported claim, "
+    "but no single claim scored {limit:.2f} or more on its own (highest {top}). Check "
+    "uncited summary sentences and claims whose quote is only on the topic"
+)
 
 
 def _format_evidence(evidence: Sequence[str] | Mapping[str, str]) -> str:
@@ -679,10 +693,19 @@ def evaluate_stage(
         # changes the feedback, never the verdict: ``claims_failed`` keeps meaning
         # "overturned by the per-claim threshold".
         flagged_claims = flagged_claim_names(claim_scores)
-        criterion = "; ".join(
-            f"{name} (P={claim_scores[name]:.2f}): {claim_text_by_id.get(name, '')[:160]}"
-            for name in flagged_claims
-        )
+
+        if flagged_claims:
+            criterion = "; ".join(
+                f"{name} (P={claim_scores[name]:.2f}): {claim_text_by_id.get(name, '')[:160]}"
+                for name in flagged_claims
+            )
+        else:
+            top = max(claim_scores, key=lambda name: claim_scores[name])
+            criterion = NO_CLAIM_NAMED.format(
+                aggregate=confidence if confidence is not None else float("nan"),
+                limit=AGGREGATE_FAIL_PROBABILITY,
+                top=f"{top} at {claim_scores[top]:.2f}",
+            )
 
     verdict = StageVerdict(
         verdict=verdict_value,

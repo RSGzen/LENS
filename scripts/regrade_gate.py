@@ -30,7 +30,7 @@ from typing import Any, Sequence
 from lens.agent import runstore
 from lens.clients import LensClient
 from lens.db.connect import connect
-from lens.observability.citations import cited_ids
+from lens.observability.citations import cited_ids, expand_short_ids, recorded_chunk_ids
 from lens.observability.trajectory import TraceCtx, Trajectory
 from lens.tools.evaluate import evaluate_stage
 from lens.tools.retrieval import fetch_chunks
@@ -108,7 +108,9 @@ def regrade_run(
     calibration sample (claim text comes from the question, the score from the
     event, the source from this id).
     """
-    answer = read_answer(run_id)
+    # The same expansion the live gate applies: an answer citing 8-character
+    # prefixes would otherwise be judged with no evidence at all.
+    answer = expand_short_ids(read_answer(run_id), recorded_chunk_ids(Trajectory(run_id)))
     citations = cited_ids(answer)
     old_verdict, old_confidence = recorded_final_verdict(run_id)
 
