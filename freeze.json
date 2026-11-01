@@ -1,8 +1,8 @@
 {
-  "created_at": "2026-11-01T02:10:39+00:00",
-  "commit": "5338200fcb321ff897716a1547718d49de66078b",
+  "created_at": "2026-11-01T03:26:20+00:00",
+  "commit": "eba67df524ba64900637628177812844fa189578",
   "branch": "main",
-  "git_dirty": false,
+  "git_dirty": true,
   "models": {
     "root": "openai/gpt-5",
     "sub": "openai/gpt-5-mini",
@@ -11,8 +11,8 @@
   },
   "jev": "typesafe/jev-1.13",
   "caps": {
-    "iterations": 8,
-    "tokens": 300000,
+    "iterations": 10,
+    "tokens": 500000,
     "cost_usd": 1.0,
     "context_tokens": 40000,
     "exec_block_s": 120.0
@@ -35,7 +35,7 @@
   "gate_enabled": true,
   "stage_thresholds": {},
   "sandbox_image": "lens-repl:0.1.0",
-  "sandbox_digest": "sha256:3de2242e6c801525e1098cd3c0307fd43bfda09855060f4b9fa506221d865765",
+  "sandbox_digest": "sha256:d62bcfd043b823e5505a1c036a23ab765be43e391174a17a778d339d9488a3ce",
   "uv": "uv 0.13.5 (46776a95d 2026-10-21 x86_64-pc-windows-msvc)",
   "certifi": "2026.10.19",
   "corpus": {
@@ -44,7 +44,7 @@
   },
   "instruments": {},
   "notes": {
-    "sandbox_digest": "recorded by run_campaign.py on all 32 runs of m11-w1-v2 / m11-w1v-v2; Docker was not running when this file was written, so it is taken from that record rather than re-inspected",
-    "corpus": "carried forward from the 30 Oct freeze; no ingest has run since, and the database was not running when this file was written"
+    "git_dirty": "the tree was dirty only because this file was being written; commit eba67df524ba64900637628177812844fa189578 is the code the recorded runs used",
+    "corpus": "read from the live database on 1 Nov 2026 (papers, chunks), not carried forward"
   }
 }
