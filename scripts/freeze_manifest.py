@@ -170,6 +170,27 @@ def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> d
     }
 
 
+def _dirty_paths() -> list[str]:
+    """Return the repository-relative paths git reports as changed."""
+    text = git_value("status", "--porcelain") or ""
+
+    return [line[3:].strip() for line in text.splitlines() if line.strip()]
+
+
+def _ignore_own_output(record: dict[str, Any], out: Path) -> None:
+    """Clear ``git_dirty`` when the only change is the record being written.
+
+    The file cannot exist before it is written, so a record generated on a clean
+    tree would otherwise always describe itself as dirty -- and that flag is the
+    one thing a reader uses to decide whether the record can be trusted.
+    """
+    if not record.get("git_dirty"):
+        return
+
+    if {Path(path).name for path in _dirty_paths()} == {out.name}:
+        record["git_dirty"] = False
+
+
 def check_freeze(record: dict[str, Any], *, allow_dirty: bool = False) -> list[str]:
     """Return the problems that make this record unusable as a freeze."""
     problems: list[str] = []
@@ -223,6 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         Path(args.instruments) if args.instruments else None,
         with_db=args.with_db,
     )
+    _ignore_own_output(record, Path(args.out))
     # ``newline="\n"`` on purpose: without it Python translates "\n" to "\r\n" on
     # Windows, the file on disk no longer matches the LF the repository stores, and
     # every later ``git status`` reports the freeze record as dirty -- which then
