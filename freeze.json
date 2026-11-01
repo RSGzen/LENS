@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-11-01T03:26:20+00:00",
-  "commit": "eba67df524ba64900637628177812844fa189578",
+  "created_at": "2026-11-01T03:26:40+00:00",
+  "commit": "2f241a424c9ded1d88e95342a6fe49674a7dc67e",
   "branch": "main",
   "git_dirty": true,
   "models": {
@@ -42,9 +42,5 @@
     "papers": 166704,
     "chunks": 4681955
   },
-  "instruments": {},
-  "notes": {
-    "git_dirty": "the tree was dirty only because this file was being written; commit eba67df524ba64900637628177812844fa189578 is the code the recorded runs used",
-    "corpus": "read from the live database on 1 Nov 2026 (papers, chunks), not carried forward"
-  }
+  "instruments": {}
 }

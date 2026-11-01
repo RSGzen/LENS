@@ -223,8 +223,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         Path(args.instruments) if args.instruments else None,
         with_db=args.with_db,
     )
+    # ``newline="\n"`` on purpose: without it Python translates "\n" to "\r\n" on
+    # Windows, the file on disk no longer matches the LF the repository stores, and
+    # every later ``git status`` reports the freeze record as dirty -- which then
+    # makes the next freeze record ``git_dirty: true`` for no reason.
     Path(args.out).write_text(
-        json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        json.dumps(record, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
 
     problems = check_freeze(record, allow_dirty=args.allow_dirty)
