@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-11-01T07:52:25+00:00",
-  "commit": "7d1b322a1f8484529a560dede091dacecc784a66",
+  "created_at": "2026-11-01T10:36:50+00:00",
+  "commit": "e5c02ce7056d2e72f598db0205715e111df9bd13",
   "branch": "main",
   "git_dirty": false,
   "models": {
@@ -21,9 +21,9 @@
   "embedding": "nomic-embed-text-v1.5@512-halfvec",
   "reranker": "BAAI/bge-reranker-v2-m3",
   "retrieval": {
-    "k": 100,
+    "k": 200,
     "n": 20,
-    "C": 100,
+    "C": 400,
     "c": 100,
     "ef_search": 400
   },
