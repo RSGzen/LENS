@@ -1032,6 +1032,26 @@ class Runtime:
             answer = final
 
             if verdict is not None and verdict.verdict == "fail":
+                if verdict.decision == "aggregate":
+                    # No claim crossed tau_claim, so the rejection says nothing about
+                    # which sentence is wrong: acting on it can only cost a rewrite, and
+                    # the only observed effect of that rewrite was deleted evidence (a
+                    # cited method family and the paper it came from). Record it and keep
+                    # the answer. The verdict still counts in the campaign's pass rate,
+                    # and a fitted tau_agg is what would make this threshold actionable.
+                    score = (
+                        f" (P={verdict.confidence:.2f}, no claim at or above tau_claim)"
+                        if verdict.confidence is not None
+                        else ""
+                    )
+                    self._note(
+                        "final gate rejected the answer on the aggregate alone"
+                        f"{score}; accepted with the verdict recorded"
+                    )
+                    self._after_turn()
+
+                    return (answer, False, None)
+
                 self._final_rejections += 1
 
                 if self._final_rejections > MAX_FINAL_GATE_REJECTIONS:

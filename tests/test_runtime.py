@@ -330,11 +330,17 @@ class RuntimeTestCase(unittest.TestCase):
         # time. Past the cap the answer stands and the verdicts stay in the log.
         from lens.agent.runtime import MAX_FINAL_GATE_REJECTIONS
 
+        claim = "11111111-1111-5111-8111-111111111111"
         client = FakeClient(
-            [f"FINAL_ANSWER: draft {index}" for index in range(1, 7)], self.trajectory
+            [
+                f"FINAL_ANSWER: The window is K rounds and the cost stays bounded [{claim}] "
+                f"(draft {index})."
+                for index in range(1, 7)
+            ],
+            self.trajectory,
         )
         client.jev = lambda state, questions, **kw: JevResult(  # type: ignore[method-assign]
-            answers={"gate": {"noul": 0.9}},
+            answers={"gate": {"noul": 0.9}, "claim-01": {"noul": 0.9}},
             model="typesafe/jev-1.13",
             provider="TypeSafe",
             tokens_in=1,
@@ -348,7 +354,7 @@ class RuntimeTestCase(unittest.TestCase):
 
         root_calls = [call for call in client.chat_calls if call["role"] == "root"]
         self.assertEqual(len(root_calls), MAX_FINAL_GATE_REJECTIONS + 1)
-        self.assertIn(f"draft {MAX_FINAL_GATE_REJECTIONS + 1}", result.answer)
+        self.assertIn(f"(draft {MAX_FINAL_GATE_REJECTIONS + 1})", result.answer)
         # The gate's disagreement does not become the run's stop reason: it is not
         # an acceptance criterion, and the status vocabulary stays
         # iterations/tokens/cost/backtracks.
@@ -366,12 +372,53 @@ class RuntimeTestCase(unittest.TestCase):
 
         self.assertTrue(any("accepted with the verdicts recorded" in text for text in notes))
 
+    def test_an_aggregate_only_rejection_does_not_buy_a_turn(self) -> None:
+        # Measured: the one rejection in m11-check-v5 scored P=0.80 with every claim
+        # below 0.41, and the rewrite it bought deleted a cited method family. With
+        # nothing named there is nothing to fix, so the answer stands.
+        client = FakeClient(["FINAL_ANSWER: draft one", "FINAL_ANSWER: draft two"])
+        client.jev = lambda state, questions, **kw: JevResult(  # type: ignore[method-assign]
+            answers={"gate": {"noul": 0.8}},
+            model="typesafe/jev-1.13",
+            provider="TypeSafe",
+            tokens_in=1,
+            cost_usd=0.0,
+            latency_ms=1,
+        )
+        self.runtime.client = client
+
+        with patch.object(config, "GATE_ENABLED", True):
+            result = self.runtime.run()
+
+        root_calls = [call for call in client.chat_calls if call["role"] == "root"]
+        self.assertEqual(len(root_calls), 1)
+        self.assertEqual(result.answer, "draft one")
+        self.assertFalse(result.partial)
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+        ]
+        notes = [
+            (event.get("extra") or {}).get("text", "")
+            for event in events
+            if event.get("call_type") == "note"
+        ]
+
+        self.assertTrue(any("on the aggregate alone" in text for text in notes))
+
     def test_the_rejection_names_the_threshold_that_fired(self) -> None:
         # The root used to read "claim-10 (P=0.50)" with tau_claim nowhere in the
         # message, so a claim the rule never rejected read as a failure.
-        client = FakeClient(["FINAL_ANSWER: draft one", "FINAL_ANSWER: draft two"])
+        claim = "11111111-1111-5111-8111-111111111111"
+        client = FakeClient(
+            [
+                f"FINAL_ANSWER: The window is K rounds and the cost stays bounded [{claim}].",
+                f"FINAL_ANSWER: The window is K rounds and the cost is bounded [{claim}].",
+            ]
+        )
         client.jev = lambda state, questions, **kw: JevResult(  # type: ignore[method-assign]
-            answers={"gate": {"noul": 0.55}, "claim-01": {"noul": 0.5}},
+            answers={"gate": {"noul": 0.1}, "claim-01": {"noul": 0.93}},
             model="typesafe/jev-1.13",
             provider="TypeSafe",
             tokens_in=1,
@@ -390,9 +437,9 @@ class RuntimeTestCase(unittest.TestCase):
             if "final gate rejected" in str(message.get("content") or "")
         )
 
-        self.assertIn("failed on the answer as a whole", rejection)
-        self.assertIn("tau_agg=0.50", rejection)
+        self.assertIn("failed on one claim", rejection)
         self.assertIn("tau_claim=0.70", rejection)
+        self.assertIn("tau_agg=0.50", rejection)
 
     def test_manifest_records_terminal_status(self) -> None:
         result = self.runtime.run()

@@ -270,6 +270,8 @@ class EvaluateTestCase(unittest.TestCase):
         self.assertEqual(extra["decision"], "aggregate")
         self.assertEqual(extra["tau_agg"], 0.5)
         self.assertEqual(extra["tau_claim"], 0.7)
+        # The orchestrator reads this off the verdict, not out of the log.
+        self.assertEqual(verdict.decision, "aggregate")
 
     def test_a_claim_over_the_claim_threshold_is_the_decision(self) -> None:
         one = "11111111-1111-5111-8111-111111111111"

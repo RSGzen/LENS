@@ -80,6 +80,10 @@ class StageVerdict:
     #: derived from ``failing_criterion`` plus the logged numbers, and the envelope
     #: shape is read by every tool consumer.
     feedback: str | None = None
+    #: Which threshold produced a ``fail``: ``aggregate``, ``claim`` or ``both``.
+    #: The orchestrator needs it to decide whether a revision can be aimed at
+    #: anything, and it is not recoverable from the criterion.
+    decision: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable verdict for the trajectory.
@@ -800,6 +804,7 @@ def evaluate_stage(
         failing_criterion=criterion if verdict_value != "pass" else None,
         tier="jev",
         feedback=feedback,
+        decision=rule,
     )
     scope_extra: dict[str, Any] = {
         "decision": rule,

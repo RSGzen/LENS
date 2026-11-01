@@ -15,6 +15,7 @@ Usage::
 
     python scripts/regrade_gate.py --campaign <campaign.csv>
     python scripts/regrade_gate.py --runs run-a run-b --out regrade.csv
+    python scripts/regrade_gate.py --campaign <campaign.csv> --repeat 3 --limit 20
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -150,7 +152,68 @@ def regrade_run(
         if verdict is None or verdict.confidence is None
         else round(float(verdict.confidence), 3),
         "criterion": "" if verdict is None else (verdict.failing_criterion or "")[:200],
+        # Not in COLUMNS: the repeat check reads these, the comparison CSV does not.
+        "aggregate": None if verdict is None else verdict.confidence,
+        "max_claim": _max_claim(client),
     }
+
+
+def _max_claim(client: Any) -> float | None:
+    """Return the highest per-claim probability of the most recent gate call.
+
+    The verdict object does not carry the per-claim vector (it is written to the
+    trajectory), so the score is read back from the event this call just logged.
+    """
+    path = Path(str(getattr(getattr(client, "trajectory", None), "trajectory_path", "")))
+
+    if not path.is_file():
+        return None
+
+    extra: dict[str, Any] = {}
+
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        if event.get("action") == "gate.verdict":
+            extra = event.get("extra") or {}
+
+    scores = extra.get("claim_scores") or {}
+
+    return max((float(value) for value in scores.values()), default=None)
+
+
+def mean_sd(values: Sequence[float]) -> tuple[float, float]:
+    """Return ``(mean, sample standard deviation)``; SD is 0.0 for one value."""
+    usable = [value for value in values if value is not None]
+
+    if not usable:
+        return (float("nan"), float("nan"))
+
+    mean = sum(usable) / len(usable)
+
+    if len(usable) < 2:
+        return (mean, 0.0)
+
+    variance = sum((value - mean) ** 2 for value in usable) / (len(usable) - 1)
+
+    return (mean, math.sqrt(variance))
+
+
+def pooled_sd(deviations: Sequence[float]) -> float:
+    """Return the root-mean-square of per-answer standard deviations.
+
+    Thresholds are applied per answer, so the number that matters is the typical
+    per-answer spread, not the spread across answers.
+    """
+    usable = [value for value in deviations if value == value]  # drops NaN
+
+    if not usable:
+        return float("nan")
+
+    return math.sqrt(sum(value * value for value in usable) / len(usable))
 
 
 COLUMNS = (
@@ -195,12 +258,43 @@ def campaign_rows(path: str | Path) -> list[dict[str, str]]:
         ]
 
 
+def write_repeat_rows(rows: Sequence[dict[str, Any]], path: str | Path | None) -> str:
+    """Write the repeat-check CSV and return it as text."""
+    columns = (
+        "run_id",
+        "query_id",
+        "scores",
+        "mean_aggregate",
+        "sd_aggregate",
+        "mean_max_claim",
+        "sd_max_claim",
+    )
+    buffer: list[str] = [",".join(columns)]
+
+    for row in rows:
+        buffer.append(",".join(str(row.get(column, "")).replace(",", ";") for column in columns))
+
+    text = "\n".join(buffer) + "\n"
+
+    if path is not None:
+        Path(path).write_text(text, encoding="utf-8")
+
+    return text
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Re-score recorded answers with the current gate.")
     parser.add_argument("--campaign", action="append", default=[], help="campaign.csv (repeatable)")
     parser.add_argument("--runs", nargs="*", default=[], help="explicit run ids")
     parser.add_argument("--out", default=None, help="write the comparison CSV here")
     parser.add_argument("--limit", type=int, default=0, help="score at most this many runs")
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="score every answer N times and report the test-retest spread (sets the "
+        "resolution: thresholds closer than 2 SD are not distinguished)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="list what would be scored")
     args = parser.parse_args(argv)
 
@@ -225,6 +319,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     trajectory = Trajectory(run_id=f"regrade-{stamp}")
     client = LensClient(trajectory=trajectory)
+
+    if args.repeat > 1:
+        return _run_repeat(args, targets, client=client, trajectory=trajectory)
+
     rows: list[dict[str, Any]] = []
 
     with connect() as conn:
@@ -242,6 +340,71 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     sys.stdout.write(write_rows(rows, args.out))
     print(f"regrade calls logged in {trajectory.run_dir}", file=sys.stderr)
+
+    return 0
+
+
+def _run_repeat(
+    args: argparse.Namespace,
+    targets: Sequence[dict[str, str]],
+    *,
+    client: LensClient,
+    trajectory: Trajectory,
+) -> int:
+    """Score every answer ``--repeat`` times and report the per-answer spread."""
+    rows: list[dict[str, Any]] = []
+
+    with connect() as conn:
+        for target in targets:
+            aggregates: list[float] = []
+            claims: list[float] = []
+
+            for _ in range(args.repeat):
+                scored = regrade_run(
+                    target["run_id"],
+                    client=client,
+                    conn=conn,
+                    arm=target.get("arm", ""),
+                    query_id=target.get("query_id", ""),
+                )
+
+                if scored.get("aggregate") is not None:
+                    aggregates.append(float(scored["aggregate"]))
+                if scored.get("max_claim") is not None:
+                    claims.append(float(scored["max_claim"]))
+
+            mean_agg, sd_agg = mean_sd(aggregates)
+            mean_claim, sd_claim = mean_sd(claims)
+            rows.append(
+                {
+                    "run_id": target["run_id"],
+                    "query_id": target.get("query_id", ""),
+                    "scores": "/".join(f"{value:.2f}" for value in aggregates),
+                    "mean_aggregate": round(mean_agg, 3),
+                    "sd_aggregate": round(sd_agg, 3),
+                    "mean_max_claim": round(mean_claim, 3),
+                    "sd_max_claim": round(sd_claim, 3),
+                }
+            )
+            print(
+                f"  {target['run_id']}: aggregate {mean_agg:.2f} ± {sd_agg:.2f} "
+                f"(scores {'/'.join(f'{value:.2f}' for value in aggregates)}), "
+                f"max claim {mean_claim:.2f} ± {sd_claim:.2f}"
+            )
+
+    sd_agg = pooled_sd([row["sd_aggregate"] for row in rows])
+    sd_claim = pooled_sd([row["sd_max_claim"] for row in rows])
+
+    print()
+    print(f"pooled per-answer SD, aggregate:  {sd_agg:.3f}")
+    print(f"pooled per-answer SD, max claim:  {sd_claim:.3f}")
+    print(
+        "resolution: two thresholds closer than "
+        f"{2 * sd_agg:.2f} on the aggregate are not distinguished by one pass"
+    )
+
+    sys.stdout.write(write_repeat_rows(rows, args.out))
+    print(f"repeat calls logged in {trajectory.run_dir}", file=sys.stderr)
 
     return 0
 
