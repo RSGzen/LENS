@@ -1,0 +1,26 @@
+{
+  "name": "m11-subtask-probe-v4",
+  "repeats": 1,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "One run, to confirm end to end that the limitations section is stripped before the final gate. Three repeats are wasted on a binary question; this is the cheapest run that can answer it."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "The same query again, so the answer family -- a taxonomy with a limitations list -- is the one that produced the aggregate/claim disagreement in three earlier passes."
+    }
+  ]
+}

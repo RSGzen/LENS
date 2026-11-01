@@ -63,6 +63,15 @@ MIN_CLAIM_WORDS = 12
 _RESIDUE = re.compile(r"[\s\-–—•*:;,.()\[\]/|<>\"'`]+")
 
 
+#: A top-level bullet and everything under it, up to the next bullet.
+_BULLET_BLOCK = re.compile(r"(?m)^(?:[-*\u2022]\s+).*?(?=^[-*\u2022]\s+|\Z)", re.DOTALL)
+
+
+def _bullet_blocks(text: str) -> list[str]:
+    """Return one string per top-level bullet, continuation lines included."""
+    return [match.group(0) for match in _BULLET_BLOCK.finditer(text)]
+
+
 def claim_units(text: str) -> list[tuple[str, list[str]]]:
     """Split an answer into claim-sized units with the ids each one cites.
 
@@ -82,6 +91,31 @@ def claim_units(text: str) -> list[tuple[str, list[str]]]:
     once rather than silently skipped.
     """
     units: list[tuple[str, list[str]]] = []
+
+    # A bulleted answer puts the claim, its explanation and its citations on
+    # separate lines, so sentence splitting tears them apart: the claim line has no
+    # ids and the ``Citations:`` line has no words, and both are dropped. Measured
+    # on a recorded answer with nine cited bullets, that produced **one** claim unit.
+    # When there are bullets, each top-level bullet is the unit.
+    blocks = _bullet_blocks(text or "")
+
+    if len(blocks) > 1:
+        for block in blocks:
+            unit = " ".join(block.split())
+            ids = cited_ids(unit)
+
+            if not ids:
+                continue
+
+            residue = _RESIDUE.sub(" ", _ID_TOKEN_RE.sub(" ", unit)).strip()
+
+            if len(residue) < MIN_CLAIM_WORDS:
+                continue
+
+            units.append((unit, ids))
+
+        if units:
+            return units
 
     for piece in _SENTENCE_SPLIT.split(text or ""):
         unit = " ".join(piece.split())

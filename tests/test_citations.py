@@ -23,6 +23,46 @@ OTHER = "22222222-2222-5222-8222-222222222222"
 GHOST = "99999999-9999-5999-8999-999999999999"
 
 
+class ClaimUnitShapeTestCase(unittest.TestCase):
+    """The answer shapes the model actually writes."""
+
+    def test_a_bullet_with_a_separate_citations_line_is_one_claim(self) -> None:
+        # Recorded shape: the claim, a "Where:" line, then a "Citations:" line. The
+        # sentence splitter dropped both halves -- the claim had no ids, the citation
+        # line had no words -- and a nine-claim answer produced one unit.
+        answer = (
+            "- Retrieval-augmented aggregation across calls\n"
+            "  - Where: outside the model, in the retrieval/synthesis pipeline\n"
+            "  - Citations: 9db55e2a-afdf-5842-bbbb-80e36dc75bce / 2406.12331\n"
+            "- Hierarchical summarization over chunks\n"
+            "  - Where: between model calls, chunk summaries then combined\n"
+            "  - Citations: 8db3b3d8-e812-5675-966e-e000d199be37 / 2508.10391\n"
+        )
+
+        units = claim_units(answer)
+
+        self.assertEqual(len(units), 2)
+        self.assertTrue(all("Citations:" in text for text, _ids in units))
+        self.assertTrue(all(len(ids) >= 2 for _text, ids in units))
+
+    def test_a_bullet_without_ids_is_not_a_claim(self) -> None:
+        answer = "- A heading with no evidence\n- Another heading, also bare\n"
+
+        units = claim_units(answer)
+
+        # Nothing cited: the answer collapses to one unit so it is still judged once.
+        self.assertEqual(len(units), 1)
+        self.assertEqual(units[0][1], [])
+
+    def test_prose_without_bullets_still_splits_by_sentence(self) -> None:
+        one = "11111111-1111-5111-8111-111111111111"
+
+        units = claim_units(f"ReCAP keeps a sliding window [{one}]. The cost stays bounded.")
+
+        self.assertEqual(len(units), 1)
+        self.assertEqual(units[0][1], [one])
+
+
 class CitationTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
