@@ -42,7 +42,8 @@ Two runtimes, **one-way imports**:
 | `src/lens/agent/runstore.py` | `manifest.json` (identity/index), `resume.json` (cache), `list_runs`, `sweep_interrupted`, `fork_run`, bundle export/import (with the export-time secret scan). | `config` (lazy) |
 | `src/lens/sandbox/{runner,rlm_api,relay,exec_client}.py` | Passive persistent executor, façade (`tool()` / `sub_extract()` / `sub_summarise()` / `sub_classify()` / `budget()` / `emit()` / `note()`), the single-destination relay, the in-container exec client. | sandbox only (**no** project imports) |
 | `src/lens/experiments/{arm,campaign,polarity}.py` | Arm fingerprint (written once, into `manifest.json`), campaign matrix (validated, expanded to subprocess jobs), the four polarity probes. | `config`, `models` |
-| `src/lens/ui/{data,app}.py` | Read-only data layer (no Streamlit) and the Streamlit pages: recorded playback, live query via subprocess. | `runstore`, `replay`, `citations` |
+| `src/lens/ui/{data,app}.py` | Read-only data layer (no Streamlit) and the Streamlit pages: recorded playback, the answer with the text behind each cited chunk, live query via subprocess, and two corpus lookup tools. | `runstore`, `replay`, `citations` |
+| `src/lens/lookup.py` | Read-only paper/chunk lookup for the UI: validates the id, runs one parameterised query, prints one JSON object. Runs as a child process so the UI never opens a database. | `db.connect`, `run`-free |
 | `src/lens/run.py` | Entry point: `python -m lens.run "<query>"`, `--list/--show/--resume/--fork/--export/--import`; the only module that builds the object graph. | `agent.runtime`, `runstore`, `tools`, `embeddings`, `reranking`, `kg_extract`, `connect` |
 
 **Import direction (no cycles):** `models` ← `config` ← {`trajectory`, `clients`,
