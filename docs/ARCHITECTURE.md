@@ -40,7 +40,7 @@ Two runtimes, **one-way imports**:
 | `src/lens/agent/runtime.py` | Orchestrator: owns the loop, context assembly and compaction, sub-calls, budget, ledger, RPC dispatch, the gates, finalisation. | `clients`, `tools`, `trajectory`, `context`, `experiments.arm` |
 | `src/lens/agent/{context,budget,ledger,tool_registry,tool_server,sandbox_session,segmentation}.py` | Prompt and workspace files, caps, `tasks.json`, tool manifest/dispatch, host RPC, Docker lifecycle, the segmentation call. | `config`, `clients`, `trajectory` |
 | `src/lens/agent/runstore.py` | `manifest.json` (identity/index), `resume.json` (cache), `list_runs`, `sweep_interrupted`, `fork_run`, bundle export/import (with the export-time secret scan). | `config` (lazy) |
-| `src/lens/sandbox/{runner,rlm_api,relay,exec_client}.py` | Passive persistent executor, façade (`tool()` / `sub_call()` / `budget()` / `emit()` / `note()`), the single-destination relay, the in-container exec client. | sandbox only (**no** project imports) |
+| `src/lens/sandbox/{runner,rlm_api,relay,exec_client}.py` | Passive persistent executor, façade (`tool()` / `sub_extract()` / `sub_summarise()` / `sub_classify()` / `budget()` / `emit()` / `note()`), the single-destination relay, the in-container exec client. | sandbox only (**no** project imports) |
 | `src/lens/experiments/{arm,campaign,polarity}.py` | Arm fingerprint (written once, into `manifest.json`), campaign matrix (validated, expanded to subprocess jobs), the four polarity probes. | `config`, `models` |
 | `src/lens/ui/{data,app}.py` | Read-only data layer (no Streamlit) and the Streamlit pages: recorded playback, live query via subprocess. | `runstore`, `replay`, `citations` |
 | `src/lens/run.py` | Entry point: `python -m lens.run "<query>"`, `--list/--show/--resume/--fork/--export/--import`; the only module that builds the object graph. | `agent.runtime`, `runstore`, `tools`, `embeddings`, `reranking`, `kg_extract`, `connect` |
@@ -672,7 +672,7 @@ probed after the relay exists. The contract that follows:
 | `agent/ledger.py` | Atomic `tasks.json`. | The backtracking source; crash-recoverable. |
 | `agent/segmentation.py` | The one structured-JSON call; writes `work/query.json`. | One writer; never re-segmented on resume. |
 | `agent/tool_registry.py` | Manifest + dispatch. | Names/signatures/docstrings only; args hashed; full result blobbed. |
-| `agent/tool_server.py` | Host RPC endpoints. | The sandbox reaches only `/tool`, `/sub_call`, `/budget`, `/emit`, `/note`; per-run token. |
+| `agent/tool_server.py` | Host RPC endpoints. | The sandbox reaches only `/tool`, `/sub_task`, `/budget`, `/emit`, `/note`; per-run token. |
 | `agent/sandbox_session.py` | Compose lifecycle + `/exec` client. | One container per run (plus the relay); mounts `<run_dir>/work` only; forwards the bound port as `LENS_RELAY_TARGET_PORT`; strips secrets from the child env. |
 | `sandbox/runner.py` | Passive persistent executor. | Variables survive steps; never calls an LLM; 120 s timeout. |
 | `sandbox/rlm_api.py` | Façade. | No key/DB; depth-1 only; no recursion. |

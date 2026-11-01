@@ -1,0 +1,26 @@
+{
+  "name": "m11-subtask-probe",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Treatment arm against the typed sub-tasks. Three repeats of one query so the spread is measured, not assumed: the arms are unchanged from the W1 rerun apart from the sub-task section of the prompt, the 10-iteration cap and the 500k token cap."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "The W1 aggregation query, so these runs line up against m11-w1-v2.rlm-full.aggregation row for row. It is the cell with the most tool calls and the widest cost spread, which is where a change in how the evidence is compressed should show up first."
+    }
+  ]
+}
