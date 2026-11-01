@@ -111,7 +111,10 @@ class BudgetTestCase(unittest.TestCase):
         self.budget.record_iteration()
         self.budget.record_chat(make_result(tokens_in=500, tokens_out=500, cost=5.0))
         snap = self.budget.snapshot()
-        self.assertEqual(set(snap["left"]), {"iterations", "tokens", "cost_usd", "backtracks"})
+        self.assertEqual(
+            set(snap["left"]),
+            {"iterations", "tokens", "cost_usd", "backtracks", "sub_tasks"},
+        )
         self.assertNotIn("exec_block_s", snap["left"])
         for value in snap["left"].values():
             self.assertGreaterEqual(value, 0)

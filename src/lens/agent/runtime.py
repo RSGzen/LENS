@@ -15,7 +15,7 @@ Invariants
   RLM, so a generated block cannot rewrite its own evidence.
 - Large data stays in sandbox variables or ``emit()`` files. Only **printed
   digests** enter the root context (the tool result itself never does).
-- Depth 1: ``sub_call`` is a plain GPT-5-mini call with no tools and no REPL.
+- Depth 1: a sub-task is a typed GPT-5-mini call with no tools and no REPL.
 - Two cost sources: :class:`~lens.agent.budget.Budget` enforces the caps, and
   :meth:`lens.observability.trajectory.Trajectory.totals` is what the reported
   ``$/query`` is read from.
@@ -74,6 +74,14 @@ from lens.agent.runstore import (
 )
 from lens.agent.sandbox_session import SandboxSession
 from lens.agent.segmentation import segment_query, write_query_json
+from lens.agent.sub_tasks import (
+    get_task,
+    parse_result,
+    render_instruction,
+    render_items,
+    response_format,
+    validate_params,
+)
 from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.clients import LensClient
 from lens.experiments.arm import arm_fingerprint
@@ -360,7 +368,7 @@ class Runtime:
     def handle_rpc(self, endpoint: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         """Route one sandbox RPC to the host implementation.
 
-        ``endpoint`` is one of ``/tool``, ``/sub_call``, ``/budget``, ``/emit``,
+        ``endpoint`` is one of ``/tool``, ``/sub_task``, ``/budget``, ``/emit``,
         ``/note``. Return ``{"ok": True, "result": ...}`` or
         ``{"ok": False, "error": {...}}``. Never include credentials.
 
@@ -390,13 +398,17 @@ class Runtime:
 
                 return self._dispatch_tool(name, args, trace_ctx=trace_ctx)
 
-            if endpoint == "/sub_call":
-                prompt = payload.get("prompt")
+            if endpoint == "/sub_task":
+                variant = payload.get("variant")
+                params = payload.get("params") or {}
 
-                if not isinstance(prompt, str) or not prompt:
-                    return _error_envelope("BadRequest", "/sub_call needs a prompt")
+                if not isinstance(variant, str) or not variant:
+                    return _error_envelope("BadRequest", "/sub_task needs a variant")
 
-                return {"ok": True, "result": self._sub_call(prompt, payload.get("context"))}
+                if not isinstance(params, Mapping):
+                    return _error_envelope("BadRequest", "params must be an object")
+
+                return self._run_sub_task(variant, params)
 
             if endpoint == "/budget":
                 return {"ok": True, "result": self.budget.snapshot()}
@@ -1119,24 +1131,114 @@ class Runtime:
 
         return envelope
 
-    def _sub_call(self, prompt: str, context: str | None = None) -> str:
-        """Depth-1 plain GPT-5-mini call. No tools, no REPL, no recursion.
+    def _run_sub_task(self, name: str, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Run one typed sub-task and return an RPC envelope.
 
-        Record it in the budget (:meth:`Budget.record_chat`) — sub-calls are
-        cheap but they are not free, and H₃ counts them.
+        The root supplies parameters only: the system message, the instruction and
+        the JSON schema come from the sub-task registry. Chunk text is hydrated
+        here, from ids the root already holds, so it never round-trips through the
+        sandbox.
+
+        Every failure is an envelope, never an exception: a bad call costs the root
+        a turn it can see and fix, and the run continues. The one non-negotiable is
+        the id set -- a record naming an id that was not requested is dropped during
+        parsing.
         """
-        messages: list[dict[str, str]] = []
+        task = get_task(name)
 
-        if context:
-            messages.append({"role": "system", "content": context})
+        if task is None:
+            return _error_envelope("UnknownSubTask", f"no sub-task named {name!r}")
 
-        messages.append({"role": "user", "content": prompt})
+        try:
+            selected = validate_params(task, params)
+        except ValueError as exc:
+            return _error_envelope("BadRequest", str(exc))
+
+        if self.budget.sub_tasks >= self.budget.limits.max_sub_tasks:
+            return _error_envelope(
+                "SubTaskLimit",
+                f"sub-task limit reached ({self.budget.limits.max_sub_tasks} per query)",
+            )
+
+        items, errors = self._sub_task_items(task, selected)
+
+        if not items:
+            return _error_envelope("BadRequest", "no chunk text resolved for this call")
+
+        # What the caller asked for, not what resolved: an id with no text still
+        # has no record, and reporting it under the same key is what lets the root
+        # tell "the model skipped this" from "the id was never requested".
+        requested = (
+            [str(chunk_id) for chunk_id in selected["chunk_ids"]]
+            if "chunk_ids" in selected
+            else ["input"]
+        )
 
         trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="sub")
-        result = self.client.chat("sub", messages, trace_ctx=trace_ctx)
-        self.budget.record_chat(result)
 
-        return result.text
+        result = self.client.chat(
+            "sub",
+            [
+                {"role": "system", "content": task.system},
+                {
+                    "role": "user",
+                    "content": render_instruction(task, selected, render_items(items)),
+                },
+            ],
+            trace_ctx=trace_ctx,
+            response_format=response_format(task, selected),
+            max_tokens=task.max_output_tokens,
+            extra={"sub_task": task.name, "items": len(items)},
+        )
+
+        self.budget.record_chat(result)
+        self.budget.record_sub_task()
+
+        records, missing, parse_errors = parse_result(task, result.text, requested)
+
+        return {
+            "ok": True,
+            "result": {
+                task.result_key: records,
+                "missing_ids": missing,
+                "errors": [*errors, *parse_errors],
+            },
+        }
+
+    def _sub_task_items(
+        self, task: Any, params: Mapping[str, Any]
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Return ``([(id, text)], errors)`` for one sub-task call.
+
+        Text mode is one item with the id ``"input"``, which is what document mode
+        uses when there is no chunk to point at. Id mode hydrates from the database;
+        an id that no longer resolves is reported rather than silently dropped.
+        """
+        if "text" in params:
+            return [("input", str(params["text"]))], []
+
+        ids = [str(chunk_id) for chunk_id in params["chunk_ids"]]
+
+        if self.conn is None:
+            return [], ["no database connection in this run mode"]
+
+        from lens.tools.retrieval import fetch_chunks
+
+        try:
+            rows = fetch_chunks(self.conn, ids)
+        except Exception:  # noqa: BLE001 - a failed fetch is a visible error, not a crash
+            return [], ["chunk lookup failed"]
+
+        by_id = {
+            str(row["chunk_uuid"]): str(row.get("chunk_text") or "")
+            for row in rows
+            if isinstance(row, dict) and row.get("chunk_uuid")
+        }
+
+        items = [(chunk_id, by_id[chunk_id]) for chunk_id in ids if chunk_id in by_id]
+        missing = [chunk_id for chunk_id in ids if chunk_id not in by_id]
+
+        return items, [f"no text for {chunk_id}" for chunk_id in missing]
 
     def _citation_evidence(
         self, citations: list[str], *, answer: str = ""

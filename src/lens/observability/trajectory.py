@@ -422,8 +422,8 @@ class Trajectory:
 
                 call_type = data.get("call_type")
 
-                # To play the /sub_call/ part of the request, the body is an API
-                # request with `messages`; a `sub_call` also logs call_type="chat"
+                # To play the sub-task part of the request, the body is an API
+                # request with `messages`; a sub-task call also logs call_type="chat"
                 # but with actor="sub" and a small, unrelated history, so the fold
                 # must match actor == "root" or it would destroy the context.
                 if call_type == "chat" and data.get("actor") == "root" and "error" not in data:

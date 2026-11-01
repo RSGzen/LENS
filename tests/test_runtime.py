@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import lens.observability.trajectory as trajectory_module
 from lens import config
-from lens.agent.budget import Budget
+from lens.agent.budget import Budget, BudgetLimits
 from lens.agent.runtime import Runtime
 from lens.agent.sandbox_session import ExecResult
 from lens.agent.tool_registry import ToolRegistry, args_hash
@@ -96,6 +96,30 @@ class FakeClient:
             tokens_in=1,
             cost_usd=0.0,
             latency_ms=1,
+        )
+
+
+class SubTaskClient:
+    """Return a canned sub-task reply and keep the request for assertions."""
+
+    def __init__(self, payload: Any) -> None:
+        self.payload = payload
+        self.calls: list[dict[str, Any]] = []
+
+    def chat(self, role: str, messages: Sequence[Mapping[str, Any]], **kwargs: Any) -> CallResult:
+        self.calls.append({"role": role, "messages": list(messages), **kwargs})
+        text = self.payload if isinstance(self.payload, str) else json.dumps(self.payload)
+
+        return CallResult(
+            text=text,
+            message={"role": "assistant", "content": text},
+            model="openai/gpt-5-mini",
+            provider="openai",
+            model_snapshot=None,
+            tokens_in=10,
+            tokens_out=5,
+            latency_ms=1,
+            cost_usd=0.001,
         )
 
 
@@ -462,6 +486,98 @@ class RuntimeTestCase(unittest.TestCase):
     def test_handle_rpc_unknown_endpoint(self) -> None:
         response = self.runtime.handle_rpc("/nope", {})
         self.assertFalse(response["ok"])
+
+    # ------------------------------------------------------------ sub-tasks
+    def test_sub_task_text_mode_parses_the_reply(self) -> None:
+        self.runtime.client = SubTaskClient(
+            {"summaries": [{"id": "input", "summary": "the paper bounds cost"}]}
+        )
+
+        response = self.runtime.handle_rpc(
+            "/sub_task",
+            {"variant": "summarise", "params": {"text": "long text", "focus": "cost"}},
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["summaries"][0]["summary"], "the paper bounds cost")
+        self.assertEqual(response["result"]["missing_ids"], [])
+
+    def test_a_sub_task_asks_for_a_schema_and_an_output_cap(self) -> None:
+        client = SubTaskClient({"summaries": []})
+        self.runtime.client = client
+
+        self.runtime.handle_rpc(
+            "/sub_task", {"variant": "summarise", "params": {"text": "long text"}}
+        )
+
+        call = client.calls[0]
+        self.assertEqual(call["role"], "sub")
+        self.assertEqual(call["response_format"]["type"], "json_schema")
+        self.assertIsInstance(call["max_tokens"], int)
+        self.assertEqual(call["extra"]["sub_task"], "summarise")
+
+    def test_sub_task_unknown_variant_is_a_structured_error(self) -> None:
+        response = self.runtime.handle_rpc("/sub_task", {"variant": "invent", "params": {}})
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["type"], "UnknownSubTask")
+
+    def test_sub_task_rejects_a_parameter_it_does_not_take(self) -> None:
+        response = self.runtime.handle_rpc(
+            "/sub_task", {"variant": "summarise", "params": {"text": "x", "depth": 2}}
+        )
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["type"], "BadRequest")
+
+    def test_sub_task_is_refused_once_the_call_limit_is_reached(self) -> None:
+        self.runtime.budget = Budget(limits=BudgetLimits(max_sub_tasks=0))
+
+        response = self.runtime.handle_rpc(
+            "/sub_task", {"variant": "summarise", "params": {"text": "x"}}
+        )
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["type"], "SubTaskLimit")
+
+    def test_sub_task_counts_the_call_and_its_tokens(self) -> None:
+        self.runtime.client = SubTaskClient({"summaries": []})
+
+        self.runtime.handle_rpc("/sub_task", {"variant": "summarise", "params": {"text": "x"}})
+
+        self.assertEqual(self.runtime.budget.sub_tasks, 1)
+        self.assertEqual(self.runtime.budget.tokens_in, 10)
+
+    def test_sub_task_ids_are_hydrated_and_stamped(self) -> None:
+        self.runtime.conn = object()
+        self.runtime.client = SubTaskClient(
+            {
+                "records": [
+                    {"id": "c-1", "claims": ["a claim"]},
+                    {"id": "c-999", "claims": ["invented"]},
+                ]
+            }
+        )
+
+        rows = [{"chunk_uuid": "c-1", "chunk_text": "the chunk text"}]
+
+        with patch("lens.tools.retrieval.fetch_chunks", return_value=rows):
+            response = self.runtime.handle_rpc(
+                "/sub_task", {"variant": "extract", "params": {"chunk_ids": ["c-1", "c-2"]}}
+            )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual([record["id"] for record in response["result"]["records"]], ["c-1"])
+        self.assertEqual(response["result"]["missing_ids"], ["c-2"])
+        self.assertTrue(any("c-999" in error for error in response["result"]["errors"]))
+
+    def test_sub_task_without_a_connection_reports_it(self) -> None:
+        response = self.runtime.handle_rpc(
+            "/sub_task", {"variant": "extract", "params": {"chunk_ids": ["c-1"]}}
+        )
+
+        self.assertFalse(response["ok"])
+        self.assertIn("no chunk text", response["error"]["message"])
 
 
 class RuntimeRegressionTestCase(unittest.TestCase):

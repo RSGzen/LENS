@@ -4,7 +4,7 @@ Why this exists
 ---------------
 The sandbox network is ``internal: true`` - the sandbox must have **no route off
 its bridge**. But the RLM's code calls back to the host
-RPC server on every ``tool()`` / ``sub_call()`` / ``emit()``, so *some* path from
+RPC server on every ``tool()`` / ``sub_task()`` / ``emit()``, so *some* path from
 the container to the host is required.
 
 Measured on Docker Desktop / Windows : there is no such path

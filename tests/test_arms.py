@@ -26,11 +26,13 @@ def prompt(**kwargs: object) -> str:
 
 
 class PromptVariantTests(unittest.TestCase):
-    def test_full_names_the_kg_and_the_sub_call(self) -> None:
+    def test_full_names_the_kg_and_the_sub_tasks(self) -> None:
         text = prompt(variant="full", kg=True, sub_calls=True)
 
         self.assertIn("kg_query", text)
-        self.assertIn("sub_call", text)
+
+        for function in ("sub_extract", "sub_summarise", "sub_classify"):
+            self.assertIn(function, text)
 
     def test_kg_off_drops_every_kg_mention(self) -> None:
         # The prompt must not advertise a tool the run cannot call: the model
@@ -41,10 +43,12 @@ class PromptVariantTests(unittest.TestCase):
         self.assertNotIn("when relations matter", text)
         self.assertNotIn("knowledge graph", text)
 
-    def test_sub_calls_off_drops_only_the_recursion_bullet(self) -> None:
+    def test_sub_calls_off_drops_the_whole_section(self) -> None:
+        # The off arm must not mention a capability the sandbox route removes.
         text = prompt(variant="full", kg=True, sub_calls=False)
 
-        self.assertNotIn("sub_call", text)
+        self.assertNotIn("sub_extract", text)
+        self.assertNotIn("Sub-tasks", text)
         self.assertIn("kg_query", text)
 
     def test_protected_rules_survive_every_full_family_variant(self) -> None:
@@ -82,9 +86,9 @@ class SubCallRouteTests(unittest.TestCase):
     def test_route_absent_when_sub_calls_are_off(self) -> None:
         server = ToolServer(runtime=object(), token="t", sub_calls=False)
 
-        self.assertNotIn("/sub_call", server.routes)
+        self.assertNotIn("/sub_task", server.routes)
 
-        status, body = server.handle_request("POST", "/sub_call", {}, token="t")
+        status, body = server.handle_request("POST", "/sub_task", {}, token="t")
 
         self.assertEqual(status, 404)
         self.assertFalse(body["ok"])
@@ -92,7 +96,7 @@ class SubCallRouteTests(unittest.TestCase):
     def test_route_present_when_sub_calls_are_on(self) -> None:
         server = ToolServer(runtime=object(), token="t", sub_calls=True)
 
-        self.assertIn("/sub_call", server.routes)
+        self.assertIn("/sub_task", server.routes)
 
 
 class ArmFingerprintTests(unittest.TestCase):

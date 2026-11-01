@@ -18,11 +18,39 @@ class RlmApiTestCase(unittest.TestCase):
         self.assertEqual(result, {"x": 1})
         post.assert_called_once_with("/tool", {"name": "echo", "args": {"text": "hi"}})
 
-    def test_sub_call_sends_prompt_and_context(self) -> None:
-        with patch.object(rlm_api, "_post", return_value={"ok": True, "result": "sub"}) as post:
-            result = rlm_api.sub_call("summarise", context="ctx")
-        self.assertEqual(result, "sub")
-        post.assert_called_once_with("/sub_call", {"prompt": "summarise", "context": "ctx"})
+    def test_sub_extract_sends_variant_and_params(self) -> None:
+        payload = {"records": [{"id": "c-1", "claims": []}], "missing_ids": [], "errors": []}
+        with patch.object(rlm_api, "_post", return_value={"ok": True, "result": payload}) as post:
+            result = rlm_api.sub_extract(["c-1"], fields=["claims"])
+        self.assertEqual(result, payload)
+        post.assert_called_once_with(
+            "/sub_task",
+            {"variant": "extract", "params": {"chunk_ids": ["c-1"], "fields": ["claims"]}},
+        )
+
+    def test_sub_task_drops_unset_parameters(self) -> None:
+        # The host rejects an unknown key, and ``None`` is not a value it can act
+        # on: sending it would turn "use the default" into a 400.
+        with patch.object(rlm_api, "_post", return_value={"ok": True, "result": {}}) as post:
+            rlm_api.sub_summarise(text="short text", focus="cost")
+        post.assert_called_once_with(
+            "/sub_task",
+            {
+                "variant": "summarise",
+                "params": {"text": "short text", "focus": "cost", "max_words": 120},
+            },
+        )
+
+    def test_sub_classify_keeps_every_parameter(self) -> None:
+        with patch.object(rlm_api, "_post", return_value={"ok": True, "result": {}}) as post:
+            rlm_api.sub_classify(["c-1"], question="q?", labels=["a", "b"])
+        post.assert_called_once_with(
+            "/sub_task",
+            {
+                "variant": "classify",
+                "params": {"chunk_ids": ["c-1"], "question": "q?", "labels": ["a", "b"]},
+            },
+        )
 
     def test_budget_returns_snapshot(self) -> None:
         snapshot = {"left": {"iterations": 3}}

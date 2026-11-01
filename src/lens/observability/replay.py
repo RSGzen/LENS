@@ -135,7 +135,7 @@ def replay_turns(trajectory: Trajectory) -> list[Turn]:
          in-group order as written. Empty/missing log -> ``[]``.
       2. A ``chat`` event (actor ``root`` or ``sub``) fills the turn's model,
          provider, tokens, cost, latency and ``completion`` (``completion_ref``);
-         a ``sub_call`` therefore appears as its own turn only when it has its own
+         a sub-task call therefore appears as its own turn only when it has its own
          ``step_idx`` — otherwise it is attached to the surrounding turn.
       3. An ``exec`` event fills ``code`` (``code_ref``), ``stdout_full``
          (``stdout_ref``), ``stderr_full`` (``stderr_ref`` if present), ``ok`` and
@@ -211,7 +211,7 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
         turn.budget = extra["budget"]
 
     if call_type == "chat":
-        # Accumulate: a turn can hold the root chat *and* a sub_call, and the
+        # Accumulate: a turn can hold the root chat *and* a sub-task call, and the
         # summary must still match ``Trajectory.totals()`` for the same log.
         turn.tokens_in = (turn.tokens_in or 0) + (event.get("tokens_in") or 0)
         turn.tokens_out = (turn.tokens_out or 0) + (event.get("tokens_out") or 0)
@@ -222,7 +222,7 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
         turn.model = turn.model or event.get("model")
         turn.provider = turn.provider or event.get("provider")
 
-        # The root completion is the turn's message; a sub_call sharing the step
+        # The root completion is the turn's message; a sub-task sharing the step
         # must not overwrite it (its text belongs to that call, not the turn).
         if event.get("completion_ref") and (
             event.get("actor") == "root" or turn.completion is None

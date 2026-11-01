@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from lens import config
+from lens.agent.sub_tasks import render_prompt_block
 
 # The root system prompt. It is the first bytes of every request (so it must stay
 # byte-stable for prefix caching), and the tool manifest, the buckets and the
@@ -119,11 +120,9 @@ Output contract
    list the claims you could not support. A labelled partial answer is a valid
    result; an over-budget run is not.
 
+<<SUB_TASKS>>
+
 Guardrails
-<<BEGIN:subcall>>
-- No recursion: rlm_api.sub_call() is a plain GPT-5-mini call and cannot use tools.
-  Use it for long summarisation — root output tokens are the expensive ones.
-<<END:subcall>>
 - Stay inside the budget. If a cap is reached, return the best partial answer and
   list what is still unsupported.
 """
@@ -206,8 +205,11 @@ def _render_blocks(template: str, keep: Mapping[str, bool]) -> str:
     def replace(match: re.Match[str]) -> str:
         return match.group("body") if keep.get(match.group(1), True) else ""
 
-    text = _BLOCK.sub(replace, template)
+    return _collapse_blank_lines(_BLOCK.sub(replace, template))
 
+
+def _collapse_blank_lines(text: str) -> str:
+    """Collapse runs of blank lines, so an empty optional section leaves no gap."""
     while "\n\n\n" in text:
         text = text.replace("\n\n\n", "\n\n")
 
@@ -244,12 +246,14 @@ def build_system_prompt(
         _TEMPLATES[chosen],
         {
             "kg": config.KG_ENABLED if kg is None else kg,
-            "subcall": config.SUB_CALLS_ENABLED if sub_calls is None else sub_calls,
         },
     )
 
+    sub_calls_on = config.SUB_CALLS_ENABLED if sub_calls is None else sub_calls
+
     prompt = (
-        text.replace("<<TOOL_MANIFEST>>", tool_manifest)
+        text.replace("<<SUB_TASKS>>", render_prompt_block() if sub_calls_on else "")
+        .replace("<<TOOL_MANIFEST>>", tool_manifest)
         .replace("<<QUERY_JSON>>", json.dumps(dict(query_buckets), ensure_ascii=False, indent=2))
         .replace("<<BUDGET_LIMITS>>", _format_limits(budget_limits))
         .replace("<<WORKSPACE>>", config.SANDBOX_WORKSPACE_PATH.rstrip("/"))
@@ -259,7 +263,7 @@ def build_system_prompt(
     if "<<" in prompt or ">>" in prompt:
         raise ValueError("unfilled placeholder in the system prompt")
 
-    return prompt
+    return _collapse_blank_lines(prompt)
 
 
 def _format_limits(limits: Mapping[str, Any]) -> str:
@@ -269,13 +273,14 @@ def _format_limits(limits: Mapping[str, Any]) -> str:
     cost = limits.get("cost_usd")
     block_s = limits.get("exec_block_s")
     backtracks = limits.get("backtracks")
+    sub_tasks = limits.get("sub_tasks")
 
     return "\n".join(
         [
             f"- {iterations:,} iterations per query"
             if isinstance(iterations, int)
             else "- iterations: not set",
-            f"- {tokens:,} tokens per query (input + output)"
+            f"- {tokens:,} tokens per query (input + output, sub-tasks included)"
             if isinstance(tokens, int)
             else "- tokens: not set",
             f"- ${float(cost):.2f} per query" if cost is not None else "- cost: not set",
@@ -285,6 +290,9 @@ def _format_limits(limits: Mapping[str, Any]) -> str:
             f"- {backtracks} backtracking retries"
             if isinstance(backtracks, int)
             else "- backtracks: not set",
+            f"- {sub_tasks} sub-task calls per query"
+            if isinstance(sub_tasks, int)
+            else "- sub-tasks: not set",
         ]
     )
 
@@ -644,7 +652,8 @@ in a persistent sandbox namespace, so variables survive between turns.
   "not found" is indistinguishable from not having looked.
 - No shell, no network, no API key. The only effects are the bound tool functions
   (`shallow_match(buckets=..., k=100)`), `rlm_api.tool(name, **kwargs)` (the same
-  dispatch), `rlm_api.sub_call()`, `rlm_api.emit()`, `rlm_api.note()` and
+  dispatch), `rlm_api.sub_extract()` / `sub_summarise()` / `sub_classify()`,
+  `rlm_api.emit()`, `rlm_api.note()` and
   `rlm_api.budget()`.
 - Never invent evidence. Cite `chunk_uuid` + `arxiv_id` for every claim.
 - One fenced ```python block per turn. Print a compact digest (<= 15 lines);
@@ -785,7 +794,7 @@ def tool_bindings(parameters: Mapping[str, Sequence[str]]) -> str:
     return "\n".join(
         [
             # Imported under its real name: the docs and AGENTS.md tell the model to
-            # call `rlm_api.emit()/sub_call()/budget()`, and an alias meant
+            # call `rlm_api.emit()/budget()` and the sub-tasks, and an alias meant
             # `NameError: name 'rlm_api' is not defined`.
             "import rlm_api",
             "TOOL_PARAMETERS = {",

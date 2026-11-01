@@ -3,7 +3,9 @@
 Only these methods exist at depth 1::
 
     tool(name, **kwargs) -> Any
-    sub_call(prompt, context=None) -> str
+    sub_extract(chunk_ids, fields=None) -> dict
+    sub_summarise(chunk_ids=None, text=None, focus="", max_words=120) -> dict
+    sub_classify(chunk_ids, question, labels) -> dict
     budget() -> dict
     emit(value, label=None) -> dict
     note(text) -> None
@@ -141,14 +143,53 @@ def tool(name: str, **kwargs: Any) -> Any:
     return _post("/tool", payload)["result"]
 
 
-def sub_call(prompt: str, context: str | None = None) -> str:
-    """Run a plain depth-1 GPT-5-mini call and return its text.
+def sub_extract(chunk_ids: list[str], fields: list[str] | None = None) -> dict[str, Any]:
+    """Extract structured fields from a batch of chunks; return parsed records.
 
-    No tools, no REPL, no recursion. The host performs the call and logs it.
+    The result is ``{"records": [{"id", "claims", "method", ...}], "missing_ids":
+    [...], "errors": [...]}``. The host fills the chunk text from the ids, so the
+    caller never pastes it, and it stamps the ids back into each record.
     """
-    payload = {"prompt": prompt, "context": context}
+    return _sub_task("extract", {"chunk_ids": chunk_ids, "fields": fields})
 
-    return _post("/sub_call", payload)["result"]
+
+def sub_summarise(
+    chunk_ids: list[str] | None = None,
+    text: str | None = None,
+    focus: str = "",
+    max_words: int = 120,
+) -> dict[str, Any]:
+    """Summarise chunks or a block of text; return ``{"summaries": [...]}``."""
+    return _sub_task(
+        "summarise",
+        {
+            "chunk_ids": chunk_ids,
+            "text": text,
+            "focus": focus,
+            "max_words": max_words,
+        },
+    )
+
+
+def sub_classify(chunk_ids: list[str], question: str, labels: list[str]) -> dict[str, Any]:
+    """Label a batch of chunks from a fixed label set; return ``{"labels": [...]}``.
+
+    Labels come back one per id, plus ``"unsure"`` when the text does not decide it.
+    """
+    return _sub_task(
+        "classify",
+        {"chunk_ids": chunk_ids, "question": question, "labels": labels},
+    )
+
+
+def _sub_task(variant: str, params: Mapping[str, Any]) -> dict[str, Any]:
+    """Send one typed sub-task; drop parameters the caller left unset."""
+    payload = {
+        "variant": variant,
+        "params": {key: value for key, value in params.items() if value is not None},
+    }
+
+    return _post("/sub_task", payload)["result"]
 
 
 def budget() -> dict[str, Any]:
@@ -182,4 +223,13 @@ def note(text: str) -> None:
     return _post("/note", payload)["result"]
 
 
-__all__ = ["RLMError", "budget", "emit", "note", "sub_call", "tool"]
+__all__ = [
+    "RLMError",
+    "budget",
+    "emit",
+    "note",
+    "sub_classify",
+    "sub_extract",
+    "sub_summarise",
+    "tool",
+]

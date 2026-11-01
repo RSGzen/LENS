@@ -22,6 +22,8 @@ class BudgetLimits:
     # Per block, enforced by the runner's SIGALRM — NOT a cumulative budget.
     max_exec_block_s: float = config.MAX_EXEC_BLOCK_S
     max_backtracks: int = config.MAX_BACKTRACKS
+    # A guard, not a budget: exceeding it refuses one call and the run continues.
+    max_sub_tasks: int = config.MAX_SUB_TASKS
 
 
 @dataclass
@@ -45,6 +47,7 @@ class Budget:
     cost_usd: float = 0.0
     exec_seconds: float = 0.0
     backtracks: int = 0
+    sub_tasks: int = 0
 
     # ------------------------------------------------------------- recording
     def record_iteration(self) -> None:
@@ -82,6 +85,15 @@ class Budget:
     def record_backtrack(self) -> None:
         """Count one backtracking retry."""
         self.backtracks += 1
+
+    def record_sub_task(self) -> None:
+        """Count one sub-task call.
+
+        Tokens and cost are recorded separately by :meth:`record_chat`; this is the
+        call count, which is what bounds a loop that would otherwise spend the whole
+        per-query cost cap inside one code block.
+        """
+        self.sub_tasks += 1
 
     # ------------------------------------------------------------- decisions
     def can_continue(self) -> bool:
@@ -133,10 +145,11 @@ class Budget:
 
             {
               "limits": {"iterations", "tokens", "cost_usd", "exec_block_s",
-                         "backtracks"},
+                       "backtracks", "sub_tasks"},
               "used":   {"iterations", "tokens_in", "tokens_out", "cost_usd",
-                         "exec_seconds", "backtracks"},
-              "left":   {"iterations", "tokens", "cost_usd", "backtracks"},
+                         "exec_seconds", "backtracks", "sub_tasks"},
+              "left":   {"iterations", "tokens", "cost_usd", "backtracks",
+                         "sub_tasks"},
               "stop_reason": str | None,
             }
 
@@ -160,6 +173,7 @@ class Budget:
                 "cost_usd": self.limits.max_cost_usd,
                 "exec_block_s": self.limits.max_exec_block_s,
                 "backtracks": self.limits.max_backtracks,
+                "sub_tasks": self.limits.max_sub_tasks,
             },
             "used": {
                 "iterations": self.iterations,
@@ -168,12 +182,14 @@ class Budget:
                 "cost_usd": self.cost_usd,
                 "exec_seconds": self.exec_seconds,
                 "backtracks": self.backtracks,
+                "sub_tasks": self.sub_tasks,
             },
             "left": {
                 "iterations": max(0, (self.limits.max_iterations - self.iterations)),
                 "tokens": max(0, (self.limits.max_tokens - (self.tokens_in + self.tokens_out))),
                 "cost_usd": max(0, (self.limits.max_cost_usd - self.cost_usd)),
                 "backtracks": max(0, (self.limits.max_backtracks - self.backtracks)),
+                "sub_tasks": max(0, (self.limits.max_sub_tasks - self.sub_tasks)),
             },
             "stop_reason": self.stop_reason(),
         }

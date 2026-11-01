@@ -4,7 +4,7 @@ Only these endpoints cross the boundary::
 
     GET  /health       liveness (no token)
     POST /tool         {"name": str, "args": {...}}
-    POST /sub_call     {"prompt": str, "context": str | null}
+    POST /sub_task     {"variant": str, "params": {...}}
     GET  /budget       read-only budget snapshot
     POST /emit         {"value": any, "label": str | null}
     POST /note         {"text": str}
@@ -42,7 +42,7 @@ from lens import config
 #: method check falls out of membership instead of being restated per branch.
 _ROUTES: dict[str, frozenset[str]] = {
     "/tool": frozenset({"POST"}),
-    "/sub_call": frozenset({"POST"}),
+    "/sub_task": frozenset({"POST"}),
     "/budget": frozenset({"GET"}),
     "/emit": frozenset({"POST"}),
     "/note": frozenset({"POST"}),
@@ -78,10 +78,10 @@ class ToolServer:
         self.token = token
         # Recursion-off arm: the route is **absent**, so the sandbox gets a 404.
         # Leaving it present and merely not mentioning it would measure whether
-        # the model obeys an instruction, not what happens without sub-calls.
+        # the model obeys an instruction, not what happens without sub-tasks.
         enabled = config.SUB_CALLS_ENABLED if sub_calls is None else sub_calls
         self.routes: dict[str, frozenset[str]] = {
-            path: methods for path, methods in _ROUTES.items() if enabled or path != "/sub_call"
+            path: methods for path, methods in _ROUTES.items() if enabled or path != "/sub_task"
         }
         self._httpd: Any | None = None
         self._thread: Any | None = None
