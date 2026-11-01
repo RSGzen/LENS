@@ -84,7 +84,17 @@ class UiAppTestCase(unittest.TestCase):
                 args_ref=traj.store_blob(json.dumps({"chunk_ids": ["c1"], "k": 100})),
                 result_ref=traj.store_blob(
                     json.dumps(
-                        {"chunks": [{"chunk_uuid": CHUNK, "arxiv_id": "2511.02817"}], "papers": []}
+                        {
+                            "chunks": [
+                                {
+                                    "chunk_uuid": CHUNK,
+                                    "arxiv_id": "2511.02817",
+                                    "section_type": "Results",
+                                    "chunk_text": "the recorded chunk text",
+                                }
+                            ],
+                            "papers": [],
+                        }
                     )
                 ),
                 result_summary="rerank_chunks: 1 row",
@@ -168,6 +178,18 @@ class UiAppTestCase(unittest.TestCase):
         self.assertTrue(any("final" in value and "fail" in value for value in headings))
         self.assertTrue(any("P=0.91" in value for value in headings))
         self.assertTrue(any("call(s)" in expander.label for expander in at.expander))
+
+    def test_the_answer_panel_shows_the_text_behind_a_citation(self) -> None:
+        # The answer names a chunk_uuid; without this the reader has an id and no way
+        # to check what it actually says.
+        at = self._app()
+
+        self.assertEqual([str(exception.value) for exception in at.exception], [])
+        self.assertTrue(
+            any("Source text behind the citations" in item.label for item in at.expander)
+        )
+        codes = [block.value for block in at.code]
+        self.assertIn("the recorded chunk text", codes)
 
     def test_step_advances_the_cursor(self) -> None:
         at = self._app()

@@ -147,11 +147,27 @@ class UiDataTestCase(unittest.TestCase):
         self._chunks(
             run_id,
             0,
-            [{"chunk_uuid": CHUNK_A, "arxiv_id": "2511.02817", "section_type": "Results"}],
+            [
+                {
+                    "chunk_uuid": CHUNK_A,
+                    "arxiv_id": "2511.02817",
+                    "section_type": "Results",
+                    "chunk_text": "chunk one text",
+                }
+            ],
         )
         self._chat(run_id, 1, tokens_in=500)
         self._chunks(
-            run_id, 1, [{"chunk_uuid": CHUNK_B, "arxiv_id": "2511.02817", "section_type": "Intro"}]
+            run_id,
+            1,
+            [
+                {
+                    "chunk_uuid": CHUNK_B,
+                    "arxiv_id": "2511.02817",
+                    "section_type": "Intro",
+                    "chunk_text": "chunk two text",
+                }
+            ],
         )
 
         run_dir = self.root / run_id
@@ -349,6 +365,40 @@ class UiDataTestCase(unittest.TestCase):
         path.write_text("{not json", encoding="utf-8")
         self.assertEqual(data.load_aliases(), {})
         self.assertEqual(data.load_run("run-a").run_id, "run-a")  # still openable
+
+    # ----------------------------------------------------- cited chunk text
+    def test_cited_chunks_resolves_the_answer_s_ids(self) -> None:
+        self._make_run("run-cited", answer=f"One claim [{CHUNK_A}], one more [{CHUNK_B}].")
+
+        view = data.load_run("run-cited")
+        assert view is not None
+
+        chunks = data.cited_chunks(view)
+
+        self.assertEqual([row["chunk_uuid"] for row in chunks], [CHUNK_A, CHUNK_B])
+        self.assertIn("chunk one", chunks[0]["text"])
+        self.assertEqual(chunks[0]["chars"], len(chunks[0]["text"]))
+
+    def test_an_id_the_bundle_cannot_explain_is_skipped(self) -> None:
+        # The answer cites a chunk no recorded payload hydrated: the citation report
+        # already calls it unresolved, and an empty row would look like an empty chunk.
+        missing = "99999999-9999-5999-8999-999999999999"
+        self._make_run("run-cited-missing", answer=f"One claim [{CHUNK_A}] and [{missing}].")
+
+        view = data.load_run("run-cited-missing")
+        assert view is not None
+
+        chunks = data.cited_chunks(view)
+
+        self.assertEqual([row["chunk_uuid"] for row in chunks], [CHUNK_A])
+
+    def test_a_cited_id_is_not_repeated(self) -> None:
+        self._make_run("run-cited-twice", answer=f"A [{CHUNK_A}]. B [{CHUNK_A}].")
+
+        view = data.load_run("run-cited-twice")
+        assert view is not None
+
+        self.assertEqual(len(data.cited_chunks(view)), 1)
 
     # ------------------------------------------------------------------ gates
     def test_gate_calls_pair_the_request_with_the_verdict(self) -> None:

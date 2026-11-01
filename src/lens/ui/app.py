@@ -794,6 +794,21 @@ def render_answer(view: data.RunView) -> None:
             + ", ".join(f"`{token}`" for token in report.unresolved)
         )
 
+    chunks = data.cited_chunks(view)
+
+    if chunks:
+        # One dropdown rather than an expander per id: a collapsed expander still
+        # builds its DOM, and a run citing thirty-seven chunks would build thirty-seven
+        # of them with the whole text inside.
+        with st.expander(f"Source text behind the citations ({len(chunks)} chunks)"):
+            labels = [
+                f"{row['chunk_uuid'][:8]} · {row['arxiv_id']} · "
+                f"{row['section_type']} · {row['chars']:,} chars"
+                for row in chunks
+            ]
+            chosen = st.selectbox("chunk", labels, index=0, key=f"source_{view.run_id}")
+            st.code(chunks[labels.index(chosen)]["text"], language="text")
+
     run_dir = data.run_dir(view.run_id)
 
     if run_dir is None:

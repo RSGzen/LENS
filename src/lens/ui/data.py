@@ -37,7 +37,7 @@ from lens.agent.runstore import (
     read_manifest,
     runs_root,
 )
-from lens.observability.citations import CitationReport, resolve_citations
+from lens.observability.citations import CitationReport, cited_ids, resolve_citations
 from lens.observability.replay import Turn, replay_summary, replay_turns
 from lens.observability.trajectory import Trajectory
 
@@ -466,6 +466,59 @@ def _blob_json(trajectory: Trajectory, ref: str | None) -> Any:
         return json.loads(trajectory.load_blob(ref))
     except (OSError, KeyError, ValueError, IndexError):
         return None
+
+
+def cited_chunks(view: RunView) -> list[dict[str, Any]]:
+    """Return the chunk rows behind the ids the answer cites, in answer order.
+
+    The answer names ``chunk_uuid`` values; the text behind each one is already in
+    the run, hydrated by the tool call that returned it, so this is a join and not a
+    query. Ids the answer cites that no recorded payload explains are skipped here --
+    :attr:`RunView.citations` already reports them as unresolved, and inventing an
+    empty row would make a missing blob look like an empty chunk.
+    """
+    rows_by_id: dict[str, dict[str, Any]] = {}
+
+    for rows in view.evidence.values():
+        for row in rows:
+            chunk_id = str(row.get("chunk_uuid") or "")
+
+            if chunk_id:
+                rows_by_id.setdefault(chunk_id, row)
+
+    found: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for token in cited_ids(view.answer):
+        row = rows_by_id.get(token)
+
+        if row is None:
+            # A truncated id (and some payloads log the short form) still resolves
+            # when exactly one hydrated chunk starts with it.
+            candidates = [chunk_id for chunk_id in rows_by_id if chunk_id.startswith(token)]
+            row = rows_by_id[candidates[0]] if len(candidates) == 1 else None
+
+        if row is None:
+            continue
+
+        chunk_id = str(row.get("chunk_uuid"))
+
+        if chunk_id in seen:
+            continue
+
+        text = str(row.get("chunk_text") or "")
+        seen.add(chunk_id)
+        found.append(
+            {
+                "chunk_uuid": chunk_id,
+                "arxiv_id": row.get("arxiv_id"),
+                "section_type": row.get("section_type"),
+                "chars": len(text),
+                "text": text,
+            }
+        )
+
+    return found
 
 
 def evidence_upto(view: RunView, cursor: int) -> list[dict[str, Any]]:
