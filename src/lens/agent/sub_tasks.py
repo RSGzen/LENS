@@ -43,6 +43,21 @@ EXTRACT_FIELDS: tuple[str, ...] = (
     "limitations",
 )
 
+#: Field that carries **verbatim** spans. Always returned, whatever else is
+#: requested: it is the only part of a record an answer can cite, and a paraphrase
+#: cannot be checked against the chunk the gate is shown.
+QUOTES_FIELD = "quotes"
+
+#: Shortest span worth keeping. A quote below this cannot carry a claim, and it is
+#: the same floor the silver-label check uses for a supported claim.
+MIN_QUOTE_CHARS = 25
+
+#: Longest and fewest quotes kept per record. The output cap is the real limit: an
+#: unconstrained quote list is what truncated the first recorded call, and three
+#: sentences carry a record's claims without spending the reply on them.
+MAX_QUOTE_CHARS = 400
+MAX_QUOTES_PER_RECORD = 3
+
 #: Characters of one item sent to a sub-task. A chunk is at most ~512 tokens
 #: (~2,000 characters); the margin covers a chunk that ran long without letting
 #: one item crowd out the others in a multi-item call.
@@ -113,7 +128,9 @@ def _extract_schema(params: Mapping[str, Any]) -> dict[str, Any]:
 
     fields = EXTRACT_FIELDS if not requested else tuple(str(name) for name in requested)
 
-    return _records_schema(fields)
+    # ``quotes`` is appended rather than merged into a set so the schema — and
+    # therefore the request bytes — is identical from one call to the next.
+    return _records_schema((*[name for name in fields if name != QUOTES_FIELD], QUOTES_FIELD))
 
 
 def _summarise_schema(_params: Mapping[str, Any]) -> dict[str, Any]:
@@ -165,23 +182,36 @@ SUB_TASKS: dict[str, SubTask] = {
         ),
         instruction=(
             "Extract these fields for every item: <<FIELDS>>.\n"
-            'Reply with JSON only: {"records": [{"id": "...", "claims": ["..."]}]}\n'
+            'Reply with JSON only: {"records": [{"id": "...", "claims": ["..."], '
+            '"quotes": ["..."]}]}\n'
             "\n"
             "Field guide\n"
             "- claims: statements the text makes, one short sentence each, in the text's "
             "own words.\n"
+            "- quotes: sentences copied **character for character** from the item, each at "
+            "least 25 characters and at most 400, at most three per item, that together "
+            "state the most important claims. Copy; do not paraphrase, shorten with an "
+            "ellipsis, or join two sentences. An empty list is correct when the text states "
+            "nothing quotable.\n"
             "- method: the approach the text describes; null when it names none.\n"
             "- dataset: datasets the text evaluates on.\n"
             "- metric: metrics the text reports.\n"
             "- numbers: numeric results verbatim, with their units.\n"
             "- limitations: limitations the text states.\n"
-            "Use null or an empty list when the text does not state a field. Never infer.\n"
+            "Use null or an empty list when the text does not state a field. Never infer. "
+            "A quote the caller cannot find in the item is discarded, so an invented or "
+            "rewritten quote costs you the whole record.\n"
             "\n"
             "Items\n"
             "<<ITEMS>>"
         ),
         result_key="records",
-        max_output_tokens=1600,
+        # 1600 tokens was the cap for four items and it silently truncated: every
+        # recorded call that asked for all six fields plus quotes came back as
+        # cut-off JSON, parsed to zero records, and the root read the chunks by hand
+        # instead. A truncated reply is worse than a smaller one, because it looks
+        # like "the text stated nothing".
+        max_output_tokens=3000,
         max_items=4,
         source="ids",
         build_schema=_extract_schema,
@@ -191,7 +221,8 @@ SUB_TASKS: dict[str, SubTask] = {
         function="sub_summarise",
         signature="sub_summarise(chunk_ids=None, text=None, focus='', max_words=120) -> dict",
         params=("chunk_ids", "text", "focus", "max_words"),
-        summary="one short summary per item, focused on what the caller asks for",
+        summary="one short summary per item, focused on what the caller asks for "
+        "(a paraphrase: for orientation, not citable)",
         system=(
             "You summarise research text. Report what the text says, keep its numbers and "
             "the names it uses, and add nothing. Reply with JSON only."
@@ -430,7 +461,15 @@ def render_prompt_block() -> str:
         )
 
         if task.name == "extract":
-            lines.append("  ``fields`` is a subset of: " + ", ".join(EXTRACT_FIELDS) + ".")
+            lines.append(
+                "  ``fields`` is a subset of: "
+                + ", ".join(EXTRACT_FIELDS)
+                + ". Every record also carries ``quotes``: verbatim sentences with the id "
+                "they came from, checked host-side, and the only part of a record you may "
+                'cite. Ask for ``fields=["claims"]`` when you are collecting evidence: '
+                "each extra field spends the reply's output cap, and a truncated reply "
+                "parses to no records at all."
+            )
 
     lines.extend(
         [
@@ -441,7 +480,9 @@ def render_prompt_block() -> str:
             "excerpts). To read more chunks than that, do not print their text: call "
             "``rlm_api.sub_extract`` on the top chunk ids in batches (no more than four "
             "calls per code block, over one or two turns), keep the records in a variable, "
-            "and print only the parts you need.",
+            "and print only the parts you need. Keep the ``quotes`` field: those spans are "
+            "checked against their chunk host-side, so they are citable as they stand, "
+            "which a summary or a paraphrase never is.",
             f"- At most {config.MAX_SUB_TASKS} sub-task calls per query.",
             "- The ids in a result are stamped from the ids you passed, so a record",
             "  cannot invent evidence. A sub-task answer is a derived record: cite the",
@@ -450,6 +491,9 @@ def render_prompt_block() -> str:
             "  and its verdict is the one that counts.",
             "- One code block has a time limit, so batch: a call takes a few seconds and a",
             "  loop of them will overrun it.",
+            "- A result carries ``errors`` and ``missing_ids``. Print both when they are "
+            "non-empty: a reply cut off at the output cap reads as an empty result, and "
+            "the only way to tell the two apart is that the error says so.",
         ]
     )
 
@@ -457,6 +501,50 @@ def render_prompt_block() -> str:
 
 
 # ------------------------------------------------------------------ parsing
+
+
+def verify_quotes(
+    records: Sequence[Mapping[str, Any]], items: Sequence[tuple[str, str]]
+) -> tuple[list[dict[str, Any]], int]:
+    """Return ``(records, dropped)`` with every non-verbatim quote removed.
+
+    A sub-task is a model, and a model asked to copy a sentence sometimes rewrites
+    it. A reworded quote is worse than no quote: the root would cite it as verbatim
+    and the gate would find the words are not in the chunk. The text is host-side, so
+    the check is exact — whitespace-normalised containment, one contiguous span, no
+    ellipsis joining — and a quote that fails is **removed**, never repaired.
+    """
+    text_by_id = {item_id: " ".join(text.split()) for item_id, text in items}
+    dropped = 0
+    cleaned: list[dict[str, Any]] = []
+
+    for record in records:
+        body = dict(record)
+        quotes = body.get(QUOTES_FIELD)
+
+        if quotes is None:
+            cleaned.append(body)
+            continue
+
+        text = text_by_id.get(str(body.get("id") or ""), "")
+        kept: list[str] = []
+
+        for quote in quotes if isinstance(quotes, list) else []:
+            span = " ".join(str(quote).split())
+
+            if (
+                MIN_QUOTE_CHARS <= len(span) <= MAX_QUOTE_CHARS
+                and span in text
+                and len(kept) < MAX_QUOTES_PER_RECORD
+            ):
+                kept.append(span)
+            else:
+                dropped += 1
+
+        body[QUOTES_FIELD] = kept
+        cleaned.append(body)
+
+    return cleaned, dropped
 
 
 def _strip_fence(text: str) -> str:
@@ -486,10 +574,24 @@ def parse_result(
     not in the request is dropped.
     """
     allowed = list(allowed_ids)
+    body = _strip_fence(text)
 
     try:
-        payload = json.loads(_strip_fence(text))
+        payload = json.loads(body)
     except (ValueError, TypeError):
+        # A reply that stopped mid-object was cut off at the output cap, and that is
+        # a different thing from a malformed one: it says the request was too big,
+        # which the root can fix by asking for fewer fields or fewer ids.
+        if body.startswith("{") and not body.rstrip().endswith("}"):
+            return (
+                [],
+                allowed,
+                [
+                    "reply was cut off before its JSON closed (the output cap bound): "
+                    "ask for fewer fields or fewer chunk ids, or retry"
+                ],
+            )
+
         return [], allowed, ["reply was not JSON"]
 
     if not isinstance(payload, Mapping):

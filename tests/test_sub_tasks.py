@@ -139,7 +139,20 @@ class SchemaTestCase(unittest.TestCase):
         schema = response_format(get_task("extract"), params)["json_schema"]["schema"]
         record = schema["properties"]["records"]["items"]
 
-        self.assertEqual(record["required"], ["id", "claims", "numbers"])
+        # ``quotes`` is always there: it is the only part of a record an answer may
+        # cite, so it cannot be something the caller forgets to ask for.
+        self.assertEqual(record["required"], ["id", "claims", "numbers", "quotes"])
+
+    def test_quotes_are_last_whatever_is_requested(self) -> None:
+        # The request bytes are the prompt's cache key, so the field order may not
+        # depend on set iteration.
+        for fields in (None, ["numbers"], ["claims", "method", "quotes"]):
+            params = {"chunk_ids": ["c-1"], "fields": fields}
+            schema = response_format(get_task("extract"), params)["json_schema"]["schema"]
+            record = schema["properties"]["records"]["items"]
+
+            self.assertEqual(record["required"][-1], "quotes")
+            self.assertEqual(record["required"].count("quotes"), 1)
 
     def test_classify_schema_offers_an_unsure_label(self) -> None:
         schema = response_format(get_task("classify"), sample_params("classify"))["json_schema"][
@@ -174,6 +187,90 @@ class RenderTestCase(unittest.TestCase):
 
     def test_prompt_block_states_the_call_limit(self) -> None:
         self.assertIn("sub-task calls per query", render_prompt_block())
+
+
+class QuoteVerificationTestCase(unittest.TestCase):
+    """A quote the caller cannot find in the chunk must not survive the call."""
+
+    TEXT = (
+        "We propose a context compression model structure based on an autoencoder, "
+        "which we call the Recurrent Context Compression model."
+    )
+
+    def test_a_verbatim_quote_is_kept(self) -> None:
+        records, dropped = sub_tasks.verify_quotes(
+            [{"id": "c-1", "quotes": ["based on an autoencoder, which we call the"]}],
+            [("c-1", self.TEXT)],
+        )
+
+        self.assertEqual(records[0]["quotes"], ["based on an autoencoder, which we call the"])
+        self.assertEqual(dropped, 0)
+
+    def test_a_rewritten_quote_is_dropped(self) -> None:
+        records, dropped = sub_tasks.verify_quotes(
+            [{"id": "c-1", "quotes": ["based on a deep autoencoder that they call RCC"]}],
+            [("c-1", self.TEXT)],
+        )
+
+        self.assertEqual(records[0]["quotes"], [])
+        self.assertEqual(dropped, 1)
+
+    def test_a_quote_from_another_chunk_is_dropped(self) -> None:
+        # The id is what the answer cites, so the span has to be in *that* text.
+        records, dropped = sub_tasks.verify_quotes(
+            [{"id": "c-2", "quotes": ["based on an autoencoder, which we call the"]}],
+            [
+                ("c-1", self.TEXT),
+                ("c-2", "An unrelated sentence about caching, long enough to say."),
+            ],
+        )
+
+        self.assertEqual(records[0]["quotes"], [])
+        self.assertEqual(dropped, 1)
+
+    def test_line_wrapping_does_not_break_a_quote(self) -> None:
+        records, dropped = sub_tasks.verify_quotes(
+            [{"id": "c-1", "quotes": ["based on an\n  autoencoder,   which we call the"]}],
+            [("c-1", self.TEXT.replace(" ", "\n", 3))],
+        )
+
+        self.assertEqual(len(records[0]["quotes"]), 1)
+        self.assertEqual(dropped, 0)
+
+    def test_a_short_or_missing_field_is_tolerated(self) -> None:
+        records, dropped = sub_tasks.verify_quotes(
+            [{"id": "c-1", "quotes": ["too short"]}, {"id": "c-1", "claims": []}],
+            [("c-1", self.TEXT)],
+        )
+
+        self.assertEqual(records[0]["quotes"], [])
+        # A record that came back without the field does not gain one: the check
+        # removes quotes, it never invents them.
+        self.assertNotIn("quotes", records[1])
+        self.assertEqual(dropped, 1)
+
+    def test_quotes_are_capped_in_count_and_length(self) -> None:
+        # An unbounded quote list is what truncated the first recorded call.
+        long_quote = "based on an autoencoder, which we call the " + "x" * 500
+        text = self.TEXT + " " + long_quote
+        records, dropped = sub_tasks.verify_quotes(
+            [
+                {
+                    "id": "c-1",
+                    "quotes": [
+                        "which we call the Recurrent Context Compression model.",
+                        "based on an autoencoder, which we call the",
+                        "We propose a context compression model structure",
+                        "model structure based on an autoencoder",
+                        long_quote,
+                    ],
+                }
+            ],
+            [("c-1", text)],
+        )
+
+        self.assertEqual(len(records[0]["quotes"]), sub_tasks.MAX_QUOTES_PER_RECORD)
+        self.assertEqual(dropped, 2)
 
 
 class ParseResultTestCase(unittest.TestCase):

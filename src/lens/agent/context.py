@@ -88,6 +88,23 @@ Search the variable, not the digest you printed
   it. Calling the funnel again with unchanged buckets returns the same chunks, so
   that is a wasted turn rather than a new retrieval.
 
+Coverage is a duty, not advice
+- The query arrives split into objectives, problems, constraints and requirements in
+  ``query.json`` (also in the namespace as ``buckets``). Before you answer, name the
+  chunk ids that evidence **each** objective. An objective with no id is a gap: either
+  narrow the claim to what you have, or refine a copy of the buckets with the terms you
+  learned from the chunks, run the funnel once more, and read the new chunks the same
+  way. Do not smooth a gap over with a broader sentence — that is the sentence the
+  final gate rejects.
+- One funnel returns about a hundred chunks and you have ten turns, so you cannot read
+  them inline: read them in batches, a few chunks at a time, and keep the verbatim
+  quotes rather than a paraphrase of them.
+- A **comparative** claim ("A aggregates outside the model, B inside it") may cite two
+  to four chunks and quote one sentence from each. The quote rule is about evidence,
+  not about one sentence per claim: a query that asks how methods **differ** cannot be
+  answered with single-chunk bullets only. Label such a claim honestly and cite every
+  chunk it draws on.
+
 Work incrementally
 - The namespace persists: every variable, function and ledger task id from an
   earlier turn still exists. Each turn's block contains **only the new step** —
@@ -120,6 +137,7 @@ Output contract
    sentence in a retrieved chunk that states it. If you cannot quote it, do not
    write it as a finding: put it under what you could not support. A claim whose
    citation only shares the topic is an unsupported claim, and the gate will name it.
+   A comparison drawn from several chunks is a claim too: cite all of them.
 
 5. **A negative finding is a claim too.** If you conclude "no retrieved chunk
    contains X", cite the `chunk_uuid` values you inspected and say how many — the

@@ -84,6 +84,7 @@ from lens.agent.sub_tasks import (
     render_items,
     response_format,
     validate_params,
+    verify_quotes,
 )
 from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.clients import LensClient
@@ -1323,6 +1324,18 @@ class Runtime:
         self.budget.record_sub_task()
 
         records, missing, parse_errors = parse_result(task, result.text, requested)
+
+        if task.name == "extract":
+            # A quote is only usable if the words are in the chunk, so the host
+            # checks it here rather than trusting the answer to do so later. This is
+            # the same guarantee the id stamping gives: the model cannot manufacture
+            # evidence.
+            records, dropped = verify_quotes(records, items)
+
+            if dropped:
+                parse_errors.append(
+                    f"{dropped} quote(s) were not verbatim in the item and were dropped"
+                )
 
         return {
             "ok": True,
