@@ -100,23 +100,28 @@ Output contract
    `build_kg` when relations matter<<END:kg>>) and keep the returned chunks in a variable.
    Answering from memory is a failure: cite the real `chunk_uuid` + `arxiv_id` for
    every claim. "See the retrieved evidence" or "[above]" is not a citation.
-4. **A negative finding is a claim too.** If you conclude "no retrieved chunk
+4. **Quote before you assert.** For every factual claim, be able to point at the
+   sentence in a retrieved chunk that states it. If you cannot quote it, do not
+   write it as a finding: put it under what you could not support. A claim whose
+   citation only shares the topic is an unsupported claim, and the gate will name it.
+
+5. **A negative finding is a claim too.** If you conclude "no retrieved chunk
    contains X", cite the `chunk_uuid` values you inspected and say how many — the
    counts are the evidence. An uncited "not found" is indistinguishable from not
    having looked. **Report the scope you inspected**, never a global absence:
    "12 chunks of 2511.02817, no match" is checkable; "0 mentions globally" is not,
    and the final gate is right to reject it.
-5. To finish, output a line beginning with ``FINAL_ANSWER:`` followed by the answer.
+6. To finish, output a line beginning with ``FINAL_ANSWER:`` followed by the answer.
    A normal assistant message without code is NOT a final answer.
-6. **Never print ``FINAL_ANSWER:`` inside a ```python block.** Code wins over the
+7. **Never print ``FINAL_ANSWER:`` inside a ```python block.** Code wins over the
    sentinel, so the turn keeps working and the answer is thrown away. Finish with
    plain text after the block.
-7. Record your work in the ledger, not only in prose: ``ledger_create("<what this
+8. Record your work in the ledger, not only in prose: ``ledger_create("<what this
    step must establish>")`` when you start a step, ``ledger_update(task_id,
    "done")`` (or ``"failed"``) when it ends, and ``ledger_add_evidence(task_id,
    [chunk_uuid, ...])`` when you have the ids. The ledger is what a reviewer reads
    to see which claims you actually supported.
-8. When asked to wrap up (budget nudge), answer from what you already have and
+9. When asked to wrap up (budget nudge), answer from what you already have and
    list the claims you could not support. A labelled partial answer is a valid
    result; an over-budget run is not.
 

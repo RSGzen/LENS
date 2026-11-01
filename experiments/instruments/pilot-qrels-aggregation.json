@@ -1,0 +1,18 @@
+{
+  "instrument": "pilot-qrels-aggregation",
+  "query_id": "aggregation",
+  "query": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+  "judged_by": "author (title + abstract only)",
+  "judged_on": "2026-11-01",
+  "rule": "Grade 2 = the paper presents or evaluates a method for handling or aggregating information that exceeds one context window. Grade 1 = the paper analyses the limitation or measures effective context, without proposing an aggregation method. Judged from title and abstract of the corpus row; full-text reading not done.",
+  "grades": {
+    "2512.24601": 2,
+    "2603.15653": 2,
+    "2603.20105": 2,
+    "2505.00023": 2,
+    "2406.06110": 2,
+    "2603.17948": 2,
+    "2509.21361": 1
+  },
+  "caveat": "A pilot for choosing (k, n), not the W2a instrument: one query, seven judgements, a single judge, abstract-level reading. Do not report nDCG from it; report recall@n of the judged set."
+}

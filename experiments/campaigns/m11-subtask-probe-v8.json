@@ -1,0 +1,26 @@
+{
+  "name": "m11-subtask-probe-v8",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Same arm and query as v7 (ANN recall fixed), plus one output-contract rule: quote the sentence that supports a claim before asserting it, and report instead of asserting when there is no quote. k/n unchanged so the rule is the only difference."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Unchanged. v7 showed the target paper now reaches the candidates and the gate names claims; this pass asks whether quoting reduces unsupported claims."
+    }
+  ]
+}

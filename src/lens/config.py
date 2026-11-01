@@ -230,6 +230,11 @@ HNSW_EF_SEARCH = int(os.environ.get("LENS_HNSW_EF_SEARCH", "400"))
 #: larger of the two: ef_search must exceed the LIMIT, not equal it.
 HNSW_EF_MULTIPLIER = int(os.environ.get("LENS_HNSW_EF_MULTIPLIER", "4"))
 
+#: pgvector accepts ef_search in 1..1000 and raises above that. The multiplier is
+#: therefore clamped rather than trusted: at k=400, four times the LIMIT is already
+#: outside the range, and a sweep would fail on its largest point instead of running.
+HNSW_EF_MAX = 1000
+
 # Cross-encoder reranker, used at BOTH stages (Stage A = papers, Stage B =
 # chunks) so one notion of relevance ranks both.
 RERANKER_MODEL_ID = os.environ.get("LENS_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")

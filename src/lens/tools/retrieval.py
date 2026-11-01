@@ -230,6 +230,19 @@ def top_by_score(items: Sequence[T], scores: Sequence[float], top: int) -> list[
 
 
 # ------------------------------------------------------------------ T1 funnel tools
+def hnsw_ef_for(limit: int) -> int:
+    """Return the ``ef_search`` for one query: above the LIMIT, within pgvector's cap.
+
+    ``ef_search`` must exceed the LIMIT rather than equal it (see :func:`shallow_match`),
+    but pgvector rejects anything above 1000, so the multiple is clamped rather than
+    trusted.
+    """
+    return min(
+        config.HNSW_EF_MAX,
+        max(config.HNSW_EF_SEARCH, config.HNSW_EF_MULTIPLIER * limit),
+    )
+
+
 def shallow_match(
     conn: Any,
     buckets: QueryBuckets,
@@ -264,7 +277,7 @@ def shallow_match(
         # index explores exactly as many nodes as it is asked to return, and recall
         # collapses. Measured on this corpus at k=100: 73 % of the exact top-100 at
         # ef 100, 95 % at ef 400. See `scripts/probe_recall.py`.
-        for stmt in hnsw_config_sql(max(config.HNSW_EF_SEARCH, config.HNSW_EF_MULTIPLIER * k)):
+        for stmt in hnsw_config_sql(hnsw_ef_for(k)):
             cur.execute(stmt)
 
         cur.execute(
@@ -380,10 +393,7 @@ def deep_match(
     with conn.cursor() as cur:
         # Filtered HNSW applies the WHERE after the graph scan -> iterative scan.
         # `ef_search` must also be >= the LIMIT (see shallow_match).
-        for stmt in hnsw_config_sql(
-            ef_search=max(config.HNSW_EF_SEARCH, config.HNSW_EF_MULTIPLIER * candidate_chunks),
-            iterative_scan=True,
-        ):
+        for stmt in hnsw_config_sql(ef_search=hnsw_ef_for(candidate_chunks), iterative_scan=True):
             cur.execute(stmt)
 
         cur.execute(

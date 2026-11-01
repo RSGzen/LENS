@@ -1,0 +1,26 @@
+{
+  "name": "m11-subtask-probe-v7",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Same arm, same query, with the ANN recall fix: ef_search 400 (was an effective 100) and the query path takes max(ef, 4k). Stage A now returns 95% of the exact top-100 instead of 73%, and the paper this query is about enters the candidate set."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Unchanged so the retrieval fix is the only difference. The target paper 2512.24601 ranked 4th exactly and was missing from the candidates before the fix."
+    }
+  ]
+}
