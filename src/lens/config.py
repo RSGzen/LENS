@@ -417,16 +417,17 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "3000"
 # Cumulative token cap, DERIVED from a **measurement** rather than from a chosen
 # context ceiling: iterations x measured tokens per turn x 1.25 overhead.
 #   tokens per turn = 14,000 (p90 of 432 recorded root calls; median 7,756)
-#   10 x 14,000 x 1.25 = 175,000
-# The previous form took the compaction trigger as "the average turn", which is a
-# chosen number, so the cap moved whenever that choice did. Sub-task calls spend
-# this same budget rather than carrying their own allowance: an allowance for a
-# capability nothing used is a number pretending to be a measurement.
+#   10 x 14,000 x 1.25 = 175,000 for the root's own turns
+# plus an allowance for sub-task calls, which spend this same budget: a measured
+# depth-1 run made 20 calls and finished at 178,010 tokens, 2 % over a cap that
+# assumed no sub-tasks, so the cap bound and the stop reason became an artefact of
+# the rule rather than of the work. 25 calls x 3,000 tokens = 75,000.
 CONTEXT_TURN_TOKENS_ESTIMATE = int(os.environ.get("LENS_CONTEXT_TURN_TOKENS", "14000"))
+SUB_TASK_TOKENS_ESTIMATE = int(os.environ.get("LENS_SUB_TASK_TOKENS", "75000"))
 MAX_TOKENS_PER_QUERY = int(
     os.environ.get(
         "LENS_MAX_TOKENS",
-        str(int(MAX_ITERATIONS * CONTEXT_TURN_TOKENS_ESTIMATE * 1.25)),
+        str(int(MAX_ITERATIONS * CONTEXT_TURN_TOKENS_ESTIMATE * 1.25) + SUB_TASK_TOKENS_ESTIMATE),
     )
 )
 

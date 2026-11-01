@@ -138,6 +138,9 @@ Output contract
    write it as a finding: put it under what you could not support. A claim whose
    citation only shares the topic is an unsupported claim, and the gate will name it.
    A comparison drawn from several chunks is a claim too: cite all of them.
+   A quote you take from a sub-task record must be copied **unchanged**: if you
+   shorten it, mark the gap with `…`. Words silently dropped make a quote a reader
+   cannot find in the chunk, even when the claim is true.
 
 5. **A negative finding is a claim too.** If you conclude "no retrieved chunk
    contains X", cite the `chunk_uuid` values you inspected and say how many — the
