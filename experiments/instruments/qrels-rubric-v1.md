@@ -59,7 +59,8 @@ The worksheet is `qrels-worksheet.csv`, one row per (query, paper) pair, **shuff
 with a fixed seed**, with the configuration that retrieved the paper hidden. Keep it
 that way: a judge who can see which retriever found a paper is grading the retriever.
 
-1. Rows for the same `query_id` may not be adjacent. Filter by `query_id`, read the
+1. Rows are **grouped by query** and **shuffled within each query**, so the order you
+   see is not the order the retriever ranked. Work one `query_id` at a time: read the
    `query` column once, then judge that group.
 2. Fill `rel` with `1` or `0`. Leave nothing blank — a blank row is read as `0` by the
    scorer, which would silently credit the retriever for your skipped work.
