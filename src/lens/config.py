@@ -315,7 +315,7 @@ MAX_RETRIES = 3
 # Model windows (OpenRouter model list, 18 Oct 2026): root ``openai/gpt-5``
 # 400,000 ctx / 128,000 max out, $1.25/1M in + $10/1M out; sub ``gpt-5-mini``
 # 400,000; dev ``qwen/qwen3-coder`` 262,144 / 65,536, $0.30 + $1.00. The
-# **narrowest** role (262k) bounds CONTEXT_TOKEN_LIMIT, not the root.
+# **narrowest** role (262k) bounds how much context any role can hold, not the root's.
 MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "10"))
 #: Sub-task calls one query may make. A guard rather than a budget: each call is a
 #: few seconds of ``gpt-5-mini`` and ~$0.001, but a bad loop inside one code block
