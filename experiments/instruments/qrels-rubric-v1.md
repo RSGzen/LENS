@@ -62,8 +62,9 @@ that way: a judge who can see which retriever found a paper is grading the retri
 1. Rows are **grouped by query** and **shuffled within each query**, so the order you
    see is not the order the retriever ranked. Work one `query_id` at a time: read the
    `query` column once, then judge that group.
-2. Fill `rel` with `1` or `0`. Leave nothing blank — a blank row is read as `0` by the
-   scorer, which would silently credit the retriever for your skipped work.
+2. Fill `rel` with `1` or `0`. Leave nothing blank — the scorer reads a blank as `0`,
+   so an unjudged row silently counts as *not relevant* and understates whichever
+   retriever found it. If you are unsure, write `0` and keep going.
 3. Do not edit `query_id`, `doc_id`, `title`, `abstract` or `query`. They are the join
    keys and the evidence.
 4. Stop at 45 minutes and continue later rather than rushing a block; there is no

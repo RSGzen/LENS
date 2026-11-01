@@ -35,6 +35,7 @@ score_retrieval = _load("score_retrieval")
 score_instruments = _load("score_instruments")
 judge_answers = _load("judge_answers")
 freeze_manifest = _load("freeze_manifest")
+build_qrels_worksheet = _load("build_qrels_worksheet")
 run_campaign = _load("run_campaign")
 
 
@@ -209,6 +210,39 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("the answer", calls[0][1]["content"])
 
 
+class QrelsWorksheetTests(unittest.TestCase):
+    """The pool the human judges is the union of the configurations' top-10."""
+
+    def test_the_pool_is_the_deduplicated_union(self) -> None:
+        text = (
+            "config,query_id,rank,doc_id\n"
+            "a1-dense,q1,1,2401.00001\n"
+            "a1-dense,q1,2,2401.00002\n"
+            "k100-n20,q1,1,2401.00002\n"
+            "k100-n20,q2,1,2401.00003\n"
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rankings.csv"
+            path.write_text(text, encoding="utf-8")
+            pool = build_qrels_worksheet.load_rankings(path)
+
+        self.assertEqual(sorted(pool), ["q1", "q2"])
+        # A paper two configurations both found is judged once, not twice.
+        self.assertEqual(sorted(pool["q1"]), ["2401.00001", "2401.00002"])
+        self.assertEqual(pool["q2"], {"2401.00003"})
+
+    def test_a_blank_row_is_dropped_not_counted(self) -> None:
+        text = "config,query_id,rank,doc_id\na1-dense,q1,1,\na1-dense,,2,2401.00001\n"
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rankings.csv"
+            path.write_text(text, encoding="utf-8")
+            pool = build_qrels_worksheet.load_rankings(path)
+
+        self.assertEqual(pool, {})
+
+
 class FreezeTests(unittest.TestCase):
     def record(self, **overrides: object) -> dict:
         base = {
@@ -246,14 +280,18 @@ class FreezeTests(unittest.TestCase):
 
         self.assertTrue(any("40-character" in problem for problem in problems))
 
-    def test_instrument_hashes_cover_jsonl_only(self) -> None:
+    def test_instrument_hashes_cover_the_edge_cases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "cag.jsonl").write_text("{}\n", encoding="utf-8")
-            (Path(tmp) / "notes.md").write_text("x", encoding="utf-8")
+            (Path(tmp) / "queries.json").write_text("{}", encoding="utf-8")
+            (Path(tmp) / "rubric.md").write_text("x", encoding="utf-8")
+            (Path(tmp) / "notes.txt").write_text("x", encoding="utf-8")
 
             hashes = freeze_manifest.instrument_hashes(Path(tmp))
 
-            self.assertEqual(set(hashes), {"cag.jsonl"})
+        # The registry wrote ``{}`` for a directory full of ``.json`` instruments,
+        # which is why a wave's own query set was missing from the freeze record.
+        self.assertEqual(set(hashes), {"cag.jsonl", "queries.json", "rubric.md"})
 
 
 class CampaignRowTests(unittest.TestCase):
