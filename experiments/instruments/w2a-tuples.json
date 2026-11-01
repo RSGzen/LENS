@@ -1,0 +1,15 @@
+{
+  "instrument": "w2a-tuples",
+  "purpose": "Capacity points for the W2a sweep. Each point is (k, n, C, c_top): stage-A candidates, papers after the stage-A reranker, chunk candidates from those papers, chunks after the stage-B reranker.",
+  "rule": "c_top is a filter only where it is below C. The two default points differ in nothing else, which is the point: they establish that stage B reorders rather than prunes at the shipped settings.",
+  "points": [
+    {"name": "default", "k": 100, "n": 20, "C": 100, "c_top": 100},
+    {"name": "wide-papers", "k": 200, "n": 50, "C": 100, "c_top": 100},
+    {"name": "deep-chunks", "k": 100, "n": 20, "C": 400, "c_top": 100},
+    {"name": "both-wide", "k": 200, "n": 50, "C": 400, "c_top": 100},
+    {"name": "filtered", "k": 100, "n": 20, "C": 400, "c_top": 50},
+    {"name": "cheap", "k": 50, "n": 10, "C": 100, "c_top": 50},
+    {"name": "floor", "k": 50, "n": 5, "C": 50, "c_top": 50},
+    {"name": "ceiling", "k": 400, "n": 50, "C": 800, "c_top": 200}
+  ]
+}

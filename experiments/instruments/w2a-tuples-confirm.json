@@ -1,0 +1,19 @@
+{
+  "instrument": "w2a-tuples-confirm",
+  "points": [
+    {
+      "name": "n30-ct150",
+      "k": 200,
+      "n": 30,
+      "C": 400,
+      "c_top": 150
+    },
+    {
+      "name": "n40-ct150",
+      "k": 200,
+      "n": 40,
+      "C": 600,
+      "c_top": 150
+    }
+  ]
+}
