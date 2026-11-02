@@ -1,0 +1,26 @@
+{
+  "name": "m11-rigv6-fanout",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "Three runs on the fan-out rig: one sub-task call carries up to 12 ids and the host runs the batches of 4 on three threads. Same query and arm as m11-rigv5-cell, so the wall-clock means are comparable and the cost should not move."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Same query as m11-rigv5-cell and the m11-check series."
+    }
+  ]
+}
