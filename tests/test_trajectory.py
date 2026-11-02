@@ -13,6 +13,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +39,38 @@ class TrajectoryTestCase(unittest.TestCase):
     def _events(self) -> list[dict]:
         raw = self.traj.trajectory_path.read_text(encoding="utf-8")
         return [json.loads(line) for line in raw.splitlines() if line.strip()]
+
+    def test_concurrent_writes_leave_one_valid_line_per_event(self) -> None:
+        # Two sub-task batches finish at the same moment and both append. json.dump
+        # emits in several write() calls, so without a lock a line can be spliced
+        # mid-object — and this log is the session, so a corrupt line loses a turn.
+        count = 60
+
+        def write(index: int) -> None:
+            self.traj.log_event(
+                trace_ctx=TraceCtx("run-test", index % 4, "sub"),
+                call_type="chat",
+                action="chat.completion",
+                result_summary="x" * 200,
+            )
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(write, range(count)))
+
+        events = self._events()
+
+        self.assertEqual(len(events), count)
+        self.assertEqual(len({event["step_idx"] for event in events}), 4)
+
+    def test_a_blob_is_never_half_written(self) -> None:
+        # The store is content-addressed only if a reader never sees a partial file:
+        # the bytes are written beside the name and renamed onto it.
+        body = "y" * 100_000
+        ref = self.traj.store_blob(body)
+        name = ref.split(":", 1)[1]
+
+        self.assertEqual((self.traj.blobs_dir / name).read_bytes(), body.encode("utf-8"))
+        self.assertEqual(list(self.traj.blobs_dir.glob("*.partial")), [])
 
     # ---------------------------------------------------------------- layout
     def test_layout_is_created_eagerly(self) -> None:

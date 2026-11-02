@@ -12,6 +12,8 @@ import copy
 import hashlib
 import json
 import math
+import os
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,6 +105,11 @@ class Trajectory:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.blobs_dir.mkdir(parents=True, exist_ok=True)
 
+        # One write lock for the append-only log: two sub-task batches finish at the
+        # same moment and both append, and a line interleaved mid-object is a line
+        # that does not parse.
+        self._write_lock = threading.Lock()
+
     # ------------------------------------------------------------------ blobs
     def store_blob(self, text: str) -> str:
         """Store ``text`` once under a content-derived name; return its ref.
@@ -126,7 +133,18 @@ class Trajectory:
             # the file — which is exactly what bundle verification caught (three
             # blobs "do not match its name", ). Byte-exact or not at
             # all is the only honest option for a content-addressed store.
-            blob_path.write_bytes(text.encode("utf-8"))
+            #
+            # Written to a temporary name and renamed: a store is content-addressed
+            # only if a reader never sees a half-written file, and concurrent
+            # sub-task batches write their prompts and replies at the same time.
+            partial = blob_path.with_suffix(".partial")
+
+            try:
+                partial.write_bytes(text.encode("utf-8"))
+                os.replace(partial, blob_path)
+            finally:
+                if partial.exists() and not blob_path.exists():
+                    partial.unlink()
 
         return f"sha256:{hexdigest}"
 
@@ -214,9 +232,15 @@ class Trajectory:
 
         info_dict = {k: v for k, v in info_dict.items() if v is not None}
 
-        with open(self.trajectory_path, "a", encoding="utf-8") as f:
-            json.dump(info_dict, f, ensure_ascii=False)
-            f.write("\n")
+        # One lock, one write. ``json.dump`` emits in several ``write`` calls, so two
+        # threads appending concurrently can interleave mid-object and leave a line
+        # that is not JSON — and the log is the session: a corrupt line is a lost turn
+        # on resume. Serialising a line append costs nothing next to the model call
+        # that produced it.
+        line = json.dumps(info_dict, ensure_ascii=False) + "\n"
+
+        with self._write_lock, open(self.trajectory_path, "a", encoding="utf-8") as f:
+            f.write(line)
 
     # ---------------------------------------------------------------- totals
     def totals(self) -> dict[str, Any]:
