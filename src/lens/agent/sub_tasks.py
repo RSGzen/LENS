@@ -77,11 +77,20 @@ class SubTask:
     ``source`` names where the item text comes from: ``"ids"`` (the host hydrates
     ``chunk_ids`` from the database), ``"text"`` (the caller passes the text, which
     is the only option in document mode), or ``"either"``.
+
+    ``signature`` carries the **types**, and ``result_shape`` the exact JSON the
+    caller receives. Both are advertised because guessing them is expensive: five
+    code blocks in three recorded runs died on ``KeyError: 'chunk_id'`` and
+    ``AttributeError: 'str' object has no attribute 'get'``, i.e. on the record key
+    and on ``quotes`` being a list of strings. The host already refused the wrong
+    parameters; the return value had no contract at all.
     """
 
     name: str
     function: str
     signature: str
+    result_shape: str
+    result_note: str
     params: tuple[str, ...]
     summary: str
     system: str
@@ -169,7 +178,15 @@ SUB_TASKS: dict[str, SubTask] = {
     "extract": SubTask(
         name="extract",
         function="sub_extract",
-        signature="sub_extract(chunk_ids, fields=None) -> dict",
+        signature="sub_extract(chunk_ids: list[str], fields: list[str] | None = None) -> dict",
+        result_shape=(
+            '{"records": [{"id": "<the chunk id you passed>", "claims": ["..."], '
+            '"quotes": ["..."]}], "missing_ids": [...], "errors": [...]}'
+        ),
+        result_note=(
+            "the key is ``id`` (not ``chunk_id``) and ``quotes`` is a list of "
+            "**strings** — not of dicts"
+        ),
         params=("chunk_ids", "fields"),
         summary=(
             "structured fields for a batch of chunks: claims, method, dataset, "
@@ -219,7 +236,15 @@ SUB_TASKS: dict[str, SubTask] = {
     "summarise": SubTask(
         name="summarise",
         function="sub_summarise",
-        signature="sub_summarise(chunk_ids=None, text=None, focus='', max_words=120) -> dict",
+        signature=(
+            "sub_summarise(chunk_ids: list[str] | None = None, text: str | None = None, "
+            "focus: str = '', max_words: int = 120) -> dict"
+        ),
+        result_shape=(
+            '{"summaries": [{"id": "<the chunk id you passed>", "summary": "..."}], '
+            '"missing_ids": [...], "errors": [...]}'
+        ),
+        result_note="",
         params=("chunk_ids", "text", "focus", "max_words"),
         summary="one short summary per item, focused on what the caller asks for "
         "(a paraphrase: for orientation, not citable)",
@@ -245,7 +270,12 @@ SUB_TASKS: dict[str, SubTask] = {
     "classify": SubTask(
         name="classify",
         function="sub_classify",
-        signature="sub_classify(chunk_ids, question, labels) -> dict",
+        signature="sub_classify(chunk_ids: list[str], question: str, labels: list[str]) -> dict",
+        result_shape=(
+            '{"labels": [{"id": "<the chunk id you passed>", "label": "<one of your '
+            'labels>"}], "missing_ids": [...], "errors": [...]}'
+        ),
+        result_note="",
         params=("chunk_ids", "question", "labels"),
         summary="one label per chunk from a fixed label set, for triage before reading",
         system=(
@@ -459,6 +489,10 @@ def render_prompt_block() -> str:
             f"- ``rlm_api.{task.signature}`` — {task.summary}. "
             f"At most {task.max_items} chunk ids per call."
         )
+        # The return value had no contract, and the model guessed one: two runs died on
+        # a record key and two more on treating a quote as a dict.
+        note = f" — {task.result_note}" if task.result_note else ""
+        lines.append(f"  Returns ``{task.result_shape}``{note}.")
 
         if task.name == "extract":
             lines.append(

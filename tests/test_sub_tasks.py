@@ -185,6 +185,24 @@ class RenderTestCase(unittest.TestCase):
         for task in SUB_TASKS.values():
             self.assertIn(task.function, block)
 
+    def test_every_signature_carries_its_types(self) -> None:
+        # Five code blocks in three recorded runs died guessing the argument and
+        # return shapes: KeyError on the record key, AttributeError treating a quote
+        # as a dict. The host rejected bad parameters already; the result had no
+        # contract at all.
+        for task in SUB_TASKS.values():
+            self.assertIn(": ", task.signature, f"{task.name} signature has no types")
+            self.assertIn("-> dict", task.signature)
+            self.assertIn('"id"', task.result_shape, f"{task.name} does not name its key")
+            self.assertIn(task.result_key, task.result_shape)
+
+    def test_the_prompt_block_shows_the_result_shape_and_the_id_key(self) -> None:
+        block = render_prompt_block()
+
+        self.assertIn('"records": [{"id"', block)
+        self.assertIn("not ``chunk_id``", block)
+        self.assertIn("not of dicts", block)
+
     def test_prompt_block_states_the_call_limit(self) -> None:
         self.assertIn("sub-task calls per query", render_prompt_block())
 
