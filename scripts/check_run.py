@@ -165,6 +165,24 @@ def check_run(run_id: str) -> bool:
         # is exactly what a reader must be able to spot.
         print("[WARN] no citations in the answer: unsupported unless this query is unanswerable")
 
+    # Quote fidelity is a quality signal, not a validity check: a run is not invalid
+    # because the model retyped a quote, and only the sentence the claim rests on is
+    # lost. Printed so a campaign table can carry it, never raised to FAIL.
+    try:
+        from lens.observability.citations import recorded_chunk_texts, verify_quoted_spans
+
+        texts = recorded_chunk_texts(trajectory)
+        answer = (run_dir / "answer.md").read_text(encoding="utf-8")
+        in_cited, elsewhere, total = verify_quoted_spans(answer, texts)
+
+        print(
+            f"[INFO] quote fidelity: {in_cited}/{total} quoted spans verbatim in the chunk "
+            f"they cite, {elsewhere} found under another chunk, {total - in_cited - elsewhere} "
+            "found nowhere"
+        )
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must not fail the gate
+        print(f"[INFO] quote fidelity unavailable ({type(exc).__name__})")
+
     results = [
         _check(
             "status finished",

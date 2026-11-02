@@ -14,7 +14,9 @@ from lens.observability.citations import (
     cited_ids,
     claim_units,
     expand_short_ids,
+    recorded_chunk_texts,
     resolve_citations,
+    verify_quoted_spans,
     write_sources_md,
 )
 from lens.observability.trajectory import TraceCtx, Trajectory
@@ -99,6 +101,80 @@ class UncitedUnitTestCase(unittest.TestCase):
         )
 
         self.assertEqual(len(claim_units(sentence, include_uncited=True)), 1)
+
+
+class QuotedSpanTests(unittest.TestCase):
+    """Fidelity of the answer's own quotes: the model retypes them, and it drifts."""
+
+    A = "11111111-1111-5111-8111-111111111111"
+    B = "22222222-2222-5222-8222-222222222222"
+
+    TEXTS = {
+        A: "We propose a context compression model structure based on an autoencoder, "
+        "which we call the Recurrent Context Compression model.",
+        B: "Retrieval-Augmented Generation (RAG) represents another line of research, "
+        "designed to retrieve answers from long contexts.",
+    }
+
+    def test_a_quote_inside_its_cited_chunk_counts(self) -> None:
+        answer = (
+            "\u201cbased on an autoencoder, which we call the Recurrent Context Compression\u201d "
+            f"[{self.A}]"
+        )
+
+        self.assertEqual(verify_quoted_spans(answer, self.TEXTS), (1, 0, 1))
+
+    def test_a_paraphrase_in_quotation_marks_is_found_nowhere(self) -> None:
+        # Measured: one answer put a sub-task summary in quotation marks, so the
+        # reader could not find the sentence in the chunk it cited.
+        answer = f"\u201ca paraphrase nobody wrote about compressing the context\u201d [{self.A}]"
+
+        self.assertEqual(verify_quoted_spans(answer, self.TEXTS), (0, 0, 1))
+
+    def test_a_real_quote_under_the_wrong_id_is_a_mis_citation(self) -> None:
+        # The words exist but the reader who follows the id finds different text.
+        answer = f"\u201cdesigned to retrieve answers from long contexts\u201d [{self.A}]"
+
+        self.assertEqual(verify_quoted_spans(answer, self.TEXTS), (0, 1, 1))
+
+    def test_an_elided_quote_verifies_when_every_part_is_present(self) -> None:
+        answer = (
+            "\u201cWe propose a context compression model ... "
+            "Recurrent Context Compression model\u201d "
+            f"[{self.A}]"
+        )
+
+        self.assertEqual(verify_quoted_spans(answer, self.TEXTS), (1, 0, 1))
+
+    def test_straight_quotes_count_too(self) -> None:
+        # One recorded answer used straight quotes throughout; a check that knew only
+        # typographic quotes would have scored it as having no quotes at all.
+        answer = f'"designed to retrieve answers from long contexts" [{self.B}]'
+
+        self.assertEqual(verify_quoted_spans(answer, self.TEXTS), (1, 0, 1))
+
+    def test_an_answer_without_quotes_is_zero_of_zero(self) -> None:
+        self.assertEqual(verify_quoted_spans("A claim with no quotation.", self.TEXTS), (0, 0, 0))
+
+    def test_the_texts_come_from_the_recorded_payloads(self) -> None:
+        # The check is only meaningful against text the run actually held.
+        case = CitationTestCase("test_resolved_and_unresolved_chunks")
+        case.setUp()
+        case._tool(
+            1,
+            "retrieval_funnel",
+            {
+                "chunks": [{"chunk_uuid": CHUNK, "chunk_text": "the retrieved sentence"}],
+                "papers": {},
+            },
+        )
+
+        try:
+            texts = recorded_chunk_texts(case.traj)
+        finally:
+            case.tearDown()
+
+        self.assertEqual(texts, {CHUNK: "the retrieved sentence"})
 
 
 class ExpandShortIdsTestCase(unittest.TestCase):

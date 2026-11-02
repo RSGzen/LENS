@@ -117,6 +117,10 @@ class ToolBindingTestCase(unittest.TestCase):
         # own words that it dropped evidence because only two quotes were printed.
         self.assertIn("up to ten quotes", prompt)
         self.assertNotIn("two per objective", prompt)
+        # A quote may only be one the host returned: retyping is where the drift in
+        # the three-series comparison came from (4 of 33 spans unverifiable).
+        self.assertIn("only if you received it from a record's", prompt)
+        self.assertIn("instead of retyping the uuid", prompt)
         # It is a finishing rule, not a sub-task rule: the sub-calls-off arm keeps it.
         self.assertIn("Finish the reading and the printing in the same block", context.AGENTS_MD)
 

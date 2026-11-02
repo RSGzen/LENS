@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -346,6 +346,105 @@ def _evidence_index(turns: list[Turn], trajectory: Trajectory) -> tuple[dict, di
                 provenance.setdefault(row["chunk_uuid"], turn.turn)
 
     return chunks, papers, provenance
+
+
+#: A quoted span in an answer: straight or typographic quotes, long enough to be a
+#: quotation rather than a scare-quote around one word.
+_QUOTED = re.compile(r"[\u201c\"]([^\u201d\"]{25,400})[\u201d\"]")
+
+#: Characters either side of a quote in which a citation counts as "the one the
+#: answer attaches to it" — ids may precede or follow the span depending on style.
+_CITATION_WINDOW = 300
+
+
+def _words(text: str) -> str:
+    """Return ``text`` lowercased with every non-alphanumeric character collapsed."""
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", text.lower()).split())
+
+
+def _span_segments(span: str) -> list[str]:
+    """Return the parts of a quoted span, split on an elision.
+
+    An elided quote is legitimate — the model is allowed to leave words out and mark
+    the gap — so each part is checked on its own, and a span passes only when every
+    part is found. Splitting before normalising is what keeps ``…`` from being
+    swallowed by the punctuation strip.
+    """
+    parts = re.split(r"\u2026|\.{2,}", span)
+
+    return [segment for segment in (_words(part) for part in parts) if len(segment.split()) >= 4]
+
+
+def verify_quoted_spans(
+    answer: str, texts: Mapping[str, str], *, window: int = _CITATION_WINDOW
+) -> tuple[int, int, int]:
+    """Return ``(in_cited_chunk, elsewhere_only, total)`` for an answer's quotes.
+
+    Grounding is measured at two strengths, because they fail differently: a span
+    found under a *different* chunk than the one cited is a mis-citation (the reader
+    who follows the id does not find the words), while a span found nowhere is a
+    paraphrase wearing quotation marks. The first is cheap to fix, the second is the
+    failure the answer contract exists to prevent.
+
+    ``texts`` maps ``chunk_uuid -> chunk text`` for everything the run retrieved, so
+    this is a read-only check over recorded evidence: no model call, no database.
+    """
+    normalized = {key: _words(value) for key, value in texts.items()}
+    in_cited = elsewhere = total = 0
+
+    for match in _QUOTED.finditer(answer or ""):
+        segments = _span_segments(match.group(1))
+
+        if not segments:
+            continue
+
+        total += 1
+        holders = {key for key, body in normalized.items() if all(s in body for s in segments)}
+        nearby = set(
+            re.findall(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                answer[max(0, match.start() - window) : match.end() + window],
+            )
+        )
+
+        if holders & nearby:
+            in_cited += 1
+        elif holders:
+            elsewhere += 1
+
+    return in_cited, elsewhere, total
+
+
+def recorded_chunk_texts(trajectory: Trajectory) -> dict[str, str]:
+    """Return ``chunk_uuid -> chunk text`` from the run's recorded tool payloads.
+
+    The same payloads :func:`resolve_citations` reads, for the fidelity check: a
+    quote can only be verified against text the run actually held.
+    """
+    texts: dict[str, str] = {}
+
+    try:
+        turns = {turn.turn: turn for turn in replay_turns(trajectory)}
+    except Exception:  # noqa: BLE001 - a damaged bundle yields no texts, not a crash
+        return texts
+
+    for turn in turns.values():
+        for tool in turn.tools:
+            if not tool.result_ref or tool.name not in _CHUNK_TOOLS:
+                continue
+
+            try:
+                payload = json.loads(trajectory.load_blob(tool.result_ref))
+            except (OSError, KeyError, ValueError, IndexError):
+                continue
+
+            rows = payload if isinstance(payload, list) else (payload or {}).get("chunks") or []
+
+            for row in rows:
+                if isinstance(row, dict) and row.get("chunk_uuid") and row.get("chunk_text"):
+                    texts.setdefault(str(row["chunk_uuid"]), str(row["chunk_text"]))
+
+    return texts
 
 
 def cited_ids(text: str) -> list[str]:

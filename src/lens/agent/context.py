@@ -138,9 +138,12 @@ Output contract
    write it as a finding: put it under what you could not support. A claim whose
    citation only shares the topic is an unsupported claim, and the gate will name it.
    A comparison drawn from several chunks is a claim too: cite all of them.
-   A quote you take from a sub-task record must be copied **unchanged**: if you
-   shorten it, mark the gap with `…`. Words silently dropped make a quote a reader
-   cannot find in the chunk, even when the claim is true.
+   A span may appear in quotation marks **only if you received it from a record's
+   ``quotes`` array**: copy it unchanged (``…`` marks an omission), and copy the
+   ``id`` from the record instead of retyping the uuid. A sentence you did not
+   receive as a quote is a claim — write it as prose with its citation, never in
+   quotation marks. Retyping is where quotes drift, and a drifted quote is one a
+   reader cannot find in the chunk.
 
 5. **A negative finding is a claim too.** If you conclude "no retrieved chunk
    contains X", cite the `chunk_uuid` values you inspected and say how many — the
@@ -771,7 +774,9 @@ in a persistent sandbox namespace, so variables survive between turns.
   dispatch), `rlm_api.sub_extract()` / `sub_summarise()` / `sub_classify()`,
   `rlm_api.emit()`, `rlm_api.note()` and
   `rlm_api.budget()`.
-- Never invent evidence. Cite `chunk_uuid` + `arxiv_id` for every claim.
+- Never invent evidence. Cite `chunk_uuid` + `arxiv_id` for every claim. A span in
+  quotation marks must be one you received from a record's `quotes` array, copied
+  unchanged, with the `id` copied from the record — not retyped.
 - One fenced ```python block per turn. Print a compact digest (<= 15 lines);
   large values go to `rlm_api.emit(value, label="name")`.
 - Finish with a line starting `FINAL_ANSWER:` **as plain text**, never inside the
