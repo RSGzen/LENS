@@ -423,7 +423,7 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "3000"
 # assumed no sub-tasks, so the cap bound and the stop reason became an artefact of
 # the rule rather than of the work. 25 calls x 3,000 tokens = 75,000.
 CONTEXT_TURN_TOKENS_ESTIMATE = int(os.environ.get("LENS_CONTEXT_TURN_TOKENS", "14000"))
-SUB_TASK_TOKENS_ESTIMATE = int(os.environ.get("LENS_SUB_TASK_TOKENS", "75000"))
+SUB_TASK_TOKENS_ESTIMATE = int(os.environ.get("LENS_SUB_TASK_ALLOWANCE", "75000"))
 MAX_TOKENS_PER_QUERY = int(
     os.environ.get(
         "LENS_MAX_TOKENS",
