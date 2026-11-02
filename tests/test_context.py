@@ -98,7 +98,10 @@ class ToolBindingTestCase(unittest.TestCase):
         self.assertIn("Work incrementally", prompt)
         # Sub-tasks: the per-call id limit was not stated (a 20-id call raised), and
         # nothing tied them to the observation cap that makes them worth calling.
-        self.assertIn("At most 4 chunk ids per call", prompt)
+        # One call now carries 12 ids and the host fans them out, so the prompt has to
+        # say both numbers: the ceiling per call and the batch the host runs.
+        self.assertIn("At most 12 chunk ids per call", prompt)
+        self.assertIn("concurrent batches of 4", prompt)
         self.assertIn("When to use them", prompt)
         self.assertIn("full** 36-character `chunk_uuid`", prompt)
         self.assertIn("never write it\n   in the same message as a block", prompt)

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
+import time
 import unittest
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -121,6 +123,30 @@ class SubTaskClient:
             latency_ms=1,
             cost_usd=0.001,
         )
+
+
+class OverlapClient(SubTaskClient):
+    """A fake transport that records how many calls are in flight at once."""
+
+    def __init__(self, payload: Any, *, seconds: float = 0.05) -> None:
+        super().__init__(payload)
+        self.seconds = seconds
+        self.in_flight = 0
+        self.peak = 0
+        self._lock = threading.Lock()
+
+    def chat(self, role: str, messages: Sequence[Mapping[str, Any]], **kwargs: Any) -> CallResult:
+        with self._lock:
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+
+        try:
+            time.sleep(self.seconds)
+
+            return super().chat(role, messages, **kwargs)
+        finally:
+            with self._lock:
+                self.in_flight -= 1
 
 
 class FakeSandbox:
@@ -770,6 +796,82 @@ class RuntimeTestCase(unittest.TestCase):
 
         self.assertFalse(response["ok"])
         self.assertIn("no chunk text", response["error"]["message"])
+
+    def test_twelve_ids_run_as_three_concurrent_batches(self) -> None:
+        # Measured: a batch of four chunks costs 13-41 s of wall time, and a run that
+        # read 32 chunks spent eight calls in sequence. The host fans out instead, so
+        # one RPC is one round of latency.
+        self.runtime.conn = object()
+        self.runtime.client = OverlapClient(
+            {"records": [{"id": "c-1", "claims": ["a claim"], "quotes": []}]}
+        )
+        rows = [{"chunk_uuid": f"c-{index}", "chunk_text": "the chunk text"} for index in range(12)]
+
+        started = time.perf_counter()
+
+        with patch("lens.tools.retrieval.fetch_chunks", return_value=rows):
+            response = self.runtime.handle_rpc(
+                "/sub_task",
+                {
+                    "variant": "extract",
+                    "params": {"chunk_ids": [f"c-{index}" for index in range(12)]},
+                },
+            )
+
+        elapsed = time.perf_counter() - started
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(self.runtime.client.calls), 3, "one call per batch of four")
+        self.assertEqual(self.runtime.client.peak, 3, "the batches ran at the same time")
+        # Serial would be three sleeps; concurrent is about one.
+        self.assertLess(elapsed, self.runtime.client.seconds * 2.5)
+        # Each underlying call is one sub-task against the per-query limit.
+        self.assertEqual(self.runtime.budget.sub_tasks, 3)
+        self.assertEqual(self.runtime.budget.tokens_in, 30)
+
+    def test_one_batch_is_one_call_and_no_executor(self) -> None:
+        self.runtime.conn = object()
+        self.runtime.client = OverlapClient({"records": []})
+        rows = [{"chunk_uuid": "c-1", "chunk_text": "the chunk text"}]
+
+        with patch("lens.tools.retrieval.fetch_chunks", return_value=rows):
+            self.runtime.handle_rpc(
+                "/sub_task", {"variant": "extract", "params": {"chunk_ids": ["c-1"]}}
+            )
+
+        self.assertEqual(len(self.runtime.client.calls), 1)
+        self.assertEqual(self.runtime.client.peak, 1)
+
+    def test_a_failed_batch_is_an_error_in_the_result_not_an_exception(self) -> None:
+        self.runtime.conn = object()
+        client = OverlapClient({"records": []})
+        calls = {"n": 0}
+
+        def flaky(role, messages, **kwargs):
+            calls["n"] += 1
+
+            if calls["n"] == 1:
+                raise RuntimeError("provider 429")
+
+            return SubTaskClient({"records": []}).chat(role, messages, **kwargs)
+
+        client.chat = flaky  # type: ignore[method-assign]
+        self.runtime.client = client
+        rows = [{"chunk_uuid": f"c-{index}", "chunk_text": "text"} for index in range(8)]
+
+        with patch("lens.tools.retrieval.fetch_chunks", return_value=rows):
+            response = self.runtime.handle_rpc(
+                "/sub_task",
+                {
+                    "variant": "extract",
+                    "params": {"chunk_ids": [f"c-{index}" for index in range(8)]},
+                },
+            )
+
+        self.assertTrue(response["ok"])
+        self.assertTrue(
+            any("429" in error or "failed" in error for error in response["result"]["errors"])
+        )
 
 
 class RuntimeRegressionTestCase(unittest.TestCase):

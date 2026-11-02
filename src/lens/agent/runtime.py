@@ -44,6 +44,8 @@ import hashlib
 import json
 import os
 import platform
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -106,6 +108,11 @@ EVIDENCE_FETCH_CHARS = 120000
 #: served from the recorded blob (within a run, and on resume). State-changing
 #: tools (ledger, backtrack) are never replayed.
 REPLAYABLE_TOOLS = frozenset({"retrieval_funnel", "fetch_papers", "fetch_chunks", "build_kg"})
+
+#: Sub-task batches one RPC call may run at the same time. Three because a
+#: twelve-id call is three batches of four: more workers would only queue, and each
+#: batch is a network call to the same provider.
+SUB_TASK_WORKERS = int(os.environ.get("LENS_SUB_TASK_WORKERS", "3"))
 
 #: Revision turns one answer may be rejected into. The gate is a control rule with
 #: an uncalibrated threshold, so a rejection is a signal to re-read the answer once
@@ -229,6 +236,9 @@ class Runtime:
         # Final-gate rejections that have bought a revision turn (see
         # ``MAX_FINAL_GATE_REJECTIONS``).
         self._final_rejections: int = 0
+        # Budget counters are read-modify-writes, and sub-task batches finish
+        # together: one lock around the accounting, never around a model call.
+        self._accounting_lock = threading.Lock()
 
     # ------------------------------------------------------------------- run
     def run(self) -> RunResult:
@@ -1268,6 +1278,13 @@ class Runtime:
         here, from ids the root already holds, so it never round-trips through the
         sandbox.
 
+        **One call, several model calls.** The ids are cut into batches of
+        ``max_items`` and the batches run concurrently: a batch of four chunks costs
+        13-41 s, and a run that read 32 chunks spent eight of them in sequence. The
+        batching is here rather than in the sandbox because the shared state — the
+        budget counters, the log, the ledger — is host-side and has to be written
+        under one lock; the network call does not.
+
         Every failure is an envelope, never an exception: a bad call costs the root
         a turn it can see and fix, and the run continues. The one non-negotiable is
         the id set -- a record naming an id that was not requested is dropped during
@@ -1294,57 +1311,108 @@ class Runtime:
         if not items:
             return _error_envelope("BadRequest", "no chunk text resolved for this call")
 
-        # What the caller asked for, not what resolved: an id with no text still
-        # has no record, and reporting it under the same key is what lets the root
-        # tell "the model skipped this" from "the id was never requested".
+        trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="sub")
+        # What the caller asked for, not what resolved: an id with no text still has
+        # no record, and reporting it under the same key is what lets the root tell
+        # "the model skipped this" from "the id was never requested".
         requested = (
             [str(chunk_id) for chunk_id in selected["chunk_ids"]]
             if "chunk_ids" in selected
             else ["input"]
         )
+        resolved = {item_id for item_id, _text in items}
+        collected = self._run_sub_task_batches(task, selected, items, trace_ctx)
+        records: list[dict[str, Any]] = []
+        missing: list[str] = [chunk_id for chunk_id in requested if chunk_id not in resolved]
+        batch_errors: list[str] = []
 
-        trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="sub")
-
-        result = self.client.chat(
-            "sub",
-            [
-                {"role": "system", "content": task.system},
-                {
-                    "role": "user",
-                    "content": render_instruction(task, selected, render_items(items)),
-                },
-            ],
-            trace_ctx=trace_ctx,
-            response_format=response_format(task, selected),
-            max_tokens=task.max_output_tokens,
-            extra={"sub_task": task.name, "items": len(items)},
-        )
-
-        self.budget.record_chat(result)
-        self.budget.record_sub_task()
-
-        records, missing, parse_errors = parse_result(task, result.text, requested)
-
-        if task.name == "extract":
-            # A quote is only usable if the words are in the chunk, so the host
-            # checks it here rather than trusting the answer to do so later. This is
-            # the same guarantee the id stamping gives: the model cannot manufacture
-            # evidence.
-            records, dropped = verify_quotes(records, items)
-
-            if dropped:
-                parse_errors.append(
-                    f"{dropped} quote(s) were not verbatim in the item and were dropped"
-                )
+        for batch_records, batch_missing, batch_error in collected:
+            records.extend(batch_records)
+            missing.extend(name for name in batch_missing if name not in missing)
+            batch_errors.extend(batch_error)
 
         return {
             "ok": True,
             "result": {
                 task.result_key: records,
                 "missing_ids": missing,
-                "errors": [*errors, *parse_errors],
+                "errors": [*errors, *batch_errors],
             },
         }
+
+    def _run_sub_task_batches(
+        self,
+        task: Any,
+        params: Mapping[str, Any],
+        items: list[tuple[str, str]],
+        trace_ctx: TraceCtx,
+    ) -> list[tuple[list[dict[str, Any]], list[str], list[str]]]:
+        """Run ``items`` as batches, concurrently when there is more than one."""
+        from lens.agent.sub_tasks import split_batches
+
+        batches = split_batches(items, task.max_items)
+
+        if len(batches) <= 1:
+            return [self._run_sub_task_batch(task, params, items, trace_ctx)]
+
+        workers = max(1, min(len(batches), SUB_TASK_WORKERS))
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [
+                pool.submit(self._run_sub_task_batch, task, params, batch, trace_ctx)
+                for batch in batches
+            ]
+
+            return [future.result() for future in futures]
+
+    def _run_sub_task_batch(
+        self,
+        task: Any,
+        params: Mapping[str, Any],
+        batch: list[tuple[str, str]],
+        trace_ctx: TraceCtx,
+    ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+        """Run one batch and return ``(records, missing, errors)``; never raises."""
+        requested = [item_id for item_id, _text in batch]
+
+        try:
+            result = self.client.chat(
+                "sub",
+                [
+                    {"role": "system", "content": task.system},
+                    {
+                        "role": "user",
+                        "content": render_instruction(task, params, render_items(batch)),
+                    },
+                ],
+                trace_ctx=trace_ctx,
+                response_format=response_format(task, params),
+                max_tokens=task.max_output_tokens,
+                extra={"sub_task": task.name, "items": len(batch)},
+            )
+        except Exception as exc:  # noqa: BLE001 - a failed batch is a visible error
+            return [], requested, [f"sub-task call failed: {type(exc).__name__}"]
+
+        # The counters are three read-modify-writes; with batches finishing together
+        # they have to be under one lock. It is held for microseconds, not for the
+        # call above.
+        with self._accounting_lock:
+            self.budget.record_chat(result)
+            self.budget.record_sub_task()
+
+        records, missing, errors = parse_result(task, result.text, requested)
+
+        if task.name == "extract":
+            # A quote is only usable if the words are in the chunk, so the host
+            # checks it here rather than trusting the answer to do so later. This is
+            # the same guarantee the id stamping gives: the model cannot manufacture
+            # evidence.
+            records, dropped = verify_quotes(records, batch)
+
+            if dropped:
+                errors.append(f"{dropped} quote(s) were not verbatim in the item and were dropped")
+
+        return records, missing, errors
 
     def _sub_task_items(
         self, task: Any, params: Mapping[str, Any]
