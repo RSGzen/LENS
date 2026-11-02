@@ -112,6 +112,11 @@ class ToolBindingTestCase(unittest.TestCase):
         prompt = context.build_system_prompt("1. retrieval_funnel(buckets)", {}, {})
 
         self.assertIn("Finish the reading and the printing in the same turn", prompt)
+        # The per-objective cap ("two per objective") halved the answers: three
+        # recorded runs cited 3/2/4 papers against 5/3/5, and one answer said in its
+        # own words that it dropped evidence because only two quotes were printed.
+        self.assertIn("up to ten quotes", prompt)
+        self.assertNotIn("two per objective", prompt)
         # It is a finishing rule, not a sub-task rule: the sub-calls-off arm keeps it.
         self.assertIn("Finish the reading and the printing in the same block", context.AGENTS_MD)
 

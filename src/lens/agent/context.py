@@ -162,9 +162,10 @@ Output contract
    actually supported.
 9. **Finish the reading and the printing in the same turn.** When a block completes
    your last extraction and its ledger updates, print in that same block the quotes
-   you will cite — one line per objective, ``id: "quote"``, at most two per
-   objective. The next turn then writes the answer. A turn that only re-prints
-   material you already hold costs a model call and buys nothing.
+   you will cite — one line per quote, ``id: "quote"``, **up to ten quotes** (which
+   is what the 3 000-character observation holds). The next turn then writes the
+   answer. A turn that only re-prints material you already hold costs a model call
+   and buys nothing, and printing fewer quotes than you hold costs coverage.
 10. When asked to wrap up (budget nudge), answer from what you already have and
    list the claims you could not support. A labelled partial answer is a valid
    result; an over-budget run is not.
@@ -780,8 +781,9 @@ in a persistent sandbox namespace, so variables survive between turns.
   `ledger_add_evidence`). A reviewer reads it to see which claims you supported.
 - **Finish the reading and the printing in the same block.** When a block completes
   your last extraction and its ledger updates, print the quotes you will cite in
-  that same block (one line per objective, `id: "quote"`). A turn that only
-  re-prints what you already hold costs a model call.
+  that same block (one line per quote, `id: "quote"`, up to ten). A turn that only
+  re-prints what you already hold costs a model call; printing fewer quotes than
+  you hold costs coverage.
 
 ## Files in /workspace
 | File | What it is |
