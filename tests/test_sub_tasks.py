@@ -8,6 +8,7 @@ import unittest
 from lens.agent import sub_tasks
 from lens.agent.sub_tasks import (
     EXTRACT_FIELDS,
+    MAX_IDS_PER_CALL,
     SUB_TASKS,
     UNSURE_LABEL,
     get_task,
@@ -16,6 +17,7 @@ from lens.agent.sub_tasks import (
     render_items,
     render_prompt_block,
     response_format,
+    split_batches,
     validate_params,
 )
 
@@ -56,17 +58,49 @@ class RegistryTestCase(unittest.TestCase):
         )
 
 
+class SplitBatchesTestCase(unittest.TestCase):
+    """The fan-out unit: one RPC becomes ceil(n / max_items) model calls."""
+
+    def test_twelve_ids_become_three_batches_of_four(self) -> None:
+        items = [(f"c-{index}", "text") for index in range(12)]
+
+        batches = split_batches(items, 4)
+
+        self.assertEqual([len(batch) for batch in batches], [4, 4, 4])
+        # Order is preserved, so a merged result reads in the order the caller asked.
+        self.assertEqual([batch[0][0] for batch in batches], ["c-0", "c-4", "c-8"])
+
+    def test_a_remainder_is_its_own_batch(self) -> None:
+        items = [(f"c-{index}", "text") for index in range(7)]
+
+        self.assertEqual([len(batch) for batch in split_batches(items, 4)], [4, 3])
+
+    def test_an_empty_list_is_no_batches(self) -> None:
+        self.assertEqual(split_batches([], 4), [])
+
+    def test_a_batch_size_below_one_is_a_bug_not_a_division(self) -> None:
+        with self.assertRaises(ValueError):
+            split_batches([("c-1", "text")], 0)
+
+
 class ValidateParamsTestCase(unittest.TestCase):
     def test_unknown_parameter_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             validate_params(get_task("extract"), {"chunk_ids": ["c-1"], "depth": 3})
 
-    def test_item_count_is_capped_per_task(self) -> None:
+    def test_item_count_is_capped_per_call_not_per_batch(self) -> None:
+        # One call may carry more ids than a single batch: the host fans them out into
+        # batches of max_items and runs those concurrently. The ceiling is the call.
         task = get_task("extract")
+
+        accepted = validate_params(
+            task, {"chunk_ids": [f"c-{index}" for index in range(MAX_IDS_PER_CALL)]}
+        )
+        self.assertEqual(len(accepted["chunk_ids"]), MAX_IDS_PER_CALL)
 
         with self.assertRaises(ValueError):
             validate_params(
-                task, {"chunk_ids": [f"c-{index}" for index in range(task.max_items + 1)]}
+                task, {"chunk_ids": [f"c-{index}" for index in range(MAX_IDS_PER_CALL + 1)]}
             )
 
     def test_at_least_one_id_is_required(self) -> None:

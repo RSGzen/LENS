@@ -58,6 +58,13 @@ MIN_QUOTE_CHARS = 25
 MAX_QUOTE_CHARS = 400
 MAX_QUOTES_PER_RECORD = 3
 
+#: Ids one RPC call accepts. Larger than ``max_items`` on purpose: the host splits
+#: them into batches of ``max_items`` and runs those **concurrently**, so the root
+#: pays one round of latency instead of one per batch. Measured: a batch of four
+#: chunks costs 13–41 s of wall time, and a run that read 32 chunks spent 8 calls
+#: in sequence.
+MAX_IDS_PER_CALL = 12
+
 #: Characters of one item sent to a sub-task. A chunk is at most ~512 tokens
 #: (~2,000 characters); the margin covers a chunk that ran long without letting
 #: one item crowd out the others in a multi-item call.
@@ -313,6 +320,20 @@ MAX_LABELS = 6
 MAX_WORDS_CEILING = 400
 
 
+def split_batches(items: Sequence[tuple[str, str]], size: int) -> list[list[tuple[str, str]]]:
+    """Return ``items`` cut into consecutive batches of at most ``size``.
+
+    The fan-out unit is the batch, so this is the one place that decides how many
+    model calls one RPC becomes. ``size`` is the task's ``max_items``: a batch bigger
+    than that overflows the reply's output cap, which reads to the caller as "the
+    text stated nothing".
+    """
+    if size < 1:
+        raise ValueError(f"batch size must be positive, got {size}")
+
+    return [list(items[start : start + size]) for start in range(0, len(items), size)]
+
+
 def validate_params(task: SubTask, params: Mapping[str, Any]) -> dict[str, Any]:
     """Return normalised parameters for ``task``, or raise :class:`ValueError`.
 
@@ -327,7 +348,7 @@ def validate_params(task: SubTask, params: Mapping[str, Any]) -> dict[str, Any]:
     normalised: dict[str, Any] = {}
 
     if "chunk_ids" in params:
-        normalised["chunk_ids"] = _chunk_ids(params.get("chunk_ids"), task.max_items)
+        normalised["chunk_ids"] = _chunk_ids(params.get("chunk_ids"), MAX_IDS_PER_CALL)
 
     if task.source == "ids" and "chunk_ids" not in normalised:
         raise ValueError(f"{task.function} needs chunk_ids")
@@ -487,7 +508,9 @@ def render_prompt_block() -> str:
     for task in SUB_TASKS.values():
         lines.append(
             f"- ``rlm_api.{task.signature}`` — {task.summary}. "
-            f"At most {task.max_items} chunk ids per call."
+            f"At most {MAX_IDS_PER_CALL} chunk ids per call: the host reads them in "
+            f"concurrent batches of {task.max_items}, so one call is one round of "
+            "latency rather than one per batch."
         )
         # The return value had no contract, and the model guessed one: two runs died on
         # a record key and two more on treating a quote as a dict.
@@ -512,11 +535,11 @@ def render_prompt_block() -> str:
             f"- **When to use them:** the observation you get back is capped at "
             f"{config.TOOL_RESULT_SUMMARY_CHARS:,} characters (about four chunk "
             "excerpts). To read more chunks than that, do not print their text: call "
-            "``rlm_api.sub_extract`` on the top chunk ids in batches (no more than four "
-            "calls per code block, over one or two turns), keep the records in a variable, "
-            "and print only the parts you need. Keep the ``quotes`` field: those spans are "
-            "checked against their chunk host-side, so they are citable as they stand, "
-            "which a summary or a paraphrase never is.",
+            "``rlm_api.sub_extract`` once with up to 12 ids — the host runs the batches "
+            "concurrently — keep the records in a variable, and print only the parts you "
+            "need. Keep the ``quotes`` field: those spans are checked against their chunk "
+            "host-side, so they are citable as they stand, which a summary or a "
+            "paraphrase never is.",
             f"- At most {config.MAX_SUB_TASKS} sub-task calls per query.",
             "- The ids in a result are stamped from the ids you passed, so a record",
             "  cannot invent evidence. A sub-task answer is a derived record: cite the",
