@@ -37,7 +37,8 @@ Two runtimes, **one-way imports**:
 | `src/lens/tools/kg.py` | `build_kg`: extraction, post-process, verifier hook, ontology filter, graph + summary, cache. | `config`, `kg_*`, `retrieval` |
 | `src/lens/kg_extract.py` · `kg_postprocess.py` · `kg_verify.py` · `kg_query.py` · `kg_gold.py` | GLiNER/GLiREL extraction, the ordered quality layer, the three-tier direction verifier, pure traversal, the gold worksheet. | `config`, `models` |
 | `src/lens/tools/evaluate.py` · `sql.py` | The three-tier stage gate and the final claim gate; the gated T3 `query(sql)`. | `clients`, DB driver, `trajectory` |
-| `src/lens/agent/runtime.py` | Orchestrator: owns the loop, context assembly and compaction, sub-calls, budget, ledger, RPC dispatch, the gates, finalisation. | `clients`, `tools`, `trajectory`, `context`, `experiments.arm` |
+| `src/lens/agent/runtime.py` | Orchestrator: owns the loop, context assembly and compaction, sub-task dispatch, budget, ledger, RPC dispatch, the gates, finalisation. | `clients`, `tools`, `trajectory`, `context`, `sub_tasks`, `experiments.arm` |
+| `src/lens/agent/sub_tasks.py` | The three typed sub-tasks: host-owned system message, user template, JSON schema and output cap; batch splitting and fan-out, host-stamped chunk ids, verbatim quote verification. | `config`, `models` |
 | `src/lens/agent/{context,budget,ledger,tool_registry,tool_server,sandbox_session,segmentation}.py` | Prompt and workspace files, caps, `tasks.json`, tool manifest/dispatch, host RPC, Docker lifecycle, the segmentation call. | `config`, `clients`, `trajectory` |
 | `src/lens/agent/runstore.py` | `manifest.json` (identity/index), `resume.json` (cache), `list_runs`, `sweep_interrupted`, `fork_run`, bundle export/import (with the export-time secret scan). | `config` (lazy) |
 | `src/lens/sandbox/{runner,rlm_api,relay,exec_client}.py` | Passive persistent executor, façade (`tool()` / `sub_extract()` / `sub_summarise()` / `sub_classify()` / `budget()` / `emit()` / `note()`), the single-destination relay, the in-container exec client. | sandbox only (**no** project imports) |
@@ -57,9 +58,9 @@ from `lens`, because the image ships them without the package.
 
 ## 2. Module dependency graph (auto-generated)
 
-Source: `docs/packages_lens.mmd` (pyreverse, regenerated 31 Oct 2026). Edges are
-file-level imports. The graph **is** complete and correct: **55 analysed modules,
-141 imports**, covering `agent/`, `sandbox/`, `tools/`, `experiments/`, `ui/` and
+Source: `docs/packages_lens.mmd` (pyreverse, regenerated 2 Nov 2026). Edges are
+file-level imports. The graph **is** complete and correct: **57 analysed modules,
+148 imports**, covering `agent/`, `sandbox/`, `tools/`, `experiments/`, `ui/` and
 `run.py`.
 
 ```mermaid
@@ -81,6 +82,8 @@ classDiagram
   class sandbox_session {
   }
   class segmentation {
+  }
+  class sub_tasks {
   }
   class tool_registry {
   }
@@ -129,6 +132,8 @@ classDiagram
   class kg_query {
   }
   class kg_verify {
+  }
+  class lookup {
   }
   class models {
   }
@@ -179,6 +184,7 @@ classDiagram
   budget --> config
   budget --> models
   context --> lens
+  context --> sub_tasks
   context --> config
   runstore --> lens
   runstore --> config
@@ -189,6 +195,7 @@ classDiagram
   runtime --> runstore
   runtime --> sandbox_session
   runtime --> segmentation
+  runtime --> sub_tasks
   runtime --> tool_registry
   runtime --> clients
   runtime --> config
@@ -201,6 +208,8 @@ classDiagram
   sandbox_session --> config
   segmentation --> clients
   segmentation --> trajectory
+  sub_tasks --> lens
+  sub_tasks --> config
   tool_registry --> lens
   tool_registry --> config
   tool_registry --> trajectory
@@ -247,6 +256,7 @@ classDiagram
   kg_verify --> lens
   kg_verify --> config
   kg_verify --> models
+  lookup --> connect
   observability --> trajectory
   citations --> lens
   citations --> config
@@ -307,6 +317,8 @@ classDiagram
   app --> agent
   app --> runstore
   app --> replay
+  app --> tools
+  app --> evaluate
   app --> ui
   app --> data
   data --> lens
@@ -337,11 +349,11 @@ classDiagram
 > default (`Budget()`, `BudgetLimits()`, `Task()`) or an attribute-level annotation.
 > LENS injects its collaborators through **keyword-only** parameters
 > (`*, client: LensClient` … then `self.client = client`), which pyreverse ignores.
-> Measured on the real package: **8 relationships across 52 classes**, two of them
-> false positives (`JevResult --o DirectionVerifier`, inferred from a default-arg
-> construction, and `Trajectory --o LensClient`, whose direction reads backwards).
-> The raw output is kept as `docs/classes_lens.mmd`; the diagrams below are the ones
-> to read.
+> Measured on the real package: **6 relationships across 54 classes**, every one of
+> them real. The two false positives an earlier run produced
+> (`JevResult --o DirectionVerifier`, `Trajectory --o LensClient`) are gone, because
+> neither construction survives in the code any more. The raw output is kept as
+> `docs/classes_lens.mmd`; the diagrams below are the ones to read.
 
 ### 3.1 Harness core — who owns whom
 
@@ -554,7 +566,7 @@ endpoints only; their ownership is in 3.1.
 
 ### 3.4 Raw pyreverse output (reference only)
 
-`docs/classes_lens.mmd` — 52 classes, regenerated 31 Oct 2026. The complete
+`docs/classes_lens.mmd` — 54 classes, regenerated 2 Nov 2026. The complete
 relationship set it could infer:
 
 ```
@@ -564,8 +576,6 @@ TaskLedger --> Task : tasks
 Runtime --> TaskLedger : ledger
 RunView --> RunManifest : manifest
 RunView --> CitationReport : citations
-JevResult --o DirectionVerifier : jev_call     <- false positive
-Trajectory --o LensClient : trajectory         <- direction reads backwards
 ```
 
 The two `RunView` edges are real but trivial: the UI's view object is built from a
@@ -772,7 +782,7 @@ Tests: `tests/test_replay.py`; bundle contracts in `test_runstore.py`.
 
 ## 5. Notes and caveats
 
-- The generated package graph is **complete** (55 modules); the class map is curated
+- The generated package graph is **complete** (57 modules); the class map is curated
   by hand for the reason in §3, and the raw pyreverse output is kept as
   `docs/classes_lens.mmd`. Regenerating either file is one command from the repo
   root — `uv run --with pylint --no-project pyreverse -o mmd -d docs -p lens src/lens`

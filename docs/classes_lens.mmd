@@ -11,6 +11,7 @@ classDiagram
     exec_seconds : float
     iterations : int
     limits
+    sub_tasks : int
     tokens_in : int
     tokens_out : int
     can_continue() bool
@@ -19,6 +20,7 @@ classDiagram
     record_exec(seconds: float) None
     record_iteration() None
     record_jev(result: JevResult) None
+    record_sub_task() None
     snapshot() dict
     stop_reason() str | None
   }
@@ -27,6 +29,7 @@ classDiagram
     max_cost_usd : float
     max_exec_block_s : float
     max_iterations : int
+    max_sub_tasks : int
     max_tokens : int
   }
   class CallResult {
@@ -121,6 +124,27 @@ classDiagram
     namespace : dict[str, Any]
     stdout_max_chars : int
     run(code: str) dict[str, Any]
+  }
+  class GateCall {
+    claim_questions : dict[str, str]
+    claim_scores : dict[str, float]
+    claim_texts : dict[str, str]
+    claims_failed : tuple[str, ...]
+    completion_ref : str | None
+    confidence : float | None
+    cost_usd : float
+    criterion : str | None
+    decision : str | None
+    latency_ms : int | None
+    polarity : str | None
+    prompt_ref : str | None
+    question : str | None
+    stage : str | None
+    state : str | None
+    tau_agg : float | None
+    tau_claim : float | None
+    tokens_in : int | None
+    verdict : str
   }
   class GlinerExtractor {
     entity_labels
@@ -255,6 +279,7 @@ classDiagram
     cost_usd : float
     cost_with_fee : float
     evidence : dict[int, list[dict[str, Any]]]
+    gates : dict[int, list[GateCall]]
     has_report : bool
     has_sources : bool
     manifest
@@ -313,7 +338,9 @@ classDiagram
   }
   class StageVerdict {
     confidence : float | None
+    decision : str | None
     failing_criterion : str | None
+    feedback : str | None
     tier : str | None
     verdict : Literal
     to_dict() dict[str, Any]
@@ -324,6 +351,22 @@ classDiagram
     isatty() bool
     writable() bool
     write(message: str) int
+  }
+  class SubTask {
+    build_schema : Callable[[Mapping[str, Any]], dict[str, Any]]
+    function : str
+    instruction : str
+    max_items : int
+    max_output_tokens : int
+    name : str
+    params : tuple[str, ...]
+    result_key : str
+    result_note : str
+    result_shape : str
+    signature : str
+    source : str
+    summary : str
+    system : str
   }
   class Target {
     arxiv_id : str
@@ -429,6 +472,7 @@ classDiagram
     emits : list[str]
     error : dict[str, Any] | None
     gate : dict[str, Any] | None
+    gate_verdicts : list[dict[str, Any]]
     jev_cost_usd : float | None
     jev_tokens_in : int | None
     latency_ms : int | None

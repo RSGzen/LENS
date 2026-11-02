@@ -17,6 +17,8 @@ classDiagram
   }
   class segmentation {
   }
+  class sub_tasks {
+  }
   class tool_registry {
   }
   class tool_server {
@@ -64,6 +66,8 @@ classDiagram
   class kg_query {
   }
   class kg_verify {
+  }
+  class lookup {
   }
   class models {
   }
@@ -114,6 +118,7 @@ classDiagram
   budget --> config
   budget --> models
   context --> lens
+  context --> sub_tasks
   context --> config
   runstore --> lens
   runstore --> config
@@ -124,6 +129,7 @@ classDiagram
   runtime --> runstore
   runtime --> sandbox_session
   runtime --> segmentation
+  runtime --> sub_tasks
   runtime --> tool_registry
   runtime --> clients
   runtime --> config
@@ -136,6 +142,8 @@ classDiagram
   sandbox_session --> config
   segmentation --> clients
   segmentation --> trajectory
+  sub_tasks --> lens
+  sub_tasks --> config
   tool_registry --> lens
   tool_registry --> config
   tool_registry --> trajectory
@@ -182,6 +190,7 @@ classDiagram
   kg_verify --> lens
   kg_verify --> config
   kg_verify --> models
+  lookup --> connect
   observability --> trajectory
   citations --> lens
   citations --> config
@@ -242,6 +251,8 @@ classDiagram
   app --> agent
   app --> runstore
   app --> replay
+  app --> tools
+  app --> evaluate
   app --> ui
   app --> data
   data --> lens
