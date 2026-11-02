@@ -103,6 +103,15 @@ class ToolBindingTestCase(unittest.TestCase):
         self.assertIn("full** 36-character `chunk_uuid`", prompt)
         self.assertIn("never write it\n   in the same message as a block", prompt)
 
+    def test_prompt_finishes_the_reading_and_the_printing_in_one_turn(self) -> None:
+        # Measured: two runs printed ids only, then spent a whole turn re-printing the
+        # same evidence as quotes before it could answer.
+        prompt = context.build_system_prompt("1. retrieval_funnel(buckets)", {}, {})
+
+        self.assertIn("Finish the reading and the printing in the same turn", prompt)
+        # It is a finishing rule, not a sub-task rule: the sub-calls-off arm keeps it.
+        self.assertIn("Finish the reading and the printing in the same block", context.AGENTS_MD)
+
 
 class ContextTestCase(unittest.TestCase):
     def test_extract_python_block(self) -> None:

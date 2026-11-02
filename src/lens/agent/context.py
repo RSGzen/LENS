@@ -160,7 +160,12 @@ Output contract
    [chunk_uuid, ...])`` when you have the ids. Create each task once and keep its
    id in a variable. The ledger is what a reviewer reads to see which claims you
    actually supported.
-9. When asked to wrap up (budget nudge), answer from what you already have and
+9. **Finish the reading and the printing in the same turn.** When a block completes
+   your last extraction and its ledger updates, print in that same block the quotes
+   you will cite — one line per objective, ``id: "quote"``, at most two per
+   objective. The next turn then writes the answer. A turn that only re-prints
+   material you already hold costs a model call and buys nothing.
+10. When asked to wrap up (budget nudge), answer from what you already have and
    list the claims you could not support. A labelled partial answer is a valid
    result; an over-budget run is not.
 
@@ -773,6 +778,10 @@ in a persistent sandbox namespace, so variables survive between turns.
   discarded and the turn keeps working.
 - Record steps in the ledger (`ledger_create` / `ledger_update` /
   `ledger_add_evidence`). A reviewer reads it to see which claims you supported.
+- **Finish the reading and the printing in the same block.** When a block completes
+  your last extraction and its ledger updates, print the quotes you will cite in
+  that same block (one line per objective, `id: "quote"`). A turn that only
+  re-prints what you already hold costs a model call.
 
 ## Files in /workspace
 | File | What it is |
