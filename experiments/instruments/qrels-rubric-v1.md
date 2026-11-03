@@ -4,6 +4,10 @@ Frozen 2026-11-01, before the first judgment. Do not change it mid-pass: a rubri
 moves while labels are being written makes the metric unreproducible, and the whole
 point of the file is that someone else could repeat the labelling from it.
 
+*3 Nov 2026, **before the first label was taken**: the "columns" table below was added,
+because `rel` reads as "relation" and the sheet did not say which column is which. The
+1/0 rule and the worked examples are unchanged.*
+
 ## What is being judged
 
 **One question at a time:** *would this paper help answer the query?*
@@ -24,8 +28,17 @@ work under.
 | **1** | relevant | The abstract addresses the need the query states — it reports a method, a comparison, a measurement or a resource that the query asks about, on a topic the query names. |
 | **0** | not relevant | Anything else: a different topic, the right topic but the wrong need, a passing mention, an abstract you cannot judge. |
 
-There is no middle value, no "partially", and no `2`. If you find yourself wanting a
-`0.5`, the answer is `0`: a label that means "maybe" cannot be scored.
+`rel` is short for **relevance**. It is **binary** and **untyped**: there is no "partially relevant", no `2`, and no set of relation types to choose from — `nDCG@10` is computed with binary gains, so a richer label would have nothing to feed. If you find yourself wanting a `0.5`, the answer is `0`: a label that means "maybe" cannot be scored.
+
+## The columns
+
+| Column | What it is | What to do with it |
+|---|---|---|
+| `query_id` | One of the 25 frozen Tier-2 query ids (`agg-beyond-window`, `rlm-vs-react`, …), matching `tier2-queries-v1.json` | Do not edit; use it to filter and work one group at a time |
+| `query` | That query's full text, repeated on every row of its group | Read it once per group |
+| `doc_id` | The candidate paper's arXiv id | Do not edit — it is the join key |
+| `title`, `abstract` | What the retriever knew about the paper, abstract truncated to 900 characters | The **only** evidence: no PDF, no lookup, no memory |
+| `rel` | Your judgement: `1` or `0` | The only column you fill |
 
 ## The four decisions that actually come up
 
