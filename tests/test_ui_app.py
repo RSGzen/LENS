@@ -89,6 +89,17 @@ class UiAppTestCase(unittest.TestCase):
                 ),
                 tokens_in=100 * (step + 1),
                 tokens_out=20,
+                reasoning_tokens=8,
+                # Turn 0 has a trace; turn 1 has the count only, which is what an
+                # OpenAI reasoning model returns.
+                reasoning_ref=(
+                    traj.store_blob("I should inspect the retrieved chunks first.")
+                    if step == 0
+                    else None
+                ),
+                reasoning_chars=(
+                    len("I should inspect the retrieved chunks first.") if step == 0 else None
+                ),
                 cost_usd=0.01,
                 latency_ms=900,
             )
@@ -262,6 +273,24 @@ class UiAppTestCase(unittest.TestCase):
         # block appears only inside the collapsed full message.
         self.assertIn("I will look at turn 0 first.", visible)
         self.assertTrue(any("```python" in value for value in visible))
+
+    def test_the_reasoning_count_is_always_shown_and_the_trace_when_present(self) -> None:
+        at = self._app()
+
+        # Turn 0 has a trace, so the card shows the number and the text.
+        captions = " ".join(caption.value for caption in at.caption)
+        self.assertIn("reasoning: 8 tokens", captions)
+        self.assertNotIn("returns the reasoning token count, not the text", captions)
+        self.assertIn(
+            "I should inspect the retrieved chunks first.",
+            [block.value.strip() for block in at.markdown],
+        )
+
+        # Turn 1 has the count only, which is what an OpenAI reasoning model returns.
+        at.session_state["cursor"] = 1
+        at.run()
+        captions = " ".join(caption.value for caption in at.caption)
+        self.assertIn("This provider returns the reasoning token count, not the text.", captions)
 
     def test_payload_toggle_renders_the_blob(self) -> None:
         at = self._app()

@@ -58,9 +58,10 @@ PLAY_SECONDS = 1.5
 #: largest blob in a run.
 PAYLOAD_PREVIEW_CHARS = 20_000
 
-#: How much of a turn's *reasoning* (the completion minus its code fences) is
-#: shown outside the expander. The full message stays one click away.
-REASONING_CHARS = 700
+#: How much of a turn's **visible** prose (the completion minus its code fences)
+#: is shown outside the expander. The full message stays one click away. This is
+#: not the provider's reasoning trace, which the model card below renders on its own.
+VISIBLE_TEXT_CHARS = 700
 
 #: A fenced block inside a model completion: ```lang ... ```
 _FENCE_RE = re.compile(r"```[^\n]*\n.*?(?:```|$)", re.DOTALL)
@@ -622,10 +623,32 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
         elif turn.ok is None and turn.code:
             st.warning("**interrupted** — this turn has code but no result in the log.")
 
-        reasoning = _reasoning(turn.completion)
+        # The provider's thinking, when it returns one. A count with no text is the
+        # normal case on OpenAI reasoning models, so the two are rendered apart:
+        # the number always, the trace only when it exists.
+        if turn.reasoning_tokens:
+            share = (
+                f" · {100 * turn.reasoning_tokens / turn.tokens_out:.0f}% of output"
+                if turn.tokens_out
+                else ""
+            )
+            st.caption(f"reasoning: {turn.reasoning_tokens:,} tokens{share}")
 
-        if reasoning:
-            st.markdown(_clip(reasoning, REASONING_CHARS))
+        if turn.reasoning_text:
+            extra = ""
+
+            if turn.reasoning_chars and turn.reasoning_chars > len(turn.reasoning_text):
+                extra = f" — first {len(turn.reasoning_text):,} of {turn.reasoning_chars:,} chars"
+
+            with st.expander(f"Reasoning Trace{extra}"):
+                st.markdown(turn.reasoning_text)
+        elif turn.reasoning_tokens:
+            st.caption("This provider returns the reasoning token count, not the text.")
+
+        visible = _visible_text(turn.completion)
+
+        if visible:
+            st.markdown(_clip(visible, VISIBLE_TEXT_CHARS))
 
         # Code is the longest block in a turn, and it is also inside the full
         # message below — so it is collapsed, not forced open. The line count keeps
@@ -635,7 +658,7 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
                 st.code(turn.code, language="python")
 
         if turn.completion:
-            with st.expander("Full Model Message (Reasoning + Code Written)"):
+            with st.expander("Full Model Message (visible text + code)"):
                 st.markdown(turn.completion)
 
         for slot, tool in enumerate(turn.tools):
@@ -1227,12 +1250,15 @@ def _duration(latency_ms: int | None) -> str:
     return f"{latency_ms / 1000:.1f} s"
 
 
-def _reasoning(completion: str | None) -> str:
+def _visible_text(completion: str | None) -> str:
     """Return the prose part of a completion: the fenced blocks removed.
 
     The executed block is rendered by ``st.code`` right below, so keeping the fence
     in the visible summary would show the same code twice — and it is the code, not
     the sentence before it, that Streamlit renders with a horizontal scrollbar.
+
+    This is the model's own words, not the provider's reasoning trace: that arrives
+    in a separate field and is rendered above.
     """
     if not completion:
         return ""
