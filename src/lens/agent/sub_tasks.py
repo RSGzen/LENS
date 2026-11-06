@@ -1,6 +1,6 @@
 """Typed depth-1 sub-tasks: fixed instruction, strict JSON, host-stamped ids.
 
-A sub-task is one ``gpt-5-mini`` call the root makes from the sandbox. The root
+A sub-task is one call to the sub model the root makes from the sandbox. The root
 supplies **parameters**, never the instruction: the system message, the user
 template, the JSON schema and the output cap all come from the registry below.
 
@@ -497,9 +497,10 @@ def render_prompt_block() -> str:
     Generated from the registry so the prompt cannot advertise a sub-task the host
     does not implement, or miss one it does.
     """
+    sub_model = config.MODEL_REGISTRY["sub"].id
     lines = [
         "Sub-tasks",
-        "- Typed calls to a smaller model: ``gpt-5-mini``, a fixed instruction and a",
+        f"- Typed calls to a smaller model: ``{sub_model}``, a fixed instruction and a",
         "  strict JSON answer. They cannot see your variables, your tools or the",
         "  corpus, only what you pass them. Each returns a dict, already parsed.",
         "  Call them as ``rlm_api.<name>(...)``.",

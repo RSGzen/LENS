@@ -13,8 +13,10 @@ Rules
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -339,13 +341,14 @@ MAX_RETRIES = 3
 # independent 200k token cap used to bind at ~4 turns while the 10-turn cap
 # never fired).
 #
-# Model windows (OpenRouter model list, 18 Oct 2026): root ``openai/gpt-5``
-# 400,000 ctx / 128,000 max out, $1.25/1M in + $10/1M out; sub ``gpt-5-mini``
-# 400,000; dev ``qwen/qwen3-coder`` 262,144 / 65,536, $0.30 + $1.00. The
-# **narrowest** role (262k) bounds how much context any role can hold, not the root's.
+# Model windows (OpenRouter model list, 6 Nov 2026): root and sub
+# ``deepseek/deepseek-v4.1-flash`` 1,048,576 ctx / 393,216 max out,
+# $0.051/1M in + $0.567/1M out (provider ``wafer/us``, pinned); dev
+# ``qwen/qwen3-coder`` 262,144 / 65,536, $0.30 + $1.00. The **narrowest** role
+# (262k) bounds how much context any role can hold, not the root's.
 MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "10"))
 #: Sub-task calls one query may make. A guard rather than a budget: each call is a
-#: few seconds of ``gpt-5-mini`` and ~$0.001, but a bad loop inside one code block
+#: few seconds of the sub model and ~$0.001, but a bad loop inside one code block
 #: could otherwise spend the whole per-query cost cap in a single turn. Exceeding it
 #: returns an error to the sandbox and the run continues -- it is not a stop reason.
 MAX_SUB_TASKS = int(os.environ.get("LENS_MAX_SUB_TASKS", "40"))
@@ -353,11 +356,11 @@ MAX_EXEC_BLOCK_S = float(os.environ.get("LENS_MAX_EXEC_BLOCK_S", "120"))
 MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
 # Per-query COST cap. Raised 0.50 -> 1.00 on 26 Oct 2026 because the
 # measured Tier-1 anchor spent **$0.436 in 8 iterations = 87 % of $0.50**: at that
-# ceiling the cap was one turn from becoming the *reason* a `gpt-5` run ended, so a
+# ceiling the cap was one turn from becoming the *reason* a run ended, so a
 # model-quality result would have been reported as an artefact of a number we
-# picked. It stays at 1.00 while the token cap moves: measured runs bill about
-# $1.3 per million tokens (cached input plus ``gpt-5-mini`` output), so 500k tokens
-# is roughly $0.65 and the money cap is a backstop rather than the binding one.
+# picked. The figure was measured on the previous root model and is **not**
+# re-derived by the model swap of 6 Nov 2026: the cap is kept so recorded runs
+# stay comparable, and a new value needs a measured unit-cost cell on the new rig.
 # Earlier artifacts were recorded at $0.50 and later ones at $1.00; state that
 # difference when reporting, because the cap changes the stop-reason distribution,
 # not the pipeline.
@@ -406,8 +409,9 @@ CONTEXT_COMPACT_TARGET_RATIO = float(os.environ.get("LENS_CONTEXT_COMPACT_TARGET
 # cap the orchestrator asks the root to land the plane, so hitting a cap produces
 # a labelled partial answer instead of a truncation mid-thought.
 CONTEXT_WARN_RATIO = float(os.environ.get("LENS_CONTEXT_WARN_RATIO", "0.80"))
-# Output is the expensive half (gpt-5: $10/1M out vs $1.25/1M in), so each root
-# call gets a hard output cap. Long summarisation belongs in a sub-task (mini).
+# Output is the expensive half (the shipped model bills $0.567/1M out against
+# $0.051/1M in), so each root call gets a hard output cap. Long summarisation
+# belongs in a sub-task.
 ROOT_MAX_OUTPUT_TOKENS = int(os.environ.get("LENS_ROOT_MAX_OUTPUT_TOKENS", "8000"))
 # Context-side observation cap (chars). The runner caps captured stdout too
 # (``SANDBOX_STDOUT_MAX_CHARS``); this is the second, tighter cut applied before
@@ -607,7 +611,12 @@ class ModelSpec:
 
     id: str
     supports_reasoning: bool
-    reasoning_effort: str | None
+    #: The OpenRouter ``reasoning`` object sent with every call for this role, or
+    #: ``None`` to send none. It is one object because the endpoint takes one:
+    #: ``{"effort": "high"}``, ``{"max_tokens": N}`` or ``{"enabled": true}``.
+    #: Changing it per turn changes the request prefix and invalidates the prompt
+    #: cache, so it is a property of the role, not of the turn.
+    reasoning: Mapping[str, Any] | None
     supports_tools: bool
     supports_response_format: bool
     # OpenRouter provider pinning (recorded runs): allow_fallbacks=False + these.
@@ -632,17 +641,22 @@ def _model_override(spec: ModelSpec, raw: str | None) -> ModelSpec:
     ``LENS_SUB_MODEL`` / ``LENS_DEV_MODEL`` override the **id only**; the id is
     recorded per call, so a recorded run stays attributable.
 
-    Provider pins are vendor **slugs**: an override from a different vendor drops
-    them rather than pinning the wrong one (``allow_fallbacks`` stays ``False``).
-    The price columns above stay documentation — ``Budget`` books the real
-    ``usage.cost``, so an override cannot silently under-count.
+    Provider pins are dropped by an override from a different model family rather
+    than pinning a provider that cannot serve it (``allow_fallbacks`` stays
+    ``False``). The price columns above stay documentation — ``Budget`` books the
+    real ``usage.cost``, so an override cannot silently under-count.
     """
     if not raw:
         return spec
 
     vendor = raw.split("/", 1)[0]
 
-    if vendor in spec.provider_only:
+    # Compare the model's namespace, not the provider slug: the pin names a
+    # *serving provider* ("wafer/us") while the id names a *model vendor*
+    # ("deepseek"), so those two strings never match. What has to be preserved is
+    # "an override inside the same family keeps the pin"; anything else would pin
+    # the wrong provider.
+    if vendor == spec.id.split("/", 1)[0]:
         return replace(spec, id=raw)
 
     return replace(spec, id=raw, provider_only=(), provider_order=())
@@ -651,25 +665,33 @@ def _model_override(spec: ModelSpec, raw: str | None) -> ModelSpec:
 MODEL_REGISTRY: dict[Role, ModelSpec] = {
     "root": _model_override(
         ModelSpec(
-            id="openai/gpt-5",
+            id="deepseek/deepseek-v4.1-flash",
             supports_reasoning=True,
-            reasoning_effort="medium",
+            # One effort for the whole role. The endpoint takes `effort` or a token
+            # budget, not both; DeepSeek is an effort-level model, so a per-turn
+            # dial would only be a coarser level and would break the prefix cache.
+            reasoning={"enabled": True, "effort": "high"},
             supports_tools=True,
             supports_response_format=True,
-            provider_only=("openai",),
-            provider_order=("openai",),
+            # The same model id is served by providers whose input price differs
+            # several times over, so the provider is part of the recording.
+            provider_only=("wafer/us",),
+            provider_order=("wafer/us",),
         ),
         os.environ.get("LENS_ROOT_MODEL"),
     ),
     "sub": _model_override(
         ModelSpec(
-            id="openai/gpt-5-mini",
+            id="deepseek/deepseek-v4.1-flash",
             supports_reasoning=True,
-            reasoning_effort="low",
+            # Same model and same effort as the root: the sub-tasks are extraction
+            # calls whose replies are capped, and a separate reasoning setting would
+            # be a second variable in every arm comparison.
+            reasoning={"enabled": True, "effort": "high"},
             supports_tools=True,
             supports_response_format=True,
-            provider_only=("openai",),
-            provider_order=("openai",),
+            provider_only=("wafer/us",),
+            provider_order=("wafer/us",),
         ),
         os.environ.get("LENS_SUB_MODEL"),
     ),
@@ -677,7 +699,7 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         ModelSpec(
             id="qwen/qwen3-coder",
             supports_reasoning=False,
-            reasoning_effort=None,
+            reasoning=None,
             supports_tools=True,
             supports_response_format=False,
             provider_only=("google-vertex",),

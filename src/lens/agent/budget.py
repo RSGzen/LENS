@@ -59,7 +59,7 @@ class Budget:
 
         Both token counts accumulate because the token cap bounds **total work**;
         they stay separate so a snapshot can show which half is expensive (output
-        is 8x input on gpt-5).
+        costs several times input).
         """
         self.tokens_in += result.tokens_in
         self.tokens_out += result.tokens_out

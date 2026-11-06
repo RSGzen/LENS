@@ -15,7 +15,7 @@ from pathlib import Path
 
 import lens.observability.trajectory as trajectory_module
 from lens.clients import LensClient, LensTransportError
-from lens.config import ModelSpec
+from lens.config import MODEL_REGISTRY, ModelSpec
 from lens.models import Question
 from lens.observability.trajectory import TraceCtx, Trajectory
 
@@ -104,7 +104,7 @@ class LensClientTestCase(unittest.TestCase):
             "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
         )
         self.assertEqual(result.text, "hi")
-        self.assertEqual(result.model, "openai/gpt-5")
+        self.assertEqual(result.model, MODEL_REGISTRY["root"].id)
         self.assertEqual(result.model_snapshot, "openai/gpt-5-20260101")
         self.assertEqual(result.provider, "OpenAI")
         self.assertEqual((result.tokens_in, result.tokens_out), (12, 3))
@@ -221,8 +221,18 @@ class LensClientTestCase(unittest.TestCase):
         session = FakeSession([FakeResponse(200, chat_payload())])
         self._client(session).chat("root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx)
         body = json.loads(session.calls[0]["data"])
+        spec = MODEL_REGISTRY["root"]
         self.assertIs(body["provider"]["allow_fallbacks"], False)
-        self.assertEqual(body["provider"]["only"], ["openai"])
+        self.assertEqual(body["provider"]["only"], list(spec.provider_only))
+
+    def test_chat_sends_the_role_reasoning_object(self) -> None:
+        # The endpoint takes one `reasoning` object per request, and the cache is
+        # keyed on the prefix: the object belongs to the role, not to the turn.
+        session = FakeSession([FakeResponse(200, chat_payload())])
+        self._client(session).chat("root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx)
+        body = json.loads(session.calls[0]["data"])
+        self.assertEqual(body["reasoning"], dict(MODEL_REGISTRY["root"].reasoning or {}))
+        self.assertNotIn("reasoning_effort", body)
 
     def test_chat_stores_the_reasoning_trace_when_one_is_returned(self) -> None:
         # Some providers return the trace, some only the count. The two arrive
@@ -259,7 +269,7 @@ class LensClientTestCase(unittest.TestCase):
         spec = ModelSpec(
             id="openai/gpt-5",
             supports_reasoning=True,
-            reasoning_effort=None,
+            reasoning=None,
             supports_tools=True,
             supports_response_format=True,
         )
@@ -279,7 +289,7 @@ class LensClientTestCase(unittest.TestCase):
         spec = ModelSpec(
             id="qwen/qwen3-coder",
             supports_reasoning=False,
-            reasoning_effort=None,
+            reasoning=None,
             supports_tools=True,
             supports_response_format=False,
             temperature=0.3,
@@ -300,7 +310,7 @@ class LensClientTestCase(unittest.TestCase):
         spec = ModelSpec(
             id="qwen/qwen3-coder",
             supports_reasoning=False,
-            reasoning_effort=None,
+            reasoning=None,
             supports_tools=True,
             supports_response_format=False,
             seed=42,

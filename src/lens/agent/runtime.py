@@ -15,7 +15,7 @@ Invariants
   RLM, so a generated block cannot rewrite its own evidence.
 - Large data stays in sandbox variables or ``emit()`` files. Only **printed
   digests** enter the root context (the tool result itself never does).
-- Depth 1: a sub-task is a typed GPT-5-mini call with no tools and no REPL.
+- Depth 1: a sub-task is a typed call to the sub model with no tools and no REPL.
 - Two cost sources: :class:`~lens.agent.budget.Budget` enforces the caps, and
   :meth:`lens.observability.trajectory.Trajectory.totals` is what the reported
   ``$/query`` is read from.

@@ -48,14 +48,15 @@ class ModelOverrideTestCase(unittest.TestCase):
 
     def test_override_same_vendor_keeps_pins(self) -> None:
         spec = config.MODEL_REGISTRY["root"]
-        overridden = config._model_override(spec, "openai/gpt-5-mini")
+        overridden = config._model_override(spec, "deepseek/deepseek-v4-pro")
 
-        self.assertEqual(overridden.id, "openai/gpt-5-mini")
+        self.assertEqual(overridden.id, "deepseek/deepseek-v4-pro")
         self.assertEqual(overridden.provider_only, spec.provider_only)
 
     def test_override_other_vendor_drops_pins(self) -> None:
-        # A pin is a vendor slug: keeping ("openai",) on a qwen id would pin the
-        # wrong vendor and fail at the transport with a confusing empty response.
+        # A pin names a serving provider, and a different model family cannot be
+        # served by it: keeping the pin fails at the transport with an empty
+        # response, which reads like a model problem.
         overridden = config._model_override(config.MODEL_REGISTRY["root"], "qwen/qwen3-coder")
 
         self.assertEqual(overridden.id, "qwen/qwen3-coder")

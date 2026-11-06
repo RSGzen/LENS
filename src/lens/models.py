@@ -47,7 +47,7 @@ class CallResult:
     finish_reason: str | None = None
     #: Part of ``tokens_in`` that hit the provider's prompt cache (billed cheaper).
     cached_tokens: int = 0
-    #: Part of ``tokens_out`` spent on reasoning (gpt-5 bills it as output).
+    #: Part of ``tokens_out`` spent on reasoning (billed as output).
     reasoning_tokens: int = 0
     #: The provider's reasoning trace, when it returns one. Several providers send
     #: only the token count above, so the two are never assumed to arrive together.

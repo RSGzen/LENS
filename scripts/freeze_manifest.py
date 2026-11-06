@@ -138,7 +138,18 @@ def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> d
         "commit": git_value("rev-parse", "HEAD"),
         "branch": git_value("rev-parse", "--abbrev-ref", "HEAD"),
         "git_dirty": bool(git_value("status", "--porcelain")),
-        "models": {role: spec.id for role, spec in config.MODEL_REGISTRY.items()}
+        # A model id alone does not identify what served a run: the same id is
+        # offered by providers whose price differs several times over, and the
+        # reasoning setting changes both the cost and the latency. All three are
+        # part of the record.
+        "models": {
+            role: {
+                "id": spec.id,
+                "provider_only": list(spec.provider_only),
+                "reasoning": dict(spec.reasoning or {}),
+            }
+            for role, spec in config.MODEL_REGISTRY.items()
+        }
         | {"jev": config.JEV_MODEL_ID},
         "jev": config.JEV_MODEL_ID,
         "caps": {

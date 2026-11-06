@@ -911,7 +911,7 @@ class RuntimeRegressionTestCase(unittest.TestCase):
         manifest = runstore.read_manifest(self.trajectory.run_dir)
         assert manifest is not None
         # ModelSpec is a dataclass and would break json.dump; ids only.
-        self.assertEqual(manifest.models["root"], "openai/gpt-5")
+        self.assertEqual(manifest.models["root"], config.MODEL_REGISTRY["root"].id)
         self.assertEqual(manifest.models["jev"], "typesafe/jev-1.13")
         self.assertIsNone(manifest.created_by["commit"])  # unknown, never 0
         self.assertTrue(manifest.caps)

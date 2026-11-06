@@ -417,10 +417,12 @@ _ENCODING: Any = None
 def count_tokens(text: str) -> int:
     """Estimate the token count of ``text`` for context-budget decisions.
 
-    Uses ``tiktoken``'s ``o200k_base`` (the gpt-5 family encoding) with a
-    documented fallback of ``len // 4`` when tiktoken is unavailable. This is an
-    **estimate** for compaction decisions, not a billing value — actual usage
-    comes from ``CallResult``.
+    Uses ``tiktoken``'s ``o200k_base`` (the GPT-4o/GPT-5 family encoding) with a
+    documented fallback of ``len // 4`` when tiktoken is unavailable. For a model
+    with a different tokenizer this is an approximation, in the conservative
+    direction on prose; it only decides when to compact, because actual usage comes
+    from ``CallResult``. Compare a turn's estimate with its reported ``tokens_in``
+    before trusting the margin.
     """
     global _ENCODING
 

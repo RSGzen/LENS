@@ -105,7 +105,7 @@ class RunManifest:
     created_at: str = ""
     updated_at: str = ""
     # role -> requested model id (+ served snapshot when known), e.g.
-    # {"root": "openai/gpt-5", "sub": "openai/gpt-5-mini", "jev": "typesafe/jev-1.13"}
+    # {"root": "deepseek/deepseek-v4.1-flash", "jev": "typesafe/jev-1.13"}
     models: dict[str, str] = field(default_factory=dict)
     # The caps in force for this run (so a resumed run is not judged by today's defaults).
     caps: dict[str, Any] = field(default_factory=dict)
@@ -549,6 +549,7 @@ REF_FIELDS: tuple[str, ...] = (
     "stdout_ref",
     "stderr_ref",
     "args_ref",
+    "reasoning_ref",
 )
 
 

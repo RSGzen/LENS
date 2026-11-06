@@ -1,6 +1,6 @@
 """Host agent layer: query segmentation and, later, the orchestrator.
 
-- :mod:`lens.agent.segmentation` -- : one ``gpt-5-mini`` structured-JSON call
+- :mod:`lens.agent.segmentation` -- : one the sub model structured-JSON call
   turns a raw query into the 4 retrieval buckets, emitted as ``query.json``.
 """
 

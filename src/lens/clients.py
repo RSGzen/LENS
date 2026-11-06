@@ -191,8 +191,8 @@ class LensClient:
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 
-        if model_spec.reasoning_effort is not None:
-            payload["reasoning_effort"] = model_spec.reasoning_effort
+        if model_spec.reasoning is not None:
+            payload["reasoning"] = dict(model_spec.reasoning)
 
         if model_spec.temperature is not None:
             payload["temperature"] = model_spec.temperature

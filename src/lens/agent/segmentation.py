@@ -2,7 +2,7 @@ r"""-- query segmentation: prompt -> 4 buckets -> ``query.json``.
 
 Decision
 -------------------------------------
-Segmentation is **one** ``gpt-5-mini`` structured-JSON call (``role=sub``), *not*
+Segmentation is **one** the sub model structured-JSON call (``role=sub``), *not*
 a per-clause JEV ``choice`` pass. The four buckets become ``query.json``. JEV stays
 the *decision* layer (stage gate / ``noul`` sufficiency verifier / routing) and is
 **not** used to generate the buckets here.
@@ -170,7 +170,7 @@ def segment_query(
     *,
     trace_ctx: TraceCtx,
 ) -> dict[str, list[str]]:
-    """Segment ``query`` into the 4 buckets via one ``gpt-5-mini`` call.
+    """Segment ``query`` into the 4 buckets via one the sub model call.
 
     Steps:
       1. Reject a blank ``query`` with :class:`ValueError` (trust boundary).
