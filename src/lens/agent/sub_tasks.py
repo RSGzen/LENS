@@ -235,7 +235,13 @@ SUB_TASKS: dict[str, SubTask] = {
         # cut-off JSON, parsed to zero records, and the root read the chunks by hand
         # instead. A truncated reply is worse than a smaller one, because it looks
         # like "the text stated nothing".
-        max_output_tokens=3000,
+        #
+        # The cap now also has to cover the model's **reasoning**, which shares the
+        # output budget: with reasoning at high effort a 3,000-token cap was spent
+        # entirely on thinking and the reply came back empty with
+        # finish_reason=length. Only tokens actually generated are billed, so the
+        # headroom costs nothing when it is unused.
+        max_output_tokens=8000,
         max_items=4,
         source="ids",
         build_schema=_extract_schema,
@@ -269,7 +275,7 @@ SUB_TASKS: dict[str, SubTask] = {
             "<<ITEMS>>"
         ),
         result_key="summaries",
-        max_output_tokens=1200,
+        max_output_tokens=4000,
         max_items=3,
         source="either",
         build_schema=_summarise_schema,
@@ -299,7 +305,9 @@ SUB_TASKS: dict[str, SubTask] = {
             "<<ITEMS>>"
         ),
         result_key="labels",
-        max_output_tokens=600,
+        # Unused in every recorded run, but it shares the same budget rule: the
+        # reasoning is paid for before a single label is written.
+        max_output_tokens=3000,
         max_items=8,
         source="ids",
         build_schema=_classify_schema,
