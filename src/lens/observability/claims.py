@@ -415,12 +415,17 @@ def verify_units(
 def parse_frames(
     payload: Mapping[str, Any] | None,
     units: Sequence[tuple[str, Sequence[str]]],
+    *,
+    allowed_units: set[int] | None = None,
 ) -> tuple[list[ClaimFrame], list[str]]:
     """Return ``(frames, errors)`` from one extractor reply.
 
     The host validates the two things the model cannot be trusted with: the
     ``unit_index`` must address a real claim unit, and the ``chunk_id`` must be
     one the unit cited. A frame that fails either is dropped, never repaired.
+
+    ``allowed_units`` narrows the check to the units one batched call was shown,
+    so a frame cannot address a unit the model never saw.
     """
     errors: list[str] = []
     raw = payload.get("frames") if isinstance(payload, Mapping) else None
@@ -443,6 +448,10 @@ def parse_frames(
 
         if not 0 <= unit_index < len(units):
             errors.append(f"frame addressed unit {unit_index}, which is out of range")
+            continue
+
+        if allowed_units is not None and unit_index not in allowed_units:
+            errors.append(f"frame addressed unit {unit_index}, which this call was not shown")
             continue
 
         _text, ids = units[unit_index]

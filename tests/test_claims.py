@@ -219,6 +219,16 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(frames, [])
         self.assertEqual(len(errors), 1)
 
+    def test_a_frame_for_a_unit_the_call_did_not_show_is_dropped(self) -> None:
+        frames, errors = parse_frames(
+            {"frames": [{"unit_index": 1, "predicate": "measures", "subject": "X"}]},
+            self.units,
+            allowed_units={0},
+        )
+
+        self.assertEqual(frames, [])
+        self.assertTrue(any("not shown" in error for error in errors))
+
 
 class ReportTests(unittest.TestCase):
     def test_coverage_counts_units_not_frames(self) -> None:
