@@ -91,7 +91,14 @@ from lens.agent.sub_tasks import (
 from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.clients import LensClient
 from lens.experiments.arm import arm_fingerprint
-from lens.observability.citations import cited_ids, expand_short_ids, recorded_chunk_ids
+from lens.observability.citations import (
+    cited_ids,
+    expand_short_ids,
+    recorded_chunk_ids,
+    recorded_chunk_texts,
+)
+from lens.observability.claim_extract import verify_answer
+from lens.observability.claims import ClaimReport
 from lens.observability.trajectory import Actor, TraceCtx, Trajectory
 from lens.tools.evaluate import GATED_STAGES, evaluate_stage
 
@@ -1041,6 +1048,52 @@ class Runtime:
                 )
 
             answer = final
+            claim_report = None
+
+            if config.RUN_MODE != "document":
+                if self.budget.can_continue():
+                    claim_report = self._claim_pass(gate_answer, trace_ctx)
+                else:
+                    self._note("claim pass skipped: budget exhausted before the final answer")
+
+            if (
+                claim_report is not None
+                and config.GATE_ENABLED
+                and claim_report.counts["contradicted"] > 0
+            ):
+                # A contradiction is mechanical: the cited span states a different
+                # value or direction. It rejects before the probabilistic gate,
+                # whose verdict is recorded but does not overturn this one.
+                self._final_rejections += 1
+
+                if self._final_rejections > MAX_FINAL_GATE_REJECTIONS:
+                    self._note(
+                        "claim pass found a contradiction but the revision cap is "
+                        f"reached ({self._final_rejections}); accepted with the ledger recorded"
+                    )
+                    self._after_turn()
+
+                    return (answer, False, None)
+
+                frame, frame_verdict = next(
+                    (frame, verdict)
+                    for frame, verdict in zip(claim_report.frames, claim_report.verdicts)
+                    if verdict.status == "contradicted"
+                )
+                self._messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "The claim ledger found a contradiction. "
+                            f"Claim: {frame.text} "
+                            f"{frame_verdict.reason}. "
+                            "Quote the sentence in the cited chunk that states it, or remove "
+                            "the claim. Do not re-run retrieval. Then emit FINAL_ANSWER: again."
+                        ),
+                    }
+                )
+                self._after_turn()
+                continue
 
             if verdict is not None and verdict.verdict == "fail":
                 if verdict.decision == "aggregate":
@@ -1184,6 +1237,45 @@ class Runtime:
             budget=self.budget,
             query=self.query,
         )
+
+    def _claim_pass(self, answer: str, trace_ctx: TraceCtx) -> ClaimReport:
+        """Extract and verify claim frames for one final answer.
+
+        The ledger is host-owned: the root wrote the prose, and this method
+        decides what it asserts. ``claims.json`` is written beside ``answer.md``
+        so a reader can check a claim without opening the trajectory, and the
+        counts are logged as one event for the campaign.
+        """
+        report = verify_answer(
+            answer,
+            recorded_chunk_texts(self.trajectory),
+            self.client,
+            trace_ctx,
+            run_id=self.run_id,
+            budget=self.budget,
+        )
+        path = self.run_dir / "claims.json"
+        path.write_text(
+            json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+        try:
+            self.trajectory.log_event(
+                trace_ctx=trace_ctx,
+                call_type="note",
+                action="claims.verdict",
+                extra={
+                    "counts": report.counts,
+                    "coverage": report.coverage,
+                    "frames": len(report.frames),
+                    "errors": len(report.errors),
+                },
+            )
+        except Exception:  # noqa: BLE001 - a log failure must not change the run
+            pass
+
+        return report
 
     def _dispatch_tool(
         self,
@@ -1599,6 +1691,9 @@ class Runtime:
             "resume": "resume.json",
             "query": "work/query.json",
         }
+
+        if (self.run_dir / "claims.json").is_file():
+            artifacts["claims"] = "claims.json"
 
         try:
             update_manifest(

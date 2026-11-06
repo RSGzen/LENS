@@ -254,14 +254,19 @@ def _contains(span: str, text: str | None) -> bool:
     return bool(wanted) and wanted in span
 
 
-def _verify_measurement(frame: ClaimFrame, span: str) -> FrameVerdict:
-    """Check a value against the numbers the span states."""
+def _verify_measurement(frame: ClaimFrame, span: str, raw: str) -> FrameVerdict:
+    """Check a value against the numbers the span states.
+
+    The numbers come from the raw quote, not the normalised span: normalisation
+    turns ``56.0`` into ``56 0``, which would lose the decimal the check exists
+    to compare.
+    """
     number = _value_number(frame.value)
 
     if number is None:
         return FrameVerdict(UNVERIFIABLE, "the frame carries no numeric value")
 
-    numbers = _numbers(span)
+    numbers = _numbers(raw)
 
     if not numbers:
         return FrameVerdict(UNVERIFIABLE, "the span states no number")
@@ -383,7 +388,7 @@ def verify_frame(frame: ClaimFrame, texts: Mapping[str, str]) -> FrameVerdict:
         return FrameVerdict(UNVERIFIABLE, "the quote is not verbatim in the cited chunk")
 
     if frame.predicate == "measures":
-        return _verify_measurement(frame, span)
+        return _verify_measurement(frame, span, frame.quote)
 
     if frame.predicate == "compares":
         return _verify_comparison(frame, span)

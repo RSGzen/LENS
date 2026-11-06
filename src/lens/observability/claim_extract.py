@@ -16,7 +16,14 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from lens.observability.claims import PREDICATES, ClaimFrame, parse_frames
+from lens.observability.citations import claim_units
+from lens.observability.claims import (
+    PREDICATES,
+    ClaimFrame,
+    ClaimReport,
+    parse_frames,
+    verify_units,
+)
 
 #: Sentence units one call carries. Six short sentences fit the input and the
 #: output cap; a batch that grows past this truncates the reply mid-object.
@@ -171,4 +178,45 @@ def extract_frames(
     return frames, errors
 
 
-__all__ = ["DEFAULT_BATCH_SIZE", "DEFAULT_MAX_TOKENS", "extract_frames"]
+def verify_answer(
+    answer: str,
+    texts: dict[str, str],
+    client: Any,
+    trace_ctx: Any,
+    *,
+    run_id: str = "",
+    budget: Any | None = None,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+) -> ClaimReport:
+    """Extract and verify every claim unit in one answer.
+
+    ``texts`` maps ``chunk_uuid -> chunk_text`` for everything the run retrieved,
+    so the check is offline against recorded evidence. An answer with no claim
+    unit returns an empty report without a model call.
+    """
+    units = claim_units(answer, include_uncited=True)
+
+    if not units:
+        return ClaimReport(run_id=run_id, units=0)
+
+    frames, errors = extract_frames(
+        client,
+        units,
+        trace_ctx,
+        budget=budget,
+        batch_size=batch_size,
+        max_tokens=max_tokens,
+    )
+    report = verify_units(units, frames, texts, run_id=run_id)
+    report.errors = errors
+
+    return report
+
+
+__all__ = [
+    "DEFAULT_BATCH_SIZE",
+    "DEFAULT_MAX_TOKENS",
+    "extract_frames",
+    "verify_answer",
+]

@@ -183,6 +183,24 @@ def check_run(run_id: str) -> bool:
     except Exception as exc:  # noqa: BLE001 - a diagnostic must not fail the gate
         print(f"[INFO] quote fidelity unavailable ({type(exc).__name__})")
 
+    try:
+        claims_path = run_dir / "claims.json"
+
+        if claims_path.is_file():
+            ledger = json.loads(claims_path.read_text(encoding="utf-8"))
+            counts = ledger.get("counts") or {}
+            print(
+                f"[INFO] claims: {ledger.get('units', 0)} units, "
+                f"{counts.get('grounded', 0)} grounded, "
+                f"{counts.get('contradicted', 0)} contradicted, "
+                f"{counts.get('unverifiable', 0)} unverifiable, "
+                f"coverage {float(ledger.get('coverage') or 0):.0%}"
+            )
+        else:
+            print("[INFO] claims: no ledger for this run")
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must not fail the gate
+        print(f"[INFO] claims unavailable ({type(exc).__name__})")
+
     results = [
         _check(
             "status finished",

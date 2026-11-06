@@ -10,7 +10,7 @@ import json
 import unittest
 
 from lens.models import CallResult
-from lens.observability.claim_extract import _schema, extract_frames
+from lens.observability.claim_extract import _schema, extract_frames, verify_answer
 
 CHUNK_A = "aaaaaaaa-0000-0000-0000-000000000001"
 CHUNK_B = "bbbbbbbb-0000-0000-0000-000000000002"
@@ -137,6 +137,32 @@ class ExtractFramesTests(unittest.TestCase):
         self.assertTrue(item["additionalProperties"] is False)
         self.assertIn("unit_index", item["required"])
         self.assertIn("quote", item["required"])
+
+    def test_verify_answer_marks_a_supported_frame(self) -> None:
+        answer = (
+            "The RLM method reaches 56.0 accuracy on the OOLONG trec_coarse "
+            f"benchmark in this reported run [{CHUNK_A}]."
+        )
+        texts = {
+            CHUNK_A: ("The RLM method reaches 56.0 accuracy on the OOLONG trec_coarse benchmark.")
+        }
+        client = FakeClient(
+            [
+                _reply(
+                    _frame(
+                        0,
+                        CHUNK_A,
+                        quote="reaches 56.0 accuracy on the OOLONG trec_coarse benchmark",
+                    )
+                )
+            ]
+        )
+
+        report = verify_answer(answer, texts, client, None, run_id="run-1")
+
+        self.assertEqual(report.units, 1)
+        self.assertEqual(report.counts["grounded"], 1)
+        self.assertEqual(report.coverage, 1.0)
 
 
 if __name__ == "__main__":

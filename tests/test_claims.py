@@ -65,6 +65,22 @@ class MeasurementTests(unittest.TestCase):
 
         self.assertEqual(verdict.status, UNVERIFIABLE)
 
+    def test_a_decimal_survives_normalisation(self) -> None:
+        texts = {CHUNK_ID: "The method improves nDCG by 5.6 points."}
+
+        verdict = verify_frame(
+            _frame(
+                predicate="measures",
+                benchmark=None,
+                metric="nDCG",
+                value="5.6",
+                quote="improves nDCG by 5.6 points",
+            ),
+            texts,
+        )
+
+        self.assertEqual(verdict.status, GROUNDED, verdict.reason)
+
     def test_a_retyped_quote_is_unverifiable(self) -> None:
         verdict = verify_frame(_frame(quote="RLM reaches 56.0 accuracy on OOLONG."), self.texts)
 
