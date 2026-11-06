@@ -41,6 +41,7 @@ classDiagram
     model : str
     model_snapshot : str | None
     provider : str
+    reasoning_text : str | None
     reasoning_tokens : int
     text : str
     tokens_in : int
@@ -75,6 +76,33 @@ classDiagram
     counts : dict[str, int]
     run_id : str
     unresolved : list[str]
+    to_dict() dict[str, Any]
+  }
+  class ClaimFrame {
+    benchmark : str | None
+    chunk_id : str | None
+    direction : str | None
+    metric : str | None
+    object : str | None
+    predicate : str
+    quote : str
+    subject : str
+    text : str
+    unit : str | None
+    unit_index : int
+    value : str | None
+    to_dict() dict[str, Any]
+  }
+  class ClaimReport {
+    counts : dict[str, int]
+    coverage : float
+    covered_units : int
+    errors : list[str]
+    frames : list[ClaimFrame]
+    run_id : str
+    units : int
+    verdicts : list[FrameVerdict]
+    rows() list[dict[str, Any]]
     to_dict() dict[str, Any]
   }
   class CorpusError {
@@ -124,6 +152,12 @@ classDiagram
     namespace : dict[str, Any]
     stdout_max_chars : int
     run(code: str) dict[str, Any]
+  }
+  class FrameVerdict {
+    evidence : str
+    reason : str
+    status : str
+    to_dict() dict[str, Any]
   }
   class GateCall {
     claim_questions : dict[str, str]
@@ -196,7 +230,7 @@ classDiagram
     id : str
     provider_only : tuple[str, ...]
     provider_order : tuple[str, ...]
-    reasoning_effort : str | None
+    reasoning : Mapping[str, Any] | None
     seed : int | None
     supports_reasoning : bool
     supports_response_format : bool
@@ -471,6 +505,7 @@ classDiagram
     cost_usd : float | None
     emits : list[str]
     error : dict[str, Any] | None
+    finish_reason : str | None
     gate : dict[str, Any] | None
     gate_verdicts : list[dict[str, Any]]
     jev_cost_usd : float | None
@@ -481,6 +516,8 @@ classDiagram
     observation : str | None
     ok : bool | None
     provider : str | None
+    reasoning_chars : int | None
+    reasoning_text : str | None
     reasoning_tokens : int | None
     stderr_full : str | None
     stdout_full : str | None

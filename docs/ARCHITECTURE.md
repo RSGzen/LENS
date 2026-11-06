@@ -28,6 +28,7 @@ Two runtimes, **one-way imports**:
 | `src/lens/preflight.py` | `require_environment(need=…)`: `api_key` / `db` / `corpus` / `metadata` / `trust`, one report, secrets masked. | `config`, `dataset.paths` |
 | `src/lens/observability/trajectory.py` | The injected sink: `Trajectory` (content-addressed blobs + one-schema JSONL) and `TraceCtx`. | `config` |
 | `src/lens/observability/replay.py` · `citations.py` · `run_logging.py` | Fold the log into turns; resolve citations into `sources.md`; mirror `print()` into a log file. | `trajectory`, `context`, `config` |
+| `src/lens/observability/claims.py` · `claim_extract.py` | Claim frames and the mechanical verifier; the sub-model extractor proposes frames and the host validates every id and quote. | `citations`, `models`, `config` |
 | `src/lens/clients.py` | Transport: `LensClient.chat()` / `.jev()` — auth, retries, provider pinning, `usage`/cost, one event per call. Stateless. | `config`, `models`, `trajectory` |
 | `src/lens/chunking.py` | TEI → sections → chunks: hardened parse, `normalize_head`, `classify_section`, the 512-token packer. | `config` |
 | `src/lens/dataset/manifest.py` · `papers.py` · `chunks.py` · `fetch.py` · `paths.py` | Manifest builder (single-pass cs.AI filter), the two loaders, corpus download/convert, the path chain. | `config`, `chunking`, `embeddings` |
@@ -58,9 +59,9 @@ from `lens`, because the image ships them without the package.
 
 ## 2. Module dependency graph (auto-generated)
 
-Source: `docs/packages_lens.mmd` (pyreverse, regenerated 2 Nov 2026). Edges are
-file-level imports. The graph **is** complete and correct: **57 analysed modules,
-148 imports**, covering `agent/`, `sandbox/`, `tools/`, `experiments/`, `ui/` and
+Source: `docs/packages_lens.mmd` (pyreverse, regenerated 7 Nov 2026). Edges are
+file-level imports. The graph **is** complete and correct: **59 analysed modules,
+154 imports**, covering `agent/`, `sandbox/`, `tools/`, `experiments/`, `ui/` and
 `run.py`.
 
 ```mermaid
@@ -782,7 +783,7 @@ Tests: `tests/test_replay.py`; bundle contracts in `test_runstore.py`.
 
 ## 5. Notes and caveats
 
-- The generated package graph is **complete** (57 modules); the class map is curated
+- The generated package graph is **complete** (59 modules); the class map is curated
   by hand for the reason in §3, and the raw pyreverse output is kept as
   `docs/classes_lens.mmd`. Regenerating either file is one command from the repo
   root — `uv run --with pylint --no-project pyreverse -o mmd -d docs -p lens src/lens`

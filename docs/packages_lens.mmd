@@ -75,6 +75,10 @@ classDiagram
   }
   class citations {
   }
+  class claim_extract {
+  }
+  class claims {
+  }
   class replay {
   }
   class run_logging {
@@ -135,8 +139,11 @@ classDiagram
   runtime --> config
   runtime --> arm
   runtime --> citations
+  runtime --> claim_extract
+  runtime --> claims
   runtime --> trajectory
   runtime --> evaluate
+  runtime --> kg
   runtime --> retrieval
   sandbox_session --> lens
   sandbox_session --> config
@@ -196,6 +203,9 @@ classDiagram
   citations --> config
   citations --> replay
   citations --> trajectory
+  claim_extract --> citations
+  claim_extract --> claims
+  claims --> citations
   replay --> lens
   replay --> context
   replay --> config

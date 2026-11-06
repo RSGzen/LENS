@@ -145,6 +145,7 @@ python -m lens.run --list
 python -m lens.run --show <run_id>
 python scripts/check_run.py <run_id>        # asserts the run's contract
 python scripts/run_report.py <run_id>       # writes a static Markdown report
+python scripts/verify_claims.py --run <run_id>   # claim ledger for one recorded run
 ```
 
 Resume an interrupted run, or start a child run that records its parent:
@@ -170,6 +171,7 @@ Each run lives in `runs/<run_id>/`:
 | `tasks.json` | the ledger the model writes while it works |
 | `answer.md` | the answer, in the model's own words |
 | `sources.md` | the citation trace, generated from the recorded payloads |
+| `claims.json` | the claim ledger: frames, statuses and coverage for this answer |
 | `resume.json` | cache: emitted variables and workspace hashes |
 | `work/` | the sandbox workspace for this run |
 
@@ -177,6 +179,15 @@ Blobs are shared across runs in `runs/blobs/`, named by the SHA-256 of their
 contents. A bundle contains only the blobs its own events reference, and importing
 one re-hashes every blob against its filename before installing anything, so an
 edited or truncated bundle is refused rather than rendered.
+
+`claims.json` is written when the final answer is checked. Each frame keeps a
+predicate, its roles and a verbatim span from the chunk it cites. The status is
+`grounded` when the span and the roles check out, `contradicted` when the span
+states a different value or direction, and `unverifiable` when the check cannot
+reach the claim. A contradiction rejects the final answer; an unverifiable claim
+is recorded and does not reject, because rejecting it would punish a claim the
+verifier could not read. The offline command writes one CSV row per frame across
+runs, with the coverage and status counts that a campaign table reports.
 
 ## Viewer
 
@@ -251,6 +262,9 @@ These are enforced by tests rather than by convention:
   buys coverage at a proportional time cost.
 - The gate thresholds are conventions (0.5 for the whole answer, 0.7 for a single
   claim), not calibrated values. A calibration pass is pending.
+- The claim verifier is sound but incomplete: it checks the span, the value and
+  the comparison direction. A claim it cannot reach is `unverifiable`, not false,
+  so a paraphrase-heavy answer will have low coverage.
 - The viewer is single-user and runs one live query at a time.
 - Entity resolution in the knowledge graph is exact-string only.
 
