@@ -122,6 +122,14 @@ class ExtractFramesTests(unittest.TestCase):
         self.assertEqual(frames, [])
         self.assertTrue(any("not JSON" in error for error in errors))
 
+    def test_an_empty_reply_names_the_reasoning_cap(self) -> None:
+        client = FakeClient([""])
+
+        frames, errors = extract_frames(client, self.units, None)
+
+        self.assertEqual(frames, [])
+        self.assertTrue(any("reasoning" in error for error in errors))
+
     def test_a_client_failure_is_an_error_not_an_exception(self) -> None:
         client = FakeClient([RuntimeError("provider down")])
 
@@ -137,6 +145,19 @@ class ExtractFramesTests(unittest.TestCase):
         self.assertTrue(item["additionalProperties"] is False)
         self.assertIn("unit_index", item["required"])
         self.assertIn("quote", item["required"])
+
+    def test_the_instruction_carries_the_cited_chunk_text(self) -> None:
+        client = FakeClient([_reply(_frame(0))])
+
+        extract_frames(
+            client,
+            self.units,
+            None,
+            texts={CHUNK_A: "a unique chunk sentence"},
+        )
+
+        content = client.calls[0][1][1]["content"]
+        self.assertIn("a unique chunk sentence", content)
 
     def test_verify_answer_marks_a_supported_frame(self) -> None:
         answer = (

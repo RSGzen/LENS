@@ -81,7 +81,7 @@ def collect(run_id: str, client: LensClient, trace_ctx: TraceCtx) -> ClaimReport
         return ClaimReport(run_id=run_id, units=0)
 
     texts = recorded_chunk_texts(trajectory)
-    frames, errors = extract_frames(client, units, trace_ctx)
+    frames, errors = extract_frames(client, units, trace_ctx, texts=texts)
     report = verify_units(units, frames, texts, run_id=run_id)
     report.errors = errors
 
@@ -181,7 +181,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--out", default=None, help="CSV path")
     parser.add_argument("--md", default=None, help="Markdown path")
-    parser.add_argument("--batch-size", type=int, default=6, help="claim units per call")
+    parser.add_argument("--batch-size", type=int, default=4, help="claim units per call")
 
     return parser.parse_args(argv)
 
