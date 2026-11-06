@@ -357,9 +357,16 @@ _QUOTED = re.compile(r"[\u201c\"]([^\u201d\"]{25,400})[\u201d\"]")
 _CITATION_WINDOW = 300
 
 
-def _words(text: str) -> str:
-    """Return ``text`` lowercased with every non-alphanumeric character collapsed."""
+def normalize_span(text: str) -> str:
+    """Return ``text`` lowercased with every non-alphanumeric character collapsed.
+
+    One definition for every span comparison: a quote check and a claim check
+    must agree on what "the same words" means.
+    """
     return " ".join(re.sub(r"[^a-z0-9 ]+", " ", text.lower()).split())
+
+
+_words = normalize_span
 
 
 def _span_segments(span: str) -> list[str]:
@@ -710,6 +717,7 @@ __all__ = [
     "Citation",
     "CitationReport",
     "cited_ids",
+    "normalize_span",
     "resolve_citations",
     "write_sources_md",
 ]
