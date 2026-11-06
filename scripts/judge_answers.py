@@ -154,7 +154,10 @@ def judge_rows(
                 },
             ],
             trace_ctx=trace_ctx,
-            max_tokens=800,
+            # The output budget covers the model's reasoning as well as its text, so
+            # a cap sized for the verdict alone returns an empty reply with
+            # finish_reason=length. Only generated tokens are billed.
+            max_tokens=4000,
         )
         verdicts = parse_verdicts(completion.text, facets)
 
