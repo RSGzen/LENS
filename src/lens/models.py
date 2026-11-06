@@ -49,6 +49,9 @@ class CallResult:
     cached_tokens: int = 0
     #: Part of ``tokens_out`` spent on reasoning (gpt-5 bills it as output).
     reasoning_tokens: int = 0
+    #: The provider's reasoning trace, when it returns one. Several providers send
+    #: only the token count above, so the two are never assumed to arrive together.
+    reasoning_text: str | None = None
 
 
 @dataclass

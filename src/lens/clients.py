@@ -29,6 +29,47 @@ from lens.observability.trajectory import CallType, TraceCtx, Trajectory
 # Transient HTTP statuses worth retrying.
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
+#: Characters of a reasoning trace kept in one blob. A trace is a debugging aid,
+#: not output anyone reads end to end, and some providers emit tens of thousands
+#: of characters for a single turn.
+REASONING_MAX_CHARS = 20000
+
+
+def _reasoning_text(message: Mapping[str, Any]) -> str | None:
+    """Return the provider's reasoning trace, or ``None`` when it sent none.
+
+    Chat Completions can carry it two ways: a plain ``reasoning`` string, or a
+    ``reasoning_details`` array of text, summary and encrypted blocks. Several
+    providers (the OpenAI o-series among them) return the **token count and no
+    text**, so the count and the trace are separate fields rather than one
+    assumption.
+    """
+    plain = message.get("reasoning") or message.get("reasoning_content")
+
+    if isinstance(plain, str) and plain.strip():
+        return plain.strip()
+
+    details = message.get("reasoning_details")
+
+    if not isinstance(details, list):
+        return None
+
+    parts: list[str] = []
+
+    for item in details:
+        if not isinstance(item, Mapping):
+            continue
+
+        kind = item.get("type")
+        text = item.get("text") if kind == "reasoning.text" else item.get("summary")
+
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+        elif kind == "reasoning.encrypted":
+            parts.append("[encrypted reasoning block]")
+
+    return "\n\n".join(parts) or None
+
 
 class LensTransportError(RuntimeError):
     """A transport call failed after exhausting retries.
@@ -188,6 +229,14 @@ class LensClient:
 
         completion_ref = self.trajectory.store_blob(answer_text)
 
+        # The trace is kept when the provider sends one and stays out of the log's
+        # message history: it is evidence about the answer, not part of the turn.
+        trace_text = _reasoning_text(message)
+        reasoning_chars = len(trace_text) if trace_text else None
+        reasoning_ref = (
+            self.trajectory.store_blob(trace_text[:REASONING_MAX_CHARS]) if trace_text else None
+        )
+
         self.trajectory.log_event(
             trace_ctx=trace_ctx,
             call_type="chat",
@@ -201,6 +250,8 @@ class LensClient:
             tokens_out=tokens_out,
             cached_tokens=usage["cached_tokens"],
             reasoning_tokens=usage["reasoning_tokens"],
+            reasoning_ref=reasoning_ref,
+            reasoning_chars=reasoning_chars,
             finish_reason=finish_reason,
             latency_ms=latency_ms,
             cost_usd=cost,
@@ -220,6 +271,7 @@ class LensClient:
             cached_tokens=usage["cached_tokens"],
             reasoning_tokens=usage["reasoning_tokens"],
             finish_reason=finish_reason,
+            reasoning_text=trace_text,
         )
 
         return call_result

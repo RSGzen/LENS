@@ -69,6 +69,12 @@ class Turn:
     #: per input token than one without).
     cached_tokens: int | None = None
     reasoning_tokens: int | None = None
+    #: The provider's reasoning trace, when one was returned, kept apart from
+    #: ``completion`` (the visible answer). Providers that expose only the token
+    #: count leave this ``None`` and the viewer shows the number alone.
+    reasoning_text: str | None = None
+    reasoning_chars: int | None = None
+    finish_reason: str | None = None
     cost_usd: float | None = None
     latency_ms: int | None = None
     # The model's full message (reasoning + the ```python block).
@@ -226,6 +232,18 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
         turn.latency_ms = (turn.latency_ms or 0) + (event.get("latency_ms") or 0)
         turn.model = turn.model or event.get("model")
         turn.provider = turn.provider or event.get("provider")
+        turn.finish_reason = turn.finish_reason or event.get("finish_reason")
+
+        # The trace is the root's, for the same reason the completion is: a
+        # sub-task sharing the step has its own call and its own answer.
+        if event.get("reasoning_ref") and (
+            event.get("actor") == "root" or turn.reasoning_text is None
+        ):
+            reasoning = _load(trajectory, event.get("reasoning_ref"), turn.missing_refs)
+
+            if reasoning is not None:
+                turn.reasoning_text = reasoning
+                turn.reasoning_chars = event.get("reasoning_chars")
 
         # The root completion is the turn's message; a sub-task sharing the step
         # must not overwrite it (its text belongs to that call, not the turn).

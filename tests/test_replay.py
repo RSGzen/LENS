@@ -32,7 +32,13 @@ class ReplayTestCase(unittest.TestCase):
 
     # ---------------------------------------------------------------- helpers
     def _chat(
-        self, step: int, completion: str, *, tokens_in: int = 100, cost: float = 0.01
+        self,
+        step: int,
+        completion: str,
+        *,
+        tokens_in: int = 100,
+        cost: float = 0.01,
+        reasoning: str | None = None,
     ) -> None:
         self.traj.log_event(
             trace_ctx=TraceCtx("run-replay", step, "root"),
@@ -42,6 +48,9 @@ class ReplayTestCase(unittest.TestCase):
             provider="openai",
             prompt_ref=self.traj.store_blob(json.dumps({"messages": []})),
             completion_ref=self.traj.store_blob(completion),
+            reasoning_ref=self.traj.store_blob(reasoning) if reasoning else None,
+            reasoning_chars=len(reasoning) if reasoning else None,
+            finish_reason="stop",
             tokens_in=tokens_in,
             tokens_out=20,
             cost_usd=cost,
@@ -113,6 +122,17 @@ class ReplayTestCase(unittest.TestCase):
         self.assertAlmostEqual(turns[1].cost_usd, 0.02)
         self.assertIn("print(1)", turns[0].code or "")
         self.assertEqual(turns[0].stdout_full, "1\n")
+
+    def test_a_turn_keeps_the_reasoning_trace_and_the_finish_reason(self) -> None:
+        # The trace is the provider's thinking, not the visible answer: it can be
+        # absent (OpenAI returns the count only) while the count is present.
+        self._chat(0, "```python\nprint(1)\n```", reasoning="thinking about it")
+        self._exec(0, "print(1)", "1\n")
+
+        turn = replay_turns(self.traj)[0]
+        self.assertEqual(turn.reasoning_text, "thinking about it")
+        self.assertEqual(turn.reasoning_chars, len("thinking about it"))
+        self.assertEqual(turn.finish_reason, "stop")
 
     def test_tool_steps_carry_args_latency_and_gate(self) -> None:
         gate = {"verdict": "pass", "confidence": 0.82, "tier": "jev"}

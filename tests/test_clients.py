@@ -224,6 +224,37 @@ class LensClientTestCase(unittest.TestCase):
         self.assertIs(body["provider"]["allow_fallbacks"], False)
         self.assertEqual(body["provider"]["only"], ["openai"])
 
+    def test_chat_stores_the_reasoning_trace_when_one_is_returned(self) -> None:
+        # Some providers return the trace, some only the count. The two arrive
+        # independently, so each is stored on its own and neither is assumed.
+        payload = chat_payload()
+        payload["choices"][0]["message"]["reasoning_details"] = [
+            {"type": "reasoning.text", "text": "the first step"},
+            {"type": "reasoning.summary", "summary": "a summary"},
+        ]
+        session = FakeSession([FakeResponse(200, payload)])
+
+        result = self._client(session).chat(
+            "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
+        )
+
+        self.assertIn("the first step", result.reasoning_text or "")
+        self.assertIn("a summary", result.reasoning_text or "")
+        event = [e for e in self._events() if e["call_type"] == "chat"][0]
+        self.assertTrue(event["reasoning_ref"].startswith("sha256:"))
+        self.assertEqual(event["reasoning_chars"], len(result.reasoning_text or ""))
+        self.assertIn("the first step", self._read_blob(event["reasoning_ref"]))
+
+    def test_a_call_with_no_trace_logs_no_reasoning_ref(self) -> None:
+        session = FakeSession([FakeResponse(200, chat_payload())])
+
+        result = self._client(session).chat(
+            "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
+        )
+
+        self.assertIsNone(result.reasoning_text)
+        self.assertNotIn("reasoning_ref", self._events()[0])
+
     def test_chat_omits_provider_when_no_pins(self) -> None:
         spec = ModelSpec(
             id="openai/gpt-5",
