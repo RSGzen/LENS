@@ -199,6 +199,7 @@ class ClaimReport:
                 **frame.to_dict(),
                 "status": verdict.status,
                 "reason": verdict.reason,
+                "evidence": verdict.evidence,
             }
             for frame, verdict in zip(self.frames, self.verdicts)
         ]
