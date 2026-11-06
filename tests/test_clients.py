@@ -125,6 +125,37 @@ class LensClientTestCase(unittest.TestCase):
         self.assertEqual(event["cached_tokens"], 10)
         self.assertEqual(event["reasoning_tokens"], 2)
 
+    def test_chat_records_the_finish_reason(self) -> None:
+        # "finished" and "spent the whole output budget thinking" are different
+        # outcomes that both look like a completed call in the log.
+        session = FakeSession([FakeResponse(200, chat_payload())])
+        result = self._client(session).chat(
+            "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
+        )
+
+        self.assertEqual(result.finish_reason, "stop")
+        self.assertEqual(self._events()[0]["finish_reason"], "stop")
+
+    def test_an_empty_completion_is_recorded_as_a_note(self) -> None:
+        # A reasoning model can return content:null with the whole output budget
+        # billed as reasoning. The turn then reads as a model that said nothing.
+        payload = chat_payload()
+        payload["choices"][0]["message"]["content"] = None
+        payload["choices"][0]["finish_reason"] = "length"
+        payload["usage"]["completion_tokens"] = 8000
+        payload["usage"]["completion_tokens_details"]["reasoning_tokens"] = 8000
+
+        session = FakeSession([FakeResponse(200, payload)])
+        result = self._client(session).chat(
+            "root", [{"role": "user", "content": "hi"}], trace_ctx=self.ctx
+        )
+
+        self.assertEqual(result.text, "")
+        self.assertEqual(result.finish_reason, "length")
+        notes = [e for e in self._events() if e["action"] == "chat.empty_completion"]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("length", notes[0]["extra"]["text"])
+
     def test_usage_defaults_to_zero_when_the_details_are_absent(self) -> None:
         client = self._client(FakeSession([]))
 

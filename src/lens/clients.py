@@ -168,13 +168,21 @@ class LensClient:
             endpoint=self.chat_endpoint, payload=payload, trace_ctx=trace_ctx, call_type="chat"
         )
 
-        answer_text = response_json["choices"][0]["message"]["content"]
+        # A reasoning model can spend the whole output budget thinking: `content`
+        # is then null rather than absent, and the call is still billed.
+        choice = response_json["choices"][0]
+        message = choice.get("message") or {}
+        answer_text = message.get("content") or ""
+        finish_reason = choice.get("finish_reason")
 
         usage = self._usage(response_json)
         tokens_in = usage["tokens_in"]
         tokens_out = usage["tokens_out"]
         cost = usage["cost_usd"]
         self._note_missing_cost(usage, model_spec.id, trace_ctx)
+
+        if not answer_text:
+            self._note_empty_completion(model_spec.id, finish_reason, usage, trace_ctx)
 
         latency_ms = int((time.perf_counter() - start_timer) * 1000)
 
@@ -193,6 +201,7 @@ class LensClient:
             tokens_out=tokens_out,
             cached_tokens=usage["cached_tokens"],
             reasoning_tokens=usage["reasoning_tokens"],
+            finish_reason=finish_reason,
             latency_ms=latency_ms,
             cost_usd=cost,
             extra=dict(extra) if extra else None,
@@ -200,7 +209,7 @@ class LensClient:
 
         call_result = CallResult(
             text=answer_text,
-            message=response_json["choices"][0]["message"],
+            message=message,
             model=model_spec.id,
             provider=response_json.get("provider", "unknown"),
             model_snapshot=response_json.get("model"),
@@ -210,6 +219,7 @@ class LensClient:
             cost_usd=cost,
             cached_tokens=usage["cached_tokens"],
             reasoning_tokens=usage["reasoning_tokens"],
+            finish_reason=finish_reason,
         )
 
         return call_result
@@ -447,6 +457,36 @@ class LensClient:
                     "reported $/query miss it"
                 ),
                 "model": model,
+            },
+        )
+
+    def _note_empty_completion(
+        self,
+        model: str,
+        finish_reason: str | None,
+        usage: Mapping[str, int | float],
+        trace_ctx: TraceCtx,
+    ) -> None:
+        """Record a call that came back with no visible text.
+
+        With a reasoning model the output budget covers thinking as well as text,
+        so a reply can be billed and returned with ``content: null`` and
+        ``finish_reason: "length"``. The turn then reads like a model that said
+        nothing, and this note is the only place the cause is stated.
+        """
+        reason = finish_reason or "unknown"
+
+        self.trajectory.log_event(
+            trace_ctx=trace_ctx,
+            call_type="note",
+            action="chat.empty_completion",
+            extra={
+                "text": (
+                    f"{model} returned no visible text (finish_reason={reason}, "
+                    f"{int(usage['tokens_out'])} output tokens, "
+                    f"{int(usage['reasoning_tokens'])} of them reasoning)"
+                ),
+                "finish_reason": finish_reason,
             },
         )
 
