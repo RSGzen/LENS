@@ -33,6 +33,7 @@ from typing import Any
 import requests
 
 from lens import config
+from lens.agent import runstore
 from lens.agent.context import extract_final_answer, extract_python_block
 from lens.agent.sub_tasks import (
     get_task,
@@ -209,6 +210,18 @@ def main() -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"probe-{stamp}"
     trajectory = Trajectory(run_id)
+
+    # A minimal manifest, so the probe opens in the viewer like any other run: the
+    # turn cards are where the reasoning trace is actually read.
+    runstore.write_manifest(
+        trajectory.run_dir,
+        runstore.RunManifest.new(
+            run_id,
+            query="model probe: listing, code turn, cache, sub-task schema",
+            models={role: spec.id for role, spec in config.MODEL_REGISTRY.items()},
+            caps={"cost_usd": config.MAX_COST_USD_PER_QUERY},
+        ),
+    )
     client = LensClient(trajectory)
 
     print(f"model     {args.model}")
@@ -266,6 +279,12 @@ def main() -> int:
 
     passed = bool(
         code["has_code_block"] and code["has_sentinel"] and sub["parsed"] and cache["hit"]
+    )
+
+    runstore.update_manifest(
+        trajectory.run_dir,
+        status="completed" if passed else "failed",
+        stop_reason="" if passed else "probe",
     )
 
     return 0 if passed else 2
