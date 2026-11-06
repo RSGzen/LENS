@@ -773,6 +773,20 @@ class Runtime:
 
         return buckets
 
+    def _ontology_summary(self) -> dict[str, Any] | None:
+        """Return the active KG ontology when the graph is enabled, else ``None``.
+
+        The schema goes to a workspace file, not the system prompt: it is read
+        only when the model builds a graph, and a turn that never traverses the
+        graph should not pay for the whole ontology on every call.
+        """
+        if not config.KG_ENABLED:
+            return None
+
+        from lens.tools.kg import load_ontology
+
+        return load_ontology()
+
     def _seed_workspace(self) -> None:
         """Write context files and seed the sandbox namespace.
 
@@ -792,6 +806,7 @@ class Runtime:
             self.workspace,
             tool_manifest=self.registry.manifest(),
             budget_snapshot=self.budget.snapshot(),
+            ontology_summary=self._ontology_summary(),
             kg_helpers=config.KG_ENABLED,
         )
 

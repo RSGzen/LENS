@@ -206,6 +206,14 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertIn("The grounded answer", result.answer)
         self.assertTrue(result.answer_path.is_file())
 
+    @unittest.skipUnless(config.KG_ENABLED, "KG is disabled in this environment")
+    def test_kg_ontology_is_seeded_in_the_workspace(self) -> None:
+        self.runtime.run()
+        path = self.runtime.workspace / "ontology.md"
+
+        self.assertTrue(path.is_file())
+        self.assertIn("entities", path.read_text(encoding="utf-8"))
+
     def test_a_turn_can_run_code_and_answer(self) -> None:
         # Two failure modes meet here. First: a real FINAL_ANSWER after a fence
         # used to be discarded on every turn, so the run ended with an empty

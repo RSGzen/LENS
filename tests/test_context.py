@@ -300,6 +300,28 @@ class ContextTestCase(unittest.TestCase):
             agents = paths["AGENTS.md"].read_text(encoding="utf-8")
             self.assertIn("FINAL_ANSWER:", agents)  # not an empty placeholder file
 
+    def test_ontology_is_written_only_when_given(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = context.write_context_files(tmp, tool_manifest="- tool()", budget_snapshot={})
+            self.assertNotIn("ontology.md", paths)
+
+            paths = context.write_context_files(
+                tmp,
+                tool_manifest="- tool()",
+                budget_snapshot={},
+                ontology_summary={
+                    "version": "test-ontology",
+                    "entities": ["Method"],
+                    "relations": {"uses": {"head": ["Method"], "tail": ["Method"]}},
+                },
+                kg_helpers=True,
+            )
+            ontology = paths["ontology.md"].read_text(encoding="utf-8")
+            tools = paths["tools.md"].read_text(encoding="utf-8")
+
+        self.assertIn("test-ontology", ontology)
+        self.assertIn("ontology.md", tools)
+
     def test_truncate_observation_leaves_short_text_alone(self) -> None:
         # Prefixing "Truncated:" to text that fits is a lie the model would read.
         self.assertEqual(context.truncate_observation("ok"), "ok")

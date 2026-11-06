@@ -831,6 +831,10 @@ plain functions in the namespace (importing `kg_query` works too):
 
 `direction` is `"out"` (the entity is the head), `"in"` or `"both"`.
 
+`ontology.md` in this workspace lists the entity types and the relations, with
+the head and tail types each relation allows. Read it before traversing: a
+relation name that is not in that file is not in the graph.
+
 Names are matched case-insensitively against the graph's normalised node keys, so
 `kg_neighbors(graph, "BERT")` finds the node `build_kg` stored for BERT.
 
