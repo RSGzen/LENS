@@ -7,8 +7,12 @@ what a provider returns.
 from __future__ import annotations
 
 import json
+import threading
+import time
 import unittest
+from unittest.mock import patch
 
+from lens import config
 from lens.models import CallResult
 from lens.observability.claim_extract import _schema, extract_frames, verify_answer
 
@@ -76,6 +80,49 @@ class FakeBudget:
         self.sub_tasks += 1
 
 
+class BatchReplyClient:
+    """Reply with one frame per unit in the prompt, and record concurrency.
+
+    The reply depends on the batch's own units, so the test does not rely on the
+    order in which concurrent calls reach a shared list.
+    """
+
+    def __init__(self, delay: float = 0.0) -> None:
+        self.delay = delay
+        self.calls: list[tuple] = []
+        self.in_flight = 0
+        self.peak = 0
+        self._lock = threading.Lock()
+
+    def chat(self, role: str, messages: list, **kwargs: object) -> CallResult:
+        with self._lock:
+            self.calls.append((role, messages, kwargs))
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+
+        try:
+            payload = json.loads(messages[-1]["content"].split("Units\n", 1)[1])
+            frames = [_frame(int(item["unit_index"])) for item in payload]
+
+            if self.delay:
+                time.sleep(self.delay)
+
+            return CallResult(
+                text=_reply(*frames),
+                message={"role": "assistant", "content": _reply(*frames)},
+                model="fake",
+                provider="fake",
+                model_snapshot=None,
+                tokens_in=10,
+                tokens_out=5,
+                latency_ms=1,
+                cost_usd=0.0,
+            )
+        finally:
+            with self._lock:
+                self.in_flight -= 1
+
+
 class ExtractFramesTests(unittest.TestCase):
     def setUp(self) -> None:
         self.units = [
@@ -99,13 +146,25 @@ class ExtractFramesTests(unittest.TestCase):
 
     def test_more_units_than_the_batch_are_split(self) -> None:
         units = [(f"claim {index}", [CHUNK_A]) for index in range(7)]
-        client = FakeClient([_reply(_frame(0)), _reply(_frame(6))])
+        client = BatchReplyClient()
 
         frames, errors = extract_frames(client, units, None, batch_size=6)
 
         self.assertEqual(errors, [])
         self.assertEqual(len(client.calls), 2)
-        self.assertEqual([frame.unit_index for frame in frames], [0, 6])
+        self.assertEqual([frame.unit_index for frame in frames], list(range(7)))
+
+    def test_batches_run_concurrently(self) -> None:
+        units = [(f"claim {index}", [CHUNK_A]) for index in range(7)]
+        client = BatchReplyClient(delay=0.05)
+
+        with patch.object(config, "CLAIM_WORKERS", 4):
+            frames, errors = extract_frames(client, units, None, batch_size=3)
+
+        self.assertEqual(errors, [])
+        self.assertEqual([frame.unit_index for frame in frames], list(range(7)))
+        self.assertEqual(len(client.calls), 3)
+        self.assertEqual(client.peak, 3, "the batches ran at the same time")
 
     def test_a_frame_from_another_batch_is_dropped(self) -> None:
         units = [(f"claim {index}", [CHUNK_A]) for index in range(7)]

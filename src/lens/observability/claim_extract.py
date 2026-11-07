@@ -13,9 +13,12 @@ six sentences fit in the reply cap and one call keeps the latency down.
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from lens import config
 from lens.observability.citations import claim_units, expand_short_ids
 from lens.observability.claims import (
     PREDICATES,
@@ -29,9 +32,9 @@ from lens.observability.claims import (
     verify_units,
 )
 
-#: Sentence units one call carries. Four short sentences keep the reply's JSON
+#: Sentence units one call carries. Six short sentences keep the reply's JSON
 #: small; the model's reasoning, not the frames, is what fills the cap.
-DEFAULT_BATCH_SIZE = 4
+DEFAULT_BATCH_SIZE = 6
 
 #: Output tokens for one batch. Reasoning shares this budget: at 8,000 the model
 #: spent every token thinking and returned empty text, so the cap carries the
@@ -190,10 +193,15 @@ def extract_frames(
     ``{cost_usd, tokens_out}`` entry per call, so the report can state what the
     extractor spent. A failed batch is an error entry, never an exception: one
     unavailable call must not lose the frames the other batches produced.
+
+    Batches are independent, so they run concurrently: the pass was sequential and
+    a 29-unit answer spent eight calls end to end. Results are collected in batch
+    order, so the frames stay in the answer's own order.
     """
     frames: list[ClaimFrame] = []
     errors: list[str] = []
     size = max(1, int(batch_size))
+    accounting = threading.Lock()
 
     def run_batch(indices: list[int], depth: int) -> tuple[list[ClaimFrame], list[str]]:
         """Call the extractor once; split a capped batch once and merge."""
@@ -223,11 +231,15 @@ def extract_frames(
             return [], [f"claim extraction failed: {type(exc).__name__}"]
 
         if budget is not None:
-            budget.record_chat(result)
-            budget.record_sub_task()
+            with accounting:
+                budget.record_chat(result)
+                budget.record_sub_task()
 
         if usage is not None:
-            usage.append({"cost_usd": float(result.cost_usd), "tokens_out": int(result.tokens_out)})
+            with accounting:
+                usage.append(
+                    {"cost_usd": float(result.cost_usd), "tokens_out": int(result.tokens_out)}
+                )
 
         body = _strip_fence(result.text)
 
@@ -268,9 +280,20 @@ def extract_frames(
 
         return parsed, parsed_errors
 
-    for start in range(0, len(units), size):
-        indices = list(range(start, min(start + size, len(units))))
-        batch_frames, batch_errors = run_batch(indices, 0)
+    batches = [
+        list(range(start, min(start + size, len(units)))) for start in range(0, len(units), size)
+    ]
+
+    if len(batches) <= 1:
+        results = [run_batch(batches[0], 0)] if batches else []
+    else:
+        workers = max(1, min(len(batches), config.CLAIM_WORKERS))
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(run_batch, indices, 0) for indices in batches]
+            results = [future.result() for future in futures]
+
+    for batch_frames, batch_errors in results:
         frames.extend(batch_frames)
         errors.extend(batch_errors)
 
