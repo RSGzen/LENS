@@ -1,0 +1,74 @@
+{
+  "name": "m11-remaining",
+  "spend_estimate_usd": 45,
+  "note": "The remaining campaign in run order. A stop_after cell is a staged-spend decision point, not a batch boundary: the run stops there unless that cell is the one named by --through.",
+  "waves": [
+    {
+      "id": "w2b",
+      "campaign": "experiments/campaigns/m11-w2b.json",
+      "expect": 6,
+      "checkpoint_usd": 55,
+      "note": "Default retrieval point vs the capacity step (n=20 vs n=30), 3 repeats, one median query."
+    },
+    {
+      "id": "w3-bridge",
+      "campaign": "experiments/campaigns/m11-w3-bridge.json",
+      "expect": 100,
+      "checkpoint_usd": 55,
+      "note": "OOLONG bridge, 50 instances x 2 arms."
+    },
+    {
+      "id": "w3-bridge-subset",
+      "campaign": "experiments/campaigns/m11-w3-bridge-subset.json",
+      "expect": 40,
+      "checkpoint_usd": 55,
+      "stop_after": true,
+      "note": "10 instances x 2 arms x 2 repeats. Kill switch: run spread vs arm difference."
+    },
+    {
+      "id": "w3-cag",
+      "campaign": "experiments/campaigns/m11-w3-cag.json",
+      "expect": 36,
+      "checkpoint_usd": 70,
+      "note": "CAG-15, 18 instances x 2 arms."
+    },
+    {
+      "id": "w3-cag-subset",
+      "campaign": "experiments/campaigns/m11-w3-cag-subset.json",
+      "expect": 16,
+      "checkpoint_usd": 70,
+      "stop_after": true,
+      "note": "4 instances x 2 arms x 2 repeats. End of W3: report whether the two instruments agree in direction."
+    },
+    {
+      "id": "w4-needle",
+      "campaign": "experiments/campaigns/m11-w4-needle.json",
+      "expect": 110,
+      "checkpoint_usd": 100,
+      "stop_after": true,
+      "note": "Doc-needle guardrail, 55 instances x 2 arms. H2a reading."
+    },
+    {
+      "id": "w5",
+      "campaign": "experiments/campaigns/m11-w5.json",
+      "expect": 40,
+      "checkpoint_usd": 115,
+      "note": "Tier 3, 20 SLR queries x 2 arms."
+    },
+    {
+      "id": "w5-subset",
+      "campaign": "experiments/campaigns/m11-w5-subset.json",
+      "expect": 16,
+      "checkpoint_usd": 115,
+      "stop_after": true,
+      "note": "4 queries x 2 arms x 2 repeats. Gate-calibration decision point."
+    },
+    {
+      "id": "w6",
+      "campaign": "experiments/campaigns/m11-w6.json",
+      "expect": 45,
+      "checkpoint_usd": 130,
+      "note": "Ablations A3/A4/A5 x 15 queries; the A2 reference rows are the W5 runs."
+    }
+  ]
+}
