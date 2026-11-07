@@ -1,0 +1,31 @@
+{
+  "name": "m11-rigv11b-check",
+  "repeats": 2,
+  "arms": [
+    {
+      "name": "rlm-full-kg-nofiles-sub-low",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1"
+      },
+      "note": "Final pair on the exact code to be frozen: sub low, host retry, 24-id calls, bounded straight-quote parsing, 8-char expansion in the quote check, and the inline bold gap strip. Same query as the v5-v10 series."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Same query as the rigv5-v10 series."
+    }
+  ]
+}
