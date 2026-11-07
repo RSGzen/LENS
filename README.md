@@ -146,6 +146,7 @@ python -m lens.run --show <run_id>
 python scripts/check_run.py <run_id>        # asserts the run's contract
 python scripts/run_report.py <run_id>       # writes a static Markdown report
 python scripts/verify_claims.py --run <run_id>   # claim ledger for one recorded run
+python scripts/check_contradiction.py --run <run_id>   # negative control: a wrong number
 ```
 
 Resume an interrupted run, or start a child run that records its parent:
