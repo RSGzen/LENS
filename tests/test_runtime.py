@@ -215,6 +215,27 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertTrue(path.is_file())
         self.assertIn("entities", path.read_text(encoding="utf-8"))
 
+    def test_finalisation_closes_open_ledger_tasks(self) -> None:
+        done = self.runtime.ledger.create("find the aggregation methods")
+        failed = self.runtime.ledger.create("read every retrieved chunk")
+        self.runtime.ledger.add_evidence(done.task_id, ["chunk-1"])
+
+        closed = self.runtime._close_ledger()
+
+        self.assertEqual(closed, {"done": [done.task_id], "failed": [failed.task_id]})
+        statuses = {task.task_id: task.status for task in self.runtime.ledger.list()}
+        self.assertEqual(statuses[done.task_id], "done")
+        self.assertEqual(statuses[failed.task_id], "failed")
+        # Idempotent: a second close finds nothing open.
+        self.assertEqual(self.runtime._close_ledger(), {"done": [], "failed": []})
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertIn("ledger.auto_close", [event.get("action") for event in events])
+
     def test_context_files_can_be_skipped_for_a_prompt_experiment(self) -> None:
         with patch.object(config, "CONTEXT_FILES", "none"):
             self.runtime._seed_workspace()

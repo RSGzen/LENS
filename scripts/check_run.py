@@ -65,21 +65,33 @@ def _events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def _ledger_size(run_dir: Path) -> int:
-    """Return the number of tasks in ``tasks.json`` (0 when absent or corrupt)."""
+def _ledger_counts(run_dir: Path) -> dict[str, int]:
+    """Return task counts by status (empty when ``tasks.json`` is absent or corrupt)."""
     path = run_dir / "tasks.json"
 
     if not path.is_file():
-        return 0
+        return {}
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return 0
+        return {}
 
     tasks = payload.get("tasks") if isinstance(payload, dict) else payload
 
-    return len(tasks) if isinstance(tasks, (list, dict)) else 0
+    if isinstance(tasks, dict):
+        tasks = list(tasks.values())
+
+    counts: dict[str, int] = {}
+
+    for task in tasks or []:
+        if not isinstance(task, dict):
+            continue
+
+        status = str(task.get("status") or "pending")
+        counts[status] = counts.get(status, 0) + 1
+
+    return counts
 
 
 def _containers_running() -> bool | None:
@@ -147,10 +159,18 @@ def check_run(run_id: str) -> bool:
     call_types = sorted({e.get("call_type") for e in events if e.get("call_type")})
     answer_path = run_dir / "answer.md"
     answer = answer_path.read_text(encoding="utf-8") if answer_path.is_file() else ""
-    ledger_size = _ledger_size(run_dir)
+    ledger_counts = _ledger_counts(run_dir)
+    ledger_size = sum(ledger_counts.values())
     running = _containers_running()
     report = resolve_citations(run_id)
     counts = report.counts
+
+    if ledger_size:
+        open_count = ledger_counts.get("pending", 0) + ledger_counts.get("in_progress", 0)
+        print(
+            f"[INFO] ledger: {ledger_counts.get('done', 0)} done, "
+            f"{ledger_counts.get('failed', 0)} failed, {open_count} open"
+        )
 
     for written, full in report.merged:
         print(f"[INFO] merged id repaired: {written} -> {full}")

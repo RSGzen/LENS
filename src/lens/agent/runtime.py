@@ -1845,6 +1845,39 @@ class Runtime:
             extra={"text": text},
         )
 
+    def _close_ledger(self) -> dict[str, list[str]]:
+        """Close every task a run leaves open, so the artifact has no dangling state.
+
+        A task with evidence is done; one without is failed. This is bookkeeping,
+        not a quality verdict: the answer is already written, and prose can cover a
+        requirement that never received an evidence ref. The counts are logged so a
+        report can tell "the model closed its plan" from "the host closed it".
+        """
+        closed: dict[str, list[str]] = {"done": [], "failed": []}
+
+        for task in self.ledger.list():
+            if task.status in {"done", "failed"}:
+                continue
+
+            target = "done" if task.evidence_refs else "failed"
+            self.ledger.update(task.task_id, status=target)
+            closed[target].append(task.task_id)
+
+        if closed["done"] or closed["failed"]:
+            try:
+                self.trajectory.log_event(
+                    trace_ctx=TraceCtx(
+                        trace_id=self._trace_id, step_idx=self._step_idx, actor="tool"
+                    ),
+                    call_type="note",
+                    action="ledger.auto_close",
+                    extra={"done": closed["done"], "failed": closed["failed"]},
+                )
+            except Exception:  # noqa: BLE001 - a log failure must not block finalisation
+                pass
+
+        return closed
+
     def _finalize(self, answer: str, *, partial: bool, stop_reason: str | None) -> RunResult:
         """Write ``answer.md``, close the manifest, stop the sandbox, build the result.
 
@@ -1857,6 +1890,11 @@ class Runtime:
         """
         answer_path = self.run_dir / "answer.md"
         answer_path.write_text(answer.rstrip() + "\n", encoding="utf-8")
+
+        try:
+            self._close_ledger()
+        except Exception:  # noqa: BLE001 - a ledger write must not block finalisation
+            pass
 
         totals = self.trajectory.totals()
 
