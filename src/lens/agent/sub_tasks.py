@@ -241,7 +241,11 @@ SUB_TASKS: dict[str, SubTask] = {
         # entirely on thinking and the reply came back empty with
         # finish_reason=length. Only tokens actually generated are billed, so the
         # headroom costs nothing when it is unused.
-        max_output_tokens=8000,
+        #
+        # 8,000 still truncated: a live run spent all 8,000 on reasoning and
+        # returned cut-off JSON in 21 of 25 calls. 16,000 leaves room for the
+        # reply after the thinking.
+        max_output_tokens=16000,
         max_items=4,
         source="ids",
         build_schema=_extract_schema,
