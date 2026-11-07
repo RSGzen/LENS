@@ -249,12 +249,12 @@ class UiDataTestCase(unittest.TestCase):
 
     # ------------------------------------------------------------- the cap
     def test_cap_comes_from_the_manifest_not_todays_default(self) -> None:
-        self._make_run("run-old", caps={"cost_usd": 0.5})
+        self._make_run("run-old", caps={"cost_usd": 0.25})
 
         view = data.load_run("run-old")
 
         assert view is not None
-        self.assertAlmostEqual(view.cap_usd, 0.5)
+        self.assertAlmostEqual(view.cap_usd, 0.25)
         self.assertNotAlmostEqual(view.cap_usd, config_module.MAX_COST_USD_PER_QUERY)
 
     def test_cap_is_none_when_not_recorded(self) -> None:

@@ -41,6 +41,23 @@ class StageThresholdsTestCase(unittest.TestCase):
             config._parse_stage_thresholds("retrieval=high")
 
 
+class BudgetDerivationTestCase(unittest.TestCase):
+    def test_the_token_cap_is_the_sum_of_its_two_measured_parts(self) -> None:
+        expected = (
+            int(config.MAX_ITERATIONS * config.CONTEXT_TURN_TOKENS_ESTIMATE * 1.25)
+            + config.SUB_TASK_TOKENS_ESTIMATE
+        )
+
+        self.assertEqual(config.MAX_TOKENS_PER_QUERY, expected)
+        self.assertEqual(config.SUB_TASK_TOKENS_ESTIMATE, 150000)
+
+    def test_the_cost_cap_is_a_backstop_for_the_token_cap(self) -> None:
+        self.assertEqual(config.MAX_COST_USD_PER_QUERY, 0.50)
+
+    def test_the_observation_cap_carries_the_quote_budget(self) -> None:
+        self.assertEqual(config.TOOL_RESULT_SUMMARY_CHARS, 4000)
+
+
 class PathAnchorTestCase(unittest.TestCase):
     def test_no_absolute_path_literals(self) -> None:
         # The portability bug this closes: five hard-coded ``r"D:\..."`` defaults.

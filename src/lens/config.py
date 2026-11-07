@@ -364,7 +364,7 @@ MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
 # Earlier artifacts were recorded at $0.50 and later ones at $1.00; state that
 # difference when reporting, because the cap changes the stop-reason distribution,
 # not the pipeline.
-MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "1.00"))
+MAX_COST_USD_PER_QUERY = float(os.environ.get("LENS_MAX_COST_USD", "0.50"))
 
 # OpenRouter charges 5.5 % to load credit, so a reported "$/query" has two numbers:
 # the raw sum of ``usage.cost`` and that sum times this fee. Accounting never
@@ -416,18 +416,19 @@ ROOT_MAX_OUTPUT_TOKENS = int(os.environ.get("LENS_ROOT_MAX_OUTPUT_TOKENS", "8000
 # Context-side observation cap (chars). The runner caps captured stdout too
 # (``SANDBOX_STDOUT_MAX_CHARS``); this is the second, tighter cut applied before
 # the observation becomes a message.
-TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "3000"))
+TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "4000"))
 
 # Cumulative token cap, DERIVED from a **measurement** rather than from a chosen
 # context ceiling: iterations x measured tokens per turn x 1.25 overhead.
 #   tokens per turn = 14,000 (p90 of 432 recorded root calls; median 7,756)
 #   10 x 14,000 x 1.25 = 175,000 for the root's own turns
-# plus an allowance for sub-task calls, which spend this same budget: a measured
-# depth-1 run made 20 calls and finished at 178,010 tokens, 2 % over a cap that
-# assumed no sub-tasks, so the cap bound and the stop reason became an artefact of
-# the rule rather than of the work. 25 calls x 3,000 tokens = 75,000.
+# plus an allowance for sub-task calls, which spend this same budget. The measured
+# 16k-cap replies averaged about 9,000 output tokens; 15 calls x 10,000 = 150,000
+# leaves margin for the extracts a comparison actually makes. A 75,000 allowance
+# bound on a real 10-turn run at 275,192 tokens, so the stop reason was an
+# artefact of the allowance rather than of the work.
 CONTEXT_TURN_TOKENS_ESTIMATE = int(os.environ.get("LENS_CONTEXT_TURN_TOKENS", "14000"))
-SUB_TASK_TOKENS_ESTIMATE = int(os.environ.get("LENS_SUB_TASK_ALLOWANCE", "75000"))
+SUB_TASK_TOKENS_ESTIMATE = int(os.environ.get("LENS_SUB_TASK_ALLOWANCE", "150000"))
 MAX_TOKENS_PER_QUERY = int(
     os.environ.get(
         "LENS_MAX_TOKENS",
