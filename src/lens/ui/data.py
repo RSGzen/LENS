@@ -212,6 +212,15 @@ class RunView:
         return [turn.tokens_in or 0 for turn in self.turns]
 
     @property
+    def cached_series(self) -> list[int]:
+        """Cached prompt tokens per turn — the provider-served share of the prompt.
+
+        A subset of :attr:`tokens_in_series`, not a second prompt: the two lines
+        sit on the same token axis, and the gap between them is the uncached input.
+        """
+        return [turn.cached_tokens or 0 for turn in self.turns]
+
+    @property
     def missing_refs(self) -> int:
         """Blobs this bundle cannot resolve (0 for an intact recording)."""
         return int(self.summary.get("missing_refs") or 0)

@@ -527,28 +527,36 @@ def render_meters(view: data.RunView) -> None:
     summary = view.summary
     cursor = st.session_state["cursor"]
 
-    columns = st.columns(5)
-    columns[0].metric("tokens in (chat)", f"{summary['tokens_in']:,}")
-    columns[1].metric("tokens out", f"{summary['tokens_out']:,}")
-    columns[2].metric("gate tokens", f"{summary['jev_tokens_in']:,}")
-    columns[3].metric("tool calls", summary["tool_calls"])
-    columns[4].metric("gates pass/fail", f"{summary['gates_passed']} / {summary['gates_failed']}")
+    top = st.columns(4)
+    top[0].metric("tokens in (chat)", f"{summary['tokens_in']:,}")
+    top[1].metric("cached tokens", f"{summary['cached_tokens']:,}")
+    top[2].metric("cache hit", _cache_text(summary["cached_tokens"], summary["tokens_in"]))
+    top[3].metric("tokens out", f"{summary['tokens_out']:,}")
+
+    bottom = st.columns(4)
+    bottom[0].metric("gate tokens", f"{summary['jev_tokens_in']:,}")
+    bottom[1].metric("tool calls", summary["tool_calls"])
+    bottom[2].metric("gates pass/fail", f"{summary['gates_passed']} / {summary['gates_failed']}")
+    bottom[3].metric("reasoning tokens", f"{summary['reasoning_tokens']:,}")
 
     series = view.tokens_in_series[: cursor + 1]
+    cached = view.cached_series[: cursor + 1]
 
     if series:
         st.line_chart(
-            {"tokens_in": series},
+            {"tokens_in": series, "cached": cached},
             x_label="turn",
             y_label="prompt tokens",
             height=220,
         )
         st.caption(
             "Prompt tokens per turn — the size of the context the model re-read. "
-            "This chart rises with the conversation; the claim under test is "
-            "evidence retrieved per token against a naive RAG baseline, not a flat "
-            "context. Gate (JEV) tokens are excluded on purpose: they are not the "
-            "growing context."
+            "The cached line is the part the provider served from its cache; it is "
+            "best-effort, so a byte-identical prefix can still return 0 %. This "
+            "chart rises with the conversation; the claim under test is evidence "
+            "retrieved per token against a naive RAG baseline, not a flat context. "
+            "Gate (JEV) tokens are excluded on purpose: they are not the growing "
+            "context."
         )
 
     budget = view.turns[cursor].budget if view.turns else None
@@ -629,7 +637,11 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
         head = st.columns([5, 1, 1, 1])
 
         head[0].markdown(f"**Turn {turn.turn}** · `{turn.model or 'unknown'}`")
-        head[1].caption(f"{turn.tokens_in or 0} in")
+        cached = turn.cached_tokens or 0
+        head[1].caption(
+            f"{turn.tokens_in or 0:,} in · {cached:,} cached"
+            f" ({_cache_text(cached, turn.tokens_in)})"
+        )
         head[2].caption(f"{turn.tokens_out or 0} out")
         head[3].caption(f"${(turn.cost_usd or 0.0) + (turn.jev_cost_usd or 0.0):.6f}")
 
@@ -1340,6 +1352,18 @@ def _duration(latency_ms: int | None) -> str:
         return f"{latency_ms} ms"
 
     return f"{latency_ms / 1000:.1f} s"
+
+
+def _cache_text(cached: int | None, tokens_in: int | None) -> str:
+    """Render the cached share of the prompt, or ``—`` when there was no input.
+
+    ``cached`` is a subset of ``tokens_in``. A first turn with no cache yet is a
+    real zero, so only a missing input is rendered as unknown.
+    """
+    if not tokens_in:
+        return "—"
+
+    return f"{100 * (cached or 0) / tokens_in:.0f}%"
 
 
 def _visible_text(completion: str | None) -> str:

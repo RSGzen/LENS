@@ -89,6 +89,7 @@ class UiAppTestCase(unittest.TestCase):
                 ),
                 tokens_in=100 * (step + 1),
                 tokens_out=20,
+                cached_tokens=60 if step == 1 else 0,
                 reasoning_tokens=8,
                 # Turn 0 has a trace; turn 1 has the count only, which is what an
                 # OpenAI reasoning model returns.
@@ -152,20 +153,24 @@ class UiAppTestCase(unittest.TestCase):
         )
         (self.root / run_id / "answer.md").write_text(f"answer citing {CHUNK}\n", encoding="utf-8")
 
-    def _app(self) -> "AppTest":
+    def _app(self, cursor: int = 0) -> "AppTest":
         at = AppTest.from_file(str(APP), default_timeout=120)
         at.session_state["run_id"] = "run-ui"
+        at.session_state["cursor"] = cursor
         at.run()
         return at
 
     def test_page_renders_a_recorded_run(self) -> None:
-        at = self._app()
+        at = self._app(cursor=1)
 
         self.assertEqual([str(e.value) for e in at.exception], [])
         labels = {metric.label: metric.value for metric in at.metric}
         self.assertEqual(labels["status"], "completed")
         self.assertEqual(labels["turns"], "2")
         self.assertEqual(labels["cap"], "$1.00")  # from the manifest, not config
+        self.assertEqual(labels["cached tokens"], "60")
+        self.assertEqual(labels["cache hit"], "20%")
+        self.assertTrue(any("60 cached (30%)" in c.value for c in at.caption))
         self.assertTrue(any("Recorded playback" in c.value for c in at.caption))
 
     def _add_gate(self, run_id: str, step: int = 0) -> None:

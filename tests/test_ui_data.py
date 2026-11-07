@@ -44,7 +44,9 @@ class UiDataTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     # ---------------------------------------------------------------- helpers
-    def _chat(self, run_id: str, step: int, *, tokens_in: int = 100) -> None:
+    def _chat(
+        self, run_id: str, step: int, *, tokens_in: int = 100, cached_tokens: int = 0
+    ) -> None:
         traj = Trajectory(run_id)
         traj.log_event(
             trace_ctx=TraceCtx(run_id, step, "root"),
@@ -56,6 +58,7 @@ class UiDataTestCase(unittest.TestCase):
             completion_ref=traj.store_blob(f"turn {step}"),
             tokens_in=tokens_in,
             tokens_out=20,
+            cached_tokens=cached_tokens,
             cost_usd=0.01,
             latency_ms=900,
         )
@@ -165,7 +168,7 @@ class UiDataTestCase(unittest.TestCase):
                 }
             ],
         )
-        self._chat(run_id, 1, tokens_in=500)
+        self._chat(run_id, 1, tokens_in=500, cached_tokens=300)
         self._chunks(
             run_id,
             1,
@@ -221,6 +224,8 @@ class UiDataTestCase(unittest.TestCase):
         assert view is not None
         self.assertEqual(len(view.turns), 2)
         self.assertEqual(view.tokens_in_series, [100, 500])
+        self.assertEqual(view.cached_series, [0, 300])
+        self.assertEqual(view.summary["cached_tokens"], 300)
         self.assertEqual(view.summary["tool_calls"], 2)
         self.assertEqual(view.missing_refs, 0)
         self.assertAlmostEqual(view.cost_usd, 0.02)
