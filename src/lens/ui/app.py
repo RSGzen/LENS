@@ -1159,14 +1159,25 @@ def page_paper_lookup() -> None:
 
     arxiv_id = st.text_input("arXiv id", placeholder="2407.21049", key="paper_lookup_id")
 
-    if not st.button("Look up paper", key="paper_lookup_button"):
+    # The result is cached because the chunk dropdown below is a widget: choosing a
+    # chunk reruns the page, the button is false on that rerun, and an early return
+    # would replace the paper with the empty input.
+    if st.button("Look up paper", key="paper_lookup_button"):
+        if not arxiv_id.strip():
+            st.session_state.pop("paper_lookup_result", None)
+            st.info("Type an arXiv id first, for example 2407.21049.")
+            return
+
+        st.session_state["paper_lookup_result"] = (arxiv_id.strip(), data.lookup_paper(arxiv_id))
+
+    cached = st.session_state.get("paper_lookup_result")
+
+    # The cache is keyed by the id that produced it, so editing the field hides the
+    # previous paper instead of showing one under a different id.
+    if not isinstance(cached, tuple) or cached[0] != arxiv_id.strip():
         return
 
-    if not arxiv_id.strip():
-        st.info("Type an arXiv id first, for example 2407.21049.")
-        return
-
-    result = data.lookup_paper(arxiv_id)
+    result = cached[1]
 
     if not result.get("ok"):
         st.error(result.get("error") or "lookup failed")
@@ -1249,16 +1260,27 @@ def page_chunk_lookup() -> None:
         key="chunk_lookup_ids",
     )
 
-    if not st.button("Look up chunks", key="chunk_lookup_button"):
+    # Cached for the same reason as the paper page: the full-text dropdown reruns the
+    # page, and an early return would replace the results with the empty input.
+    if st.button("Look up chunks", key="chunk_lookup_button"):
+        ids = [part for part in re.split(r"[\s,]+", raw or "") if part]
+
+        if not ids:
+            st.session_state.pop("chunk_lookup_result", None)
+            st.info("Paste at least one chunk id.")
+            return
+
+        st.session_state["chunk_lookup_result"] = (ids, data.lookup_chunks(ids))
+
+    cached = st.session_state.get("chunk_lookup_result")
+
+    # Keyed by the ids that produced it, so editing the box hides the previous rows.
+    if not isinstance(cached, tuple) or cached[0] != [
+        part for part in re.split(r"[\s,]+", raw or "") if part
+    ]:
         return
 
-    ids = [part for part in re.split(r"[\s,]+", raw or "") if part]
-
-    if not ids:
-        st.info("Paste at least one chunk id.")
-        return
-
-    result = data.lookup_chunks(ids)
+    result = cached[1]
 
     if not result.get("ok"):
         st.error(result.get("error") or "lookup failed")

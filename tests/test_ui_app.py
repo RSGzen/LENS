@@ -422,6 +422,77 @@ class UiAppTestCase(unittest.TestCase):
         self.assertEqual([str(exception.value) for exception in at.exception], [])
         self.assertTrue(any("database unavailable" in item.value for item in at.error))
 
+    def test_the_chunk_dropdown_keeps_the_paper_on_the_page(self) -> None:
+        chunk = "11111111-1111-5111-8111-111111111111"
+        found = {
+            "ok": True,
+            "found": [
+                {
+                    "arxiv_id": "2407.21049",
+                    "title": "Evaluating Long Range Dependency Handling",
+                    "abstract": "a long abstract",
+                }
+            ],
+            "chunks": [
+                {
+                    "chunk_uuid": chunk,
+                    "section_type": "Results",
+                    "token_count": 442,
+                    "chars": 100,
+                    "preview": "a preview",
+                }
+            ],
+            "missing": [],
+        }
+        chunk_payload = {
+            "ok": True,
+            "found": [{"chunk_uuid": chunk, "chunk_text": "the selected chunk text"}],
+            "missing": [],
+        }
+        label = f"Results · 442 tokens · {chunk[:8]}"
+
+        with (
+            patch("lens.ui.data.lookup_paper", return_value=found),
+            patch("lens.ui.data.lookup_chunks", return_value=chunk_payload),
+        ):
+            at = self._app()
+            at.radio(key="tool_choice").set_value(data_page_paper()).run()
+            at.text_input(key="paper_lookup_id").set_value("2407.21049").run()
+            at.button(key="paper_lookup_button").click().run()
+            at.selectbox(key="paper_chunk_2407.21049").set_value(label).run()
+
+        self.assertEqual([str(exception.value) for exception in at.exception], [])
+        self.assertTrue(any("2407.21049" in item.value for item in at.success))
+        self.assertTrue(any("the selected chunk text" in block.value for block in at.code))
+
+    def test_the_chunk_lookup_keeps_the_results_on_the_page(self) -> None:
+        chunk = "11111111-1111-5111-8111-111111111111"
+        found = {
+            "ok": True,
+            "found": [
+                {
+                    "chunk_uuid": chunk,
+                    "arxiv_id": "2511.02817",
+                    "section_type": "Results",
+                    "token_count": 512,
+                    "chunk_text": "the chunk the corpus stores",
+                }
+            ],
+            "missing": [],
+        }
+
+        with patch("lens.ui.data.lookup_chunks", return_value=found):
+            at = self._app()
+            at.radio(key="tool_choice").set_value(data_page_chunk()).run()
+            at.text_area(key="chunk_lookup_ids").set_value(chunk).run()
+            at.button(key="chunk_lookup_button").click().run()
+            at.selectbox(key="chunk_lookup_choice").set_value(
+                f"{chunk} · 2511.02817 · Results · 27 chars"
+            ).run()
+
+        self.assertEqual([str(exception.value) for exception in at.exception], [])
+        self.assertTrue(any("the chunk the corpus stores" in block.value for block in at.code))
+
     def test_page_names_separate_recording_from_live(self) -> None:
         from lens.ui.app import PAGE_LIVE, PAGE_RECORDED, PAGES
 
