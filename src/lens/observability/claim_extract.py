@@ -195,9 +195,8 @@ def extract_frames(
     errors: list[str] = []
     size = max(1, int(batch_size))
 
-    for start in range(0, len(units), size):
-        indices = list(range(start, min(start + size, len(units))))
-
+    def run_batch(indices: list[int], depth: int) -> tuple[list[ClaimFrame], list[str]]:
+        """Call the extractor once; split a capped batch once and merge."""
         try:
             result = client.chat(
                 "sub",
@@ -221,8 +220,7 @@ def extract_frames(
                 extra={"claim_frames": len(indices)},
             )
         except Exception as exc:  # noqa: BLE001 - one failed batch is a visible error
-            errors.append(f"claim extraction failed: {type(exc).__name__}")
-            continue
+            return [], [f"claim extraction failed: {type(exc).__name__}"]
 
         if budget is not None:
             budget.record_chat(result)
@@ -231,23 +229,48 @@ def extract_frames(
         if usage is not None:
             usage.append({"cost_usd": float(result.cost_usd), "tokens_out": int(result.tokens_out)})
 
-        if not (result.text or "").strip():
-            errors.append("claim extractor returned no text: the output cap was spent on reasoning")
-            continue
-
         body = _strip_fence(result.text)
 
+        # The cap is spent on reasoning before any JSON arrives. Split the batch
+        # once, so the retry has half the units and twice the per-unit headroom.
+        cut = (
+            result.finish_reason == "length"
+            or not body
+            or (body.startswith("{") and not body.rstrip().endswith("}"))
+        )
+
+        if cut and len(indices) > 1 and depth == 0:
+            middle = len(indices) // 2
+            left_frames, left_errors = run_batch(indices[:middle], 1)
+            right_frames, right_errors = run_batch(indices[middle:], 1)
+
+            return (
+                [*left_frames, *right_frames],
+                [
+                    "claim extractor batch hit the output cap; retried as halves",
+                    *left_errors,
+                    *right_errors,
+                ],
+            )
+
+        if not body:
+            return [], ["claim extractor returned no text: the output cap was spent on reasoning"]
+
         if body.startswith("{") and not body.rstrip().endswith("}"):
-            errors.append("claim extractor reply was cut off before its JSON closed")
-            continue
+            return [], ["claim extractor reply was cut off before its JSON closed"]
 
         try:
             payload = json.loads(body)
         except (TypeError, ValueError):
-            errors.append("claim extractor reply was not JSON")
-            continue
+            return [], ["claim extractor reply was not JSON"]
 
-        batch_frames, batch_errors = parse_frames(payload, units, allowed_units=set(indices))
+        parsed, parsed_errors = parse_frames(payload, units, allowed_units=set(indices))
+
+        return parsed, parsed_errors
+
+    for start in range(0, len(units), size):
+        indices = list(range(start, min(start + size, len(units))))
+        batch_frames, batch_errors = run_batch(indices, 0)
         frames.extend(batch_frames)
         errors.extend(batch_errors)
 

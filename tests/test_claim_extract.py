@@ -125,12 +125,29 @@ class ExtractFramesTests(unittest.TestCase):
         self.assertTrue(any("not JSON" in error for error in errors))
 
     def test_an_empty_reply_names_the_reasoning_cap(self) -> None:
-        client = FakeClient([""])
+        # The empty reply is retried once as halves; each half is empty too.
+        client = FakeClient(["", "", ""])
 
         frames, errors = extract_frames(client, self.units, None)
 
         self.assertEqual(frames, [])
         self.assertTrue(any("reasoning" in error for error in errors))
+
+    def test_a_capped_batch_is_retried_as_halves(self) -> None:
+        client = FakeClient(
+            [
+                "",
+                _reply(_frame(0, CHUNK_A)),
+                _reply(_frame(1, CHUNK_B, quote="reaches 44.0 accuracy on OOLONG")),
+            ]
+        )
+        usage: list[dict] = []
+
+        frames, errors = extract_frames(client, self.units, None, usage=usage)
+
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(len(usage), 3)
+        self.assertTrue(any("retried as halves" in error for error in errors))
 
     def test_a_client_failure_is_an_error_not_an_exception(self) -> None:
         client = FakeClient([RuntimeError("provider down")])
