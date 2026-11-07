@@ -1287,6 +1287,8 @@ class Runtime:
                     "coverage": report.coverage,
                     "frames": len(report.frames),
                     "errors": len(report.errors),
+                    "cost_usd": round(report.cost_usd, 6),
+                    "tokens_out": report.tokens_out,
                 },
             )
         except Exception:  # noqa: BLE001 - a log failure must not change the run

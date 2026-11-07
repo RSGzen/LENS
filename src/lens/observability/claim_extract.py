@@ -163,6 +163,7 @@ def extract_frames(
     trace_ctx: Any,
     *,
     texts: Mapping[str, str] | None = None,
+    usage: list[dict[str, Any]] | None = None,
     budget: Any | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
@@ -171,9 +172,11 @@ def extract_frames(
 
     ``units`` is ``[(claim_text, [chunk_id, ...]), ...]`` in the answer's order.
     ``texts`` maps ``chunk_uuid -> chunk_text`` and is sent with each unit so a
-    quote can be copied from the chunk rather than from the answer. A failed
-    batch is an error entry, never an exception: one unavailable call must not
-    lose the frames the other batches produced.
+    quote can be copied from the chunk rather than from the answer. ``usage``
+    collects one ``{cost_usd, tokens_out}`` entry per call, so the report can
+    state what the extractor spent. A failed batch is an error entry, never an
+    exception: one unavailable call must not lose the frames the other batches
+    produced.
     """
     frames: list[ClaimFrame] = []
     errors: list[str] = []
@@ -208,6 +211,9 @@ def extract_frames(
         if budget is not None:
             budget.record_chat(result)
             budget.record_sub_task()
+
+        if usage is not None:
+            usage.append({"cost_usd": float(result.cost_usd), "tokens_out": int(result.tokens_out)})
 
         if not (result.text or "").strip():
             errors.append("claim extractor returned no text: the output cap was spent on reasoning")
@@ -254,17 +260,21 @@ def verify_answer(
     if not units:
         return ClaimReport(run_id=run_id, units=0)
 
+    usage: list[dict[str, Any]] = []
     frames, errors = extract_frames(
         client,
         units,
         trace_ctx,
         texts=texts,
+        usage=usage,
         budget=budget,
         batch_size=batch_size,
         max_tokens=max_tokens,
     )
     report = verify_units(units, frames, texts, run_id=run_id)
     report.errors = errors
+    report.cost_usd = sum(float(item["cost_usd"]) for item in usage)
+    report.tokens_out = sum(int(item["tokens_out"]) for item in usage)
 
     return report
 

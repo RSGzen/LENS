@@ -85,15 +85,17 @@ class ExtractFramesTests(unittest.TestCase):
 
     def test_one_batch_returns_frames_and_records_the_call(self) -> None:
         budget = FakeBudget()
+        usage: list[dict] = []
         client = FakeClient([_reply(_frame(0), _frame(1, CHUNK_B, value="44.0"))])
 
-        frames, errors = extract_frames(client, self.units, None, budget=budget)
+        frames, errors = extract_frames(client, self.units, None, usage=usage, budget=budget)
 
         self.assertEqual(errors, [])
         self.assertEqual([frame.unit_index for frame in frames], [0, 1])
         self.assertEqual(len(client.calls), 1)
         self.assertEqual(budget.chats, 1)
         self.assertEqual(budget.sub_tasks, 1)
+        self.assertEqual(usage, [{"cost_usd": 0.0, "tokens_out": 5}])
 
     def test_more_units_than_the_batch_are_split(self) -> None:
         units = [(f"claim {index}", [CHUNK_A]) for index in range(7)]
@@ -184,6 +186,8 @@ class ExtractFramesTests(unittest.TestCase):
         self.assertEqual(report.units, 1)
         self.assertEqual(report.counts["grounded"], 1)
         self.assertEqual(report.coverage, 1.0)
+        self.assertEqual(report.tokens_out, 5)
+        self.assertEqual(report.cost_usd, 0.0)
 
 
 if __name__ == "__main__":

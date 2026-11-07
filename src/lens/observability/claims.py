@@ -150,6 +150,9 @@ class ClaimReport:
     frames: list[ClaimFrame] = field(default_factory=list)
     verdicts: list[FrameVerdict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    #: Spend attributable to the claim extractor for this answer.
+    cost_usd: float = 0.0
+    tokens_out: int = 0
 
     @property
     def counts(self) -> dict[str, int]:
@@ -184,6 +187,8 @@ class ClaimReport:
             "units": self.units,
             "coverage": self.coverage,
             "counts": self.counts,
+            "cost_usd": round(self.cost_usd, 6),
+            "tokens_out": self.tokens_out,
             "errors": list(self.errors),
             "frames": [
                 {**frame.to_dict(), "verdict": verdict.to_dict()}
