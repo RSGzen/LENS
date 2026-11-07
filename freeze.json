@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-11-07T10:44:00+00:00",
-  "commit": "aa75c42b8917901d603faeb670e6348af02bcd34",
+  "created_at": "2026-11-07T11:41:23+00:00",
+  "commit": "fca8a92d1cde58864449e9f41defc93b921b7824",
   "branch": "main",
   "git_dirty": false,
   "models": {
@@ -76,6 +76,7 @@
   "instruments": {
     "pilot-qrels-aggregation.json": "3b5a1c87f304ba21be611916b805486b04bdc043fc01dc9c4fd0be116f1e73a7",
     "qrels-rubric-v1.md": "fc58c924ef399ce727ff160f6540b72054b4bde511711d80c91767e857ebff34",
+    "qrels-v1.csv": "59fa0ac3d7f8cc6b8a65c3064e971c91880a97ac2bc2e21fd3ff0089a6afdce9",
     "tier2-queries-v1.json": "c1862aa4f86b90d442ddaf472415e032efcab1ae5f0b145cb6403f83eb87a336",
     "w2-grid-v1.json": "d2e74ff2e59f14594b5f1bb130a142600ee8da1fe79d32812e253baa5e038561",
     "w2a-tuples-confirm.json": "0522cf41858b51d15cc80c02c9ee7373f8bc2182f30fb987f8008acc70f88468",
