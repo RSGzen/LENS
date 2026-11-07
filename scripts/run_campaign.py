@@ -166,6 +166,7 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
         # 35-chunk, 9-sub-task run look idle.
         "host_tools": int(work.get("tool_calls") or 0),
         "sub_tasks": int(work.get("sub_tasks") or 0),
+        "sub_calls": int(work.get("sub_calls") or 0),
         "code_blocks": int(work.get("code_blocks") or 0),
         "cited": counts.get("cited") or 0,
         "resolved": counts.get("resolved") or 0,

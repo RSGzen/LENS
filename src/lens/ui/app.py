@@ -698,8 +698,26 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
         for slot, tool in enumerate(turn.tools):
             render_tool(run_id, tool, f"{turn.turn}-{slot}")
 
-        for slot, task in enumerate(turn.sub_tasks):
-            render_sub_task(run_id, task, f"{turn.turn}-sub-{slot}")
+        grouped: dict[str, list[SubTaskStep]] = {}
+
+        for index, task in enumerate(turn.sub_tasks):
+            # A recorded run has a call_id; an older run has no group, so the turn
+            # and its position are the stable key. `id(task)` changes every rerun and
+            # would reset the payload checkbox.
+            key = task.call_id or f"legacy-{turn.turn}-{index}"
+            grouped.setdefault(key, []).append(task)
+
+        for call_id, batch in grouped.items():
+            display = batch[0].name if batch[0].name.startswith("sub_") else f"sub_{batch[0].name}"
+
+            if len(batch) > 1:
+                st.markdown(
+                    f"**`{display}`** · {sum(task.items for task in batch):,} items · "
+                    f"{len(batch)} batches"
+                )
+
+            for slot, task in enumerate(batch):
+                render_sub_task(run_id, task, f"{turn.turn}-sub-{call_id}-{slot}")
 
         if turn.observation:
             st.markdown("**Observation — what the model actually saw**")
@@ -949,8 +967,10 @@ def render_sub_task(run_id: str, task: SubTaskStep, slot: str) -> None:
     and kept out of the host-tool count. The full result is a model reply, not a
     tool payload; the toggle downloads it exactly as recorded.
     """
+    display = task.name if task.name.startswith("sub_") else f"sub_{task.name}"
+    batch = f" · batch {task.batch_index}/{task.batch_total}" if task.batch_total > 1 else ""
     columns = st.columns([3, 1, 1, 1, 2])
-    columns[0].markdown(f"`{task.name}` · *sub-task*")
+    columns[0].markdown(f"`{display}` · *sub-task*{batch}")
     columns[1].caption(f"{task.items:,} item{'s' if task.items != 1 else ''}")
     columns[2].caption(_duration(task.latency_ms))
     columns[3].caption(f"${task.cost_usd:.6f}" if task.cost_usd else "")

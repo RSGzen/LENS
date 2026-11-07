@@ -72,6 +72,11 @@ class SubTaskStep:
     tokens_out: int | None = None
     cost_usd: float | None = None
     error: dict[str, Any] | None = None
+    #: The parent RPC call this batch belongs to, and its place in that call. One
+    #: `sub_extract` with 12 ids is three model calls; the viewer groups them.
+    call_id: str | None = None
+    batch_index: int = 1
+    batch_total: int = 1
 
 
 @dataclass
@@ -326,6 +331,9 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
                     tokens_out=event.get("tokens_out"),
                     cost_usd=event.get("cost_usd"),
                     error=event.get("error"),
+                    call_id=extra.get("call_id"),
+                    batch_index=int(extra.get("batch_index") or 1),
+                    batch_total=int(extra.get("batch_total") or 1),
                 )
             )
 
@@ -413,7 +421,7 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
 
     Contract: ``{"turns", "tokens_in", "tokens_out", "cached_tokens",
     "reasoning_tokens", "jev_tokens_in", "cost_usd", "chat_cost_usd", "tool_calls",
-    "sub_tasks", "code_blocks", "emits", "gates_passed", "gates_failed",
+    "sub_tasks", "sub_calls", "code_blocks", "emits", "gates_passed", "gates_failed",
     "missing_refs"}`` — all summed or counted from ``turns``, missing values
     counted as zero.
 
@@ -453,6 +461,9 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
         "chat_cost_usd": sum(turn.cost_usd or 0.0 for turn in turns),
         "tool_calls": sum(len(turn.tools) for turn in turns),
         "sub_tasks": sum(len(turn.sub_tasks) for turn in turns),
+        "sub_calls": len(
+            {task.call_id for turn in turns for task in turn.sub_tasks if task.call_id}
+        ),
         "code_blocks": sum(1 for turn in turns if turn.code),
         "emits": sum(len(turn.emits) for turn in turns),
         "gates_passed": sum(1 for gate in gates if gate.get("verdict") == "pass"),

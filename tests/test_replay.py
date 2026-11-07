@@ -57,7 +57,22 @@ class ReplayTestCase(unittest.TestCase):
             latency_ms=900,
         )
 
-    def _sub_chat(self, step: int, *, items: int = 2) -> None:
+    def _sub_chat(
+        self,
+        step: int,
+        *,
+        items: int = 2,
+        call_id: str | None = None,
+        batch_index: int = 1,
+        batch_total: int = 1,
+    ) -> None:
+        extra: dict[str, object] = {"sub_task": "extract", "items": items}
+
+        if call_id:
+            extra.update(
+                {"call_id": call_id, "batch_index": batch_index, "batch_total": batch_total}
+            )
+
         self.traj.log_event(
             trace_ctx=TraceCtx("run-replay", step, "sub"),
             call_type="chat",
@@ -78,7 +93,7 @@ class ReplayTestCase(unittest.TestCase):
             tokens_out=10,
             cost_usd=0.001,
             latency_ms=300,
-            extra={"sub_task": "extract", "items": items},
+            extra=extra,
         )
 
     def _verdict(self, step: int, stage: str, verdict: str, confidence: float) -> None:
@@ -198,6 +213,19 @@ class ReplayTestCase(unittest.TestCase):
         summary = replay_summary([turn])
         self.assertEqual(summary["sub_tasks"], 1)
         self.assertEqual(summary["code_blocks"], 1)
+
+    def test_batches_of_one_sub_call_are_grouped(self) -> None:
+        self._chat(0, "```python\nx = 1\n```")
+        self._sub_chat(0, call_id="sub-1", batch_index=1, batch_total=2)
+        self._sub_chat(0, call_id="sub-1", batch_index=2, batch_total=2)
+
+        turn = replay_turns(self.traj)[0]
+
+        self.assertEqual([task.call_id for task in turn.sub_tasks], ["sub-1", "sub-1"])
+        self.assertEqual([task.batch_index for task in turn.sub_tasks], [1, 2])
+        summary = replay_summary([turn])
+        self.assertEqual(summary["sub_tasks"], 2)
+        self.assertEqual(summary["sub_calls"], 1)
 
     def test_observation_is_what_the_model_saw(self) -> None:
         self._chat(0, "```python\nprint(x)\n```")
