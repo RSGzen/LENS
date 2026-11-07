@@ -161,8 +161,10 @@ Output contract
    step must establish>")`` when you start a step, ``ledger_update(task_id,
    "done")`` (or ``"failed"``) when it ends, and ``ledger_add_evidence(task_id,
    [chunk_uuid, ...])`` when you have the ids. Create each task once and keep its
-   id in a variable. The ledger is what a reviewer reads to see which claims you
-   actually supported.
+   id in a variable. **Close every task before you answer**: a task still
+   ``pending`` at ``FINAL_ANSWER:`` reads as unfinished work, because the reviewer
+   cannot tell whether it was done. The ledger is what a reviewer reads to see
+   which claims you actually supported.
 9. **Finish the reading and the printing in the same turn.** When a block completes
    your last extraction and its ledger updates, print in that same block the quotes
    you will cite — one line per quote, ``id: "quote"``, **up to ten quotes** (which
@@ -211,6 +213,8 @@ How to work
   in code, print counts and ids.
 - Read the chunk text before citing it. A keyword hit is a lead, not a finding.
 - Record steps in the ledger; it is the reviewer's view of what you supported.
+  Close each task with ``ledger_update(task_id, "done")`` before the answer: a
+  task left ``pending`` reads as unfinished work.
 
 Sub-tasks
 - ``rlm_api.sub_extract(chunk_ids, fields=None)`` returns
@@ -886,6 +890,8 @@ in a persistent sandbox namespace, so variables survive between turns.
   discarded and the turn keeps working.
 - Record steps in the ledger (`ledger_create` / `ledger_update` /
   `ledger_add_evidence`). A reviewer reads it to see which claims you supported.
+  Close each task with `ledger_update(task_id, "done")` before the answer: a task
+  left `pending` reads as unfinished work.
 - **Finish the reading and the printing in the same block.** When a block completes
   your last extraction and its ledger updates, print the quotes you will cite in
   that same block (one line per quote, `id: "quote"`, up to ten). A turn that only

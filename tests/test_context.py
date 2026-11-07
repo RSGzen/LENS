@@ -91,6 +91,12 @@ class ToolBindingTestCase(unittest.TestCase):
         self.assertIn("Search the variable, not the digest", prompt)
         self.assertIn("negative finding is a claim", prompt)
 
+    def test_prompt_requires_closing_ledger_tasks(self) -> None:
+        prompt = context.build_system_prompt("1. retrieval_funnel(buckets)", {}, {})
+
+        self.assertIn("Close every task before you answer", prompt)
+        self.assertIn("reads as unfinished work", prompt)
+
     def test_prompt_asks_for_incremental_turns(self) -> None:
         # Measured: five of five code turns re-wrote the whole script (buckets,
         # ledger tasks, funnel, classifiers) and appended a FINAL_ANSWER beside it.
