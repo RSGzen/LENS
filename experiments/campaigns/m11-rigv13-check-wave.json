@@ -1,0 +1,11 @@
+{
+  "name": "m11-rigv13-check",
+  "spend_estimate_usd": 2,
+  "waves": [
+    {
+      "id": "check",
+      "campaign": "experiments/campaigns/m11-rigv13-check.json",
+      "expect": 3
+    }
+  ]
+}
