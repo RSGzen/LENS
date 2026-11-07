@@ -153,6 +153,21 @@ class QuotedSpanTests(unittest.TestCase):
 
         self.assertEqual(verify_quoted_spans(answer, self.TEXTS), (1, 0, 1))
 
+    def test_an_abbreviated_cited_id_is_expanded_before_the_check(self) -> None:
+        chunk = "abc12345-1111-5111-8111-111111111111"
+        quote = "designed to retrieve answers from long contexts"
+        answer = f'"designed to retrieve answers from long contexts" [{chunk[:8]}]'
+        texts = {chunk: f"Retrieval-Augmented Generation {quote}."}
+
+        self.assertEqual(verify_quoted_spans(answer, texts), (1, 0, 1))
+
+    def test_a_quoted_task_name_with_no_citation_is_not_counted(self) -> None:
+        answer = (
+            'Ledger: task "identify aggregation methods and where aggregation happens" was done.'
+        )
+
+        self.assertEqual(verify_quoted_spans(answer, self.TEXTS), (0, 0, 0))
+
     def test_an_answer_without_quotes_is_zero_of_zero(self) -> None:
         self.assertEqual(verify_quoted_spans("A claim with no quotation.", self.TEXTS), (0, 0, 0))
 

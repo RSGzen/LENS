@@ -351,9 +351,21 @@ def _evidence_index(turns: list[Turn], trajectory: Trajectory) -> tuple[dict, di
     return chunks, papers, provenance
 
 
-#: A quoted span in an answer: straight or typographic quotes, long enough to be a
-#: quotation rather than a scare-quote around one word.
-_QUOTED = re.compile(r"[\u201c\"]([^\u201d\"]{25,400})[\u201d\"]")
+#: A quoted span in an answer. The straight quote is both opening and closing, so a
+#: boundary is required: an opener is not preceded by a letter/digit and a closer is
+#: not followed by one. Without it, a short quoted word's closing quote opened a
+#: false span that ran to the next quote (measured on a rig-v10 answer). Curly
+#: quotes are unambiguous.
+_QUOTED = re.compile(
+    r'(?<![0-9A-Za-z])"(?=\S)([^"\n]{25,400}?)(?<=\S)"(?![0-9A-Za-z])'
+    r"|\u201c(?=\S)([^\u201d\n]{25,400}?)(?<=\S)\u201d"
+)
+
+
+def _quoted_text(match: re.Match[str]) -> str:
+    """Return the content of a ``_QUOTED`` match (straight or curly)."""
+    return match.group(1) if match.group(1) is not None else match.group(2)
+
 
 #: Characters either side of a quote in which a citation counts as "the one the
 #: answer attaches to it" — ids may precede or follow the span depending on style.
@@ -388,7 +400,7 @@ def _span_segments(span: str) -> list[str]:
 def verify_quoted_spans(
     answer: str, texts: Mapping[str, str], *, window: int = _CITATION_WINDOW
 ) -> tuple[int, int, int]:
-    """Return ``(in_cited_chunk, elsewhere_only, total)`` for an answer's quotes.
+    """Return ``(in_cited_chunk, elsewhere_only, total)`` for evidence quotes.
 
     Grounding is measured at two strengths, because they fail differently: a span
     found under a *different* chunk than the one cited is a mis-citation (the reader
@@ -398,24 +410,31 @@ def verify_quoted_spans(
 
     ``texts`` maps ``chunk_uuid -> chunk text`` for everything the run retrieved, so
     this is a read-only check over recorded evidence: no model call, no database.
+    Short ids are expanded first, and a span with **no chunk id in the window** is
+    not counted: a ledger task name or an emphasis quote is not an evidence quote.
     """
+    answer = expand_short_ids(answer or "", texts)
     normalized = {key: _words(value) for key, value in texts.items()}
     in_cited = elsewhere = total = 0
 
-    for match in _QUOTED.finditer(answer or ""):
-        segments = _span_segments(match.group(1))
+    for match in _QUOTED.finditer(answer):
+        segments = _span_segments(_quoted_text(match))
 
         if not segments:
             continue
 
-        total += 1
-        holders = {key for key, body in normalized.items() if all(s in body for s in segments)}
         nearby = set(
             re.findall(
                 r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
                 answer[max(0, match.start() - window) : match.end() + window],
             )
         )
+
+        if not nearby:
+            continue
+
+        total += 1
+        holders = {key for key, body in normalized.items() if all(s in body for s in segments)}
 
         if holders & nearby:
             in_cited += 1

@@ -15,7 +15,9 @@ from lens.observability.claims import (
     ClaimFrame,
     align_quotes,
     parse_frames,
+    quoted_spans,
     split_long_units,
+    strip_self_reported_gaps,
     verify_frame,
     verify_units,
 )
@@ -311,6 +313,36 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report.covered_units, 1)
         self.assertEqual(report.coverage, 0.5)
         self.assertEqual(report.to_dict()["run_id"], "run-1")
+
+
+class GapAndQuoteTests(unittest.TestCase):
+    def test_a_bold_gap_heading_with_a_period_is_stripped(self) -> None:
+        answer = (
+            "Finding one [11111111-1111-5111-8111-111111111111].\n\n"
+            "**Could not support.**\n"
+            "- I did not read the rest of the paper.\n"
+        )
+
+        stripped = strip_self_reported_gaps(answer)
+
+        self.assertNotIn("Could not support", stripped)
+        self.assertIn("Finding one", stripped)
+
+    def test_a_plain_sentence_with_a_gap_phrase_is_not_a_heading(self) -> None:
+        text = "I could not support this claim with the evidence I read."
+
+        self.assertEqual(strip_self_reported_gaps(text), text)
+
+    def test_a_short_quote_does_not_open_a_false_span(self) -> None:
+        # A straight quote is both opener and closer. The closing quote of a short
+        # quoted word used to open a span that ran to the next quote, so the prose
+        # between them was counted as an evidence quote.
+        text = (
+            'He calls it "largely linear" and the paper then explains at length '
+            'why that matters "designed to retrieve answers from long contexts".'
+        )
+
+        self.assertEqual(quoted_spans(text), ["designed to retrieve answers from long contexts"])
 
 
 if __name__ == "__main__":

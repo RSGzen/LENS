@@ -25,7 +25,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from lens.observability.citations import normalize_span
+from lens.observability.citations import _QUOTED, _quoted_text, normalize_span
 
 #: Predicates a frame may carry. The first four have a mechanical check; the
 #: rest are kept so an answer is not forced into a shape the text does not have,
@@ -468,14 +468,18 @@ def strip_self_reported_gaps(answer: str) -> str:
     lines = answer.splitlines()
 
     for index, line in enumerate(lines):
-        heading = line.strip().strip("*_#`: ").strip()
+        raw = line.strip()
+        heading = raw.strip("*_#`: ").strip()
 
         if not heading or len(heading) > GAP_HEADING_MAX_CHARS:
             continue
 
-        # A heading, not a sentence: short, starts a line with a capital, and does not
-        # end in a full stop.
-        if heading.endswith(".") or not heading[:1].isupper():
+        # A heading, not a sentence: short, starts a line with a capital, and does
+        # not end in a full stop -- unless it is marked as a heading (bold or #),
+        # where a trailing period is common: `**Could not support.**`.
+        marked = raw.startswith(("#", "**", "__")) or raw.endswith("**")
+
+        if (heading.endswith(".") and not marked) or not heading[:1].isupper():
             continue
 
         lowered = heading.lower()
@@ -486,14 +490,9 @@ def strip_self_reported_gaps(answer: str) -> str:
     return answer
 
 
-#: A quoted span in an answer: straight or typographic quotes, long enough to be
-#: a quotation rather than a scare-quote around one word.
-_QUOTED = re.compile(r"[\u201c\"]([^\u201d\"]{25,400})[\u201d\"]")
-
-
 def quoted_spans(text: str) -> list[str]:
     """Return the quoted spans in one claim unit, in reading order."""
-    return [match.group(1) for match in _QUOTED.finditer(text or "")]
+    return [_quoted_text(match) for match in _QUOTED.finditer(text or "")]
 
 
 def split_long_units(
