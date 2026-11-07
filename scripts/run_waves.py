@@ -376,7 +376,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"unknown cell {args.through!r}", file=sys.stderr)
         return 2
 
-    plan_ok = _print_table(plan)
+    # ``--through`` is the staged-spend boundary: cells after it are not part of
+    # this invocation, so a wave that is not built yet must not block the one that
+    # is. Validate and run only the slice that this invocation covers.
+    cells = plan["waves"]
+
+    if args.through:
+        order = [cell["id"] for cell in cells]
+        cells = cells[: order.index(args.through) + 1]
+
+    view = {**plan, "waves": cells}
+    plan_ok = _print_table(view)
 
     if args.dry_run:
         return 0 if plan_ok else 1
@@ -398,14 +408,14 @@ def main(argv: list[str] | None = None) -> int:
     log_path = wave_dir / "waves.log"
     freeze = _freeze_commit()
     cumulative = float(args.prior_spend)
-    expected = sum(int(cell["expect"]) for cell in plan["waves"])
+    expected = sum(int(cell["expect"]) for cell in cells)
 
     key = facts["key_remaining"]
     key_text = f"${key:.2f}" if isinstance(key, float) else "unknown"
 
     _log(
         log_path,
-        f"{_now()} plan_start name={plan['name']} cells={len(plan['waves'])} "
+        f"{_now()} plan_start name={plan['name']} cells={len(cells)} "
         f"expect={expected} prior=${cumulative:.2f} freeze={freeze} "
         f"digest={facts['digest']} key={key_text} disk={facts['free_gb']}GB "
         f"through={args.through or '(all)'}",
@@ -413,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
 
     consecutive_failures = 0
 
-    for cell in plan["waves"]:
+    for cell in cells:
         ident = cell["id"]
         status = cell_status(cell)
 

@@ -207,6 +207,34 @@ class DryRunTestCase(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("runs=4", out.getvalue())
 
+    def test_through_a_cell_ignores_the_cells_after_it(self) -> None:
+        # A wave that is not built yet must not block the one that is.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _campaign(root)
+            plan = root / "plan.json"
+            plan.write_text(
+                json.dumps(
+                    {
+                        "name": "unit",
+                        "waves": [
+                            {"id": "w1", "campaign": "campaigns/c.json", "expect": 4},
+                            {"id": "w2", "campaign": "campaigns/missing.json", "expect": 9},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(run_waves.config, "REPO_ROOT", root),
+                redirect_stdout(io.StringIO()) as out,
+            ):
+                code = run_waves.main([str(plan), "--dry-run", "--through", "w1"])
+
+        self.assertEqual(code, 0)
+        self.assertNotIn("w2", out.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
