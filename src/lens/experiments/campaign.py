@@ -17,6 +17,22 @@ from typing import Any
 _SAFE = set("abcdefghijklmnopqrstuvwxyz0123456789-_.")
 
 
+def _env(raw: Any, label: str) -> dict[str, str]:
+    """Return one env block as strings; raise when it is not an object.
+
+    ``docker compose`` refuses a non-string value, so a campaign that carries an
+    int would fail at launch rather than at validation. One place converts and one
+    place checks, so an arm and a query cannot disagree about the shape.
+    """
+    if raw is None:
+        return {}
+
+    if not isinstance(raw, dict):
+        raise ValueError(f"{label} env must be an object")
+
+    return {str(key): str(value) for key, value in raw.items()}
+
+
 def load_campaign(path: str | Path) -> dict[str, Any]:
     """Load and validate a campaign file; raise ``ValueError`` on a bad shape.
 
@@ -56,6 +72,9 @@ def load_campaign(path: str | Path) -> dict[str, Any]:
 
             seen.add(ident)
 
+            if isinstance(item, dict):
+                _env(item.get("env"), f"{field} {ident!r}")
+
     return payload
 
 
@@ -70,7 +89,13 @@ def build_jobs(campaign: dict[str, Any]) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
 
     for arm in campaign["arms"]:
+        arm_env = _env(arm.get("env"), f"arm {arm['name']!r}")
+
         for query in campaign["queries"]:
+            # A query may carry its own env: one document per instance cannot be
+            # expressed by the arm, which is shared by every job in the campaign.
+            env = {**arm_env, **_env(query.get("env"), f"query {query['id']!r}")}
+
             for repeat in range(repeats):
                 suffix = f".r{repeat + 1}" if repeats > 1 else ""
                 jobs.append(
@@ -80,7 +105,7 @@ def build_jobs(campaign: dict[str, Any]) -> list[dict[str, Any]]:
                         "query_id": query["id"],
                         "query": query["text"],
                         "expect": query.get("expect"),
-                        "env": {str(k): str(v) for k, v in (arm.get("env") or {}).items()},
+                        "env": dict(env),
                     }
                 )
 

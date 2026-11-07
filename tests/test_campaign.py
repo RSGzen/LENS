@@ -74,6 +74,34 @@ class CampaignMatrixTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             _load({"name": "x", "arms": []})
 
+    def test_query_env_overrides_the_arm(self) -> None:
+        # One document per instance cannot live on the arm: the arm is shared by
+        # every job, so the document path has to travel with the query.
+        jobs = build_jobs(
+            _campaign(
+                arms=[{"name": "doc", "env": {"LENS_MODE": "document", "LENS_GATE": "1"}}],
+                queries=[
+                    {
+                        "id": "q1",
+                        "text": "one",
+                        "env": {"LENS_DOCUMENTS": "a.txt", "LENS_GATE": "0"},
+                    },
+                    {"id": "q2", "text": "two"},
+                ],
+            )
+        )
+        envs = {job["query_id"]: job["env"] for job in jobs}
+
+        self.assertEqual(
+            envs["q1"],
+            {"LENS_MODE": "document", "LENS_GATE": "0", "LENS_DOCUMENTS": "a.txt"},
+        )
+        self.assertEqual(envs["q2"], {"LENS_MODE": "document", "LENS_GATE": "1"})
+
+    def test_query_env_must_be_an_object(self) -> None:
+        with self.assertRaises(ValueError):
+            _load(_campaign(queries=[{"id": "q1", "text": "a", "env": "LENS_DOCUMENTS=a"}]))
+
 
 if __name__ == "__main__":
     unittest.main()
