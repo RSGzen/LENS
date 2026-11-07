@@ -16,6 +16,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -149,6 +150,31 @@ class SummaryTestCase(unittest.TestCase):
         self.assertEqual(run_waves.checkpoint_decision(20.0, 20.0), "continue")
         self.assertEqual(run_waves.checkpoint_decision(20.01, 20.0), "stop")
         self.assertEqual(run_waves.checkpoint_decision(20.01, None), "continue")
+
+    def test_existing_cost_counts_only_finished_runs(self) -> None:
+        # A resumed cell is not free: the runs skipped by --skip-existing were
+        # paid for on an earlier attempt.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _campaign(root, arms=1, queries=2)
+            manifests = {
+                "c.a0.q0": SimpleNamespace(status="completed", totals={"cost_usd": 0.10}),
+                "c.a0.q1": SimpleNamespace(status="running", totals={"cost_usd": 0.20}),
+            }
+
+            with (
+                patch.object(run_waves.config, "REPO_ROOT", root),
+                patch("lens.agent.runstore.runs_root", return_value=Path("/runs")),
+                patch(
+                    "lens.agent.runstore.read_manifest",
+                    side_effect=lambda path: manifests.get(path.name),
+                ),
+            ):
+                cost = run_waves.cell_existing_cost(
+                    {"id": "w", "campaign": "campaigns/c.json", "expect": 2}
+                )
+
+        self.assertAlmostEqual(cost, 0.10)
 
 
 class DryRunTestCase(unittest.TestCase):

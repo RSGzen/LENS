@@ -215,7 +215,7 @@ def _log(path: Path, line: str) -> None:
     with path.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
 
-    print(line)
+    print(line, flush=True)
 
 
 def _freeze_commit() -> str:
@@ -273,8 +273,8 @@ def _key_remaining() -> float | None:
         return None
 
 
-def preflight(plan: dict[str, Any]) -> list[str]:
-    """Return the reasons a wave must not start; an empty list means go."""
+def preflight(plan: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    """Return the reasons a wave must not start, plus the facts the log records."""
     problems: list[str] = []
 
     freeze = subprocess.run(
@@ -313,7 +313,15 @@ def preflight(plan: dict[str, Any]) -> list[str]:
             "for the remaining waves"
         )
 
-    return problems
+    facts = {
+        "freeze": freeze.returncode == 0,
+        "digest": digest,
+        "running": running,
+        "key_remaining": remaining,
+        "free_gb": round(free / 1024**3, 1),
+    }
+
+    return problems, facts
 
 
 def _run_cell(cell: dict[str, Any], out_root: Path) -> tuple[int, float]:
@@ -377,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
         print("refusing to run: the plan does not expand to its expected counts", file=sys.stderr)
         return 2
 
-    problems = preflight(plan)
+    problems, facts = preflight(plan)
 
     if problems:
         for problem in problems:
@@ -392,10 +400,14 @@ def main(argv: list[str] | None = None) -> int:
     cumulative = float(args.prior_spend)
     expected = sum(int(cell["expect"]) for cell in plan["waves"])
 
+    key = facts["key_remaining"]
+    key_text = f"${key:.2f}" if isinstance(key, float) else "unknown"
+
     _log(
         log_path,
         f"{_now()} plan_start name={plan['name']} cells={len(plan['waves'])} "
         f"expect={expected} prior=${cumulative:.2f} freeze={freeze} "
+        f"digest={facts['digest']} key={key_text} disk={facts['free_gb']}GB "
         f"through={args.through or '(all)'}",
     )
 
@@ -414,10 +426,12 @@ def main(argv: list[str] | None = None) -> int:
             f"{_now()} cell_start id={ident} campaign={cell['campaign']} "
             f"expect={status['expected']} freeze={freeze}",
         )
+        # Measured before the cell runs: after it, every row it just wrote looks
+        # like a finished run and the cell would be counted twice.
+        prior_cost = cell_existing_cost(cell)
         code, wall = _run_cell(cell, wave_dir / ident)
         rows = _read_rows(wave_dir / ident)
         summary = summarise_rows(rows)
-        prior_cost = cell_existing_cost(cell)
         cumulative += prior_cost + summary["cost"]
         _log(
             log_path,
