@@ -49,6 +49,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
+from uuid import uuid4
 
 from lens import config
 from lens.agent.budget import Budget
@@ -1558,16 +1559,31 @@ class Runtime:
         from lens.agent.sub_tasks import split_batches
 
         batches = split_batches(items, task.max_items)
+        call_id = f"sub-{self._step_idx}-{uuid4().hex[:6]}"
+        total = len(batches)
 
-        if len(batches) <= 1:
-            return [self._run_sub_task_batch(task, params, items, trace_ctx)]
+        if total <= 1:
+            return [
+                self._run_sub_task_batch(
+                    task, params, items, trace_ctx, call_id=call_id, batch_index=1, batch_total=1
+                )
+            ]
 
-        workers = max(1, min(len(batches), SUB_TASK_WORKERS))
+        workers = max(1, min(total, SUB_TASK_WORKERS))
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [
-                pool.submit(self._run_sub_task_batch, task, params, batch, trace_ctx)
-                for batch in batches
+                pool.submit(
+                    self._run_sub_task_batch,
+                    task,
+                    params,
+                    batch,
+                    trace_ctx,
+                    call_id=call_id,
+                    batch_index=index,
+                    batch_total=total,
+                )
+                for index, batch in enumerate(batches, start=1)
             ]
 
             return [future.result() for future in futures]
@@ -1578,8 +1594,19 @@ class Runtime:
         params: Mapping[str, Any],
         batch: list[tuple[str, str]],
         trace_ctx: TraceCtx,
+        *,
+        call_id: str = "",
+        batch_index: int = 1,
+        batch_total: int = 1,
+        depth: int = 0,
     ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
-        """Run one batch and return ``(records, missing, errors)``; never raises."""
+        """Run one batch and return ``(records, missing, errors)``; never raises.
+
+        A batch that spends its output cap on reasoning is retried once as two
+        halves. The root used to see the missing ids and spend a turn re-asking;
+        the host can do that locally, and the two halves give the model the
+        headroom the full batch did not have.
+        """
         requested = [item_id for item_id, _text in batch]
 
         try:
@@ -1595,7 +1622,13 @@ class Runtime:
                 trace_ctx=trace_ctx,
                 response_format=response_format(task, params),
                 max_tokens=task.max_output_tokens,
-                extra={"sub_task": task.name, "items": len(batch)},
+                extra={
+                    "sub_task": task.name,
+                    "items": len(batch),
+                    "call_id": call_id,
+                    "batch_index": batch_index,
+                    "batch_total": batch_total,
+                },
             )
         except Exception as exc:  # noqa: BLE001 - a failed batch is a visible error
             return [], requested, [f"sub-task call failed: {type(exc).__name__}"]
@@ -1607,7 +1640,41 @@ class Runtime:
             self.budget.record_chat(result)
             self.budget.record_sub_task()
 
+        exhausted = result.finish_reason == "length" or not (result.text or "").strip()
+
+        if exhausted and len(batch) > 1 and depth == 0:
+            middle = len(batch) // 2
+            left = self._run_sub_task_batch(
+                task,
+                params,
+                batch[:middle],
+                trace_ctx,
+                call_id=call_id,
+                batch_index=batch_index,
+                batch_total=batch_total,
+                depth=1,
+            )
+            right = self._run_sub_task_batch(
+                task,
+                params,
+                batch[middle:],
+                trace_ctx,
+                call_id=call_id,
+                batch_index=batch_index,
+                batch_total=batch_total,
+                depth=1,
+            )
+
+            return (
+                [*left[0], *right[0]],
+                [*left[1], *right[1]],
+                ["batch hit the output cap; retried as halves", *left[2], *right[2]],
+            )
+
         records, missing, errors = parse_result(task, result.text, requested)
+
+        if exhausted:
+            errors.append(f"batch hit the output cap ({len(batch)} item(s))")
 
         if task.name == "extract":
             # A quote is only usable if the words are in the chunk, so the host

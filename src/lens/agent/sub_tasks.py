@@ -61,9 +61,9 @@ MAX_QUOTES_PER_RECORD = 3
 #: Ids one RPC call accepts. Larger than ``max_items`` on purpose: the host splits
 #: them into batches of ``max_items`` and runs those **concurrently**, so the root
 #: pays one round of latency instead of one per batch. Measured: a batch of four
-#: chunks costs 13–41 s of wall time, and a run that read 32 chunks spent 8 calls
-#: in sequence.
-MAX_IDS_PER_CALL = 12
+#: chunks costs 13-41 s of wall time at high sub effort; the cap is 24 so one call
+#: can cover the chunks the root reads in a round.
+MAX_IDS_PER_CALL = 24
 
 #: Characters of one item sent to a sub-task. A chunk is at most ~512 tokens
 #: (~2,000 characters); the margin covers a chunk that ran long without letting
@@ -549,11 +549,11 @@ def render_prompt_block() -> str:
             f"- **When to use them:** the observation you get back is capped at "
             f"{config.TOOL_RESULT_SUMMARY_CHARS:,} characters (about four chunk "
             "excerpts). To read more chunks than that, do not print their text: call "
-            "``rlm_api.sub_extract`` once with up to 12 ids — the host runs the batches "
-            "concurrently — keep the records in a variable, and print only the parts you "
-            "need. Keep the ``quotes`` field: those spans are checked against their chunk "
-            "host-side, so they are citable as they stand, which a summary or a "
-            "paraphrase never is.",
+            f"``rlm_api.sub_extract`` once with up to {MAX_IDS_PER_CALL} ids — the host "
+            "runs the batches concurrently — keep the records in a variable, and print "
+            "only the parts you need. Keep the ``quotes`` field: those spans are checked "
+            "against their chunk host-side, so they are citable as they stand, which a "
+            "summary or a paraphrase never is.",
             f"- At most {config.MAX_SUB_TASKS} sub-task calls per query.",
             "- The ids in a result are stamped from the ids you passed, so a record",
             "  cannot invent evidence. A sub-task answer is a derived record: cite the",

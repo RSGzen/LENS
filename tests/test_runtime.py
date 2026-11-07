@@ -20,6 +20,7 @@ from lens import config
 from lens.agent.budget import Budget, BudgetLimits
 from lens.agent.runtime import Runtime
 from lens.agent.sandbox_session import ExecResult
+from lens.agent.sub_tasks import get_task
 from lens.agent.tool_registry import ToolRegistry, args_hash
 from lens.models import CallResult, JevResult
 from lens.observability.trajectory import TraceCtx, Trajectory
@@ -289,6 +290,54 @@ class RuntimeTestCase(unittest.TestCase):
             "last turn the iteration cap permits",
             runtime.client.chat_calls[-1]["messages"][-1]["content"],
         )
+
+    def test_a_capped_sub_batch_is_retried_as_halves(self) -> None:
+        task = get_task("extract")
+        assert task is not None
+        batch = [("c1", "quote one is here"), ("c2", "quote two is here")]
+        params = {"chunk_ids": ["c1", "c2"], "fields": ["claims"]}
+        payload = json.dumps(
+            {
+                "records": [
+                    {"id": "c1", "claims": ["one"], "quotes": ["quote one is here"]},
+                    {"id": "c2", "claims": ["two"], "quotes": ["quote two is here"]},
+                ]
+            }
+        )
+
+        class RetryClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def chat(self, role: str, messages: list, **kwargs: object) -> CallResult:
+                self.calls += 1
+                empty = self.calls == 1
+                text = "" if empty else payload
+
+                return CallResult(
+                    text=text,
+                    message={"role": "assistant", "content": text},
+                    model="fake",
+                    provider="fake",
+                    model_snapshot=None,
+                    tokens_in=1,
+                    tokens_out=1,
+                    latency_ms=1,
+                    cost_usd=0.0,
+                    finish_reason="length" if empty else "stop",
+                )
+
+        client = RetryClient()
+        self.runtime.client = client  # type: ignore[assignment]
+
+        records, missing, errors = self.runtime._run_sub_task_batch(
+            task, params, batch, TraceCtx("run-test", 0, "sub")
+        )
+
+        self.assertEqual(len(records), 2)
+        self.assertEqual(missing, [])
+        self.assertEqual(client.calls, 3)
+        self.assertTrue(any("retried as halves" in error for error in errors))
 
     def test_the_ledger_tools_accept_the_create_result_dict(self) -> None:
         # The model is told to keep the id in a variable, but it often passes the
