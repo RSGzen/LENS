@@ -278,6 +278,38 @@ class UiDataTestCase(unittest.TestCase):
         self.assertNotIn("lens-cite", rendered)
         self.assertIn(CHUNK_A, rendered)
 
+    def test_claim_ledger_loads_and_marks_an_empty_unit(self) -> None:
+        self._make_run("run-a", answer=f"answer citing {CHUNK_A}\n")
+        ledger = {
+            "run_id": "run-a",
+            "units": 2,
+            "coverage": 0.5,
+            "counts": {"grounded": 1, "contradicted": 0, "unverifiable": 0},
+            "cost_usd": 0.01,
+            "tokens_out": 10,
+            "errors": [],
+            "frames": [
+                {
+                    "unit_index": 0,
+                    "text": "claim one",
+                    "predicate": "reports",
+                    "quote_source": "answer",
+                    "chunk_id": CHUNK_A,
+                    "verdict": {"status": "grounded", "reason": ""},
+                }
+            ],
+        }
+        (data.runs_root() / "run-a" / "claims.json").write_text(
+            json.dumps(ledger), encoding="utf-8"
+        )
+
+        view = data.load_run("run-a")
+
+        assert view is not None and view.claims is not None
+        rows = data.claim_rows(view.claims)
+        self.assertEqual([row["status"] for row in rows], ["grounded", "uncovered"])
+        self.assertEqual(rows[0]["source"], "answer")
+
     def test_short_title_ellipsises_at_the_limit(self) -> None:
         label = data.short_title("a" * 80)
 

@@ -157,6 +157,20 @@ class GateCall:
 
 
 @dataclass
+class ClaimLedger:
+    """The recorded claim ledger (``claims.json``) as the viewer reads it."""
+
+    run_id: str
+    units: int = 0
+    coverage: float = 0.0
+    counts: dict[str, int] = field(default_factory=dict)
+    cost_usd: float = 0.0
+    tokens_out: int = 0
+    errors: list[str] = field(default_factory=list)
+    frames: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
 class RunView:
     """Everything one run shows: identity, turns, meters, citations, answer."""
 
@@ -170,6 +184,8 @@ class RunView:
     evidence: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
     #: arxiv_id -> paper metadata (title, authors, year) from the recorded payloads.
     papers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: the recorded claim ledger, when the run has one.
+    claims: ClaimLedger | None = None
     #: turn number -> the gate calls made in that turn, in the order they ran.
     gates: dict[int, list[GateCall]] = field(default_factory=dict)
     has_sources: bool = False
@@ -360,10 +376,95 @@ def load_run(run_id: str) -> RunView | None:
         answer=answer,
         evidence=_evidence_by_turn(turns, trajectory),
         papers=_papers_by_turn(turns, trajectory),
+        claims=load_claims(str(run_id)),
         gates=gate_calls(str(run_id)),
         has_sources=(run_dir / "sources.md").is_file(),
         has_report=(run_dir / "report.md").is_file(),
     )
+
+
+def load_claims(run_id: str) -> ClaimLedger | None:
+    """Read ``claims.json`` for one run; ``None`` when it is absent or damaged.
+
+    A missing ledger is normal for a run recorded before the claim pass existed,
+    and a damaged one must not stop the answer from opening.
+    """
+    if not is_run_id(run_id):
+        return None
+
+    path = runs_root() / str(run_id) / "claims.json"
+
+    if not path.is_file():
+        return None
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    frames = [frame for frame in payload.get("frames") or [] if isinstance(frame, dict)]
+    counts = {
+        str(key): int(value)
+        for key, value in (payload.get("counts") or {}).items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
+
+    return ClaimLedger(
+        run_id=str(payload.get("run_id") or run_id),
+        units=int(payload.get("units") or 0),
+        coverage=float(payload.get("coverage") or 0.0),
+        counts=counts,
+        cost_usd=float(payload.get("cost_usd") or 0.0),
+        tokens_out=int(payload.get("tokens_out") or 0),
+        errors=[str(error) for error in payload.get("errors") or []],
+        frames=frames,
+    )
+
+
+def claim_rows(ledger: ClaimLedger) -> list[dict[str, Any]]:
+    """Return one display row per frame, plus an ``uncovered`` row per empty unit."""
+    rows: list[dict[str, Any]] = []
+    covered: set[int] = set()
+
+    for index, frame in enumerate(ledger.frames, start=1):
+        verdict = frame.get("verdict") or {}
+        unit = frame.get("unit_index")
+
+        if isinstance(unit, int):
+            covered.add(unit)
+
+        rows.append(
+            {
+                "#": index,
+                "status": str(verdict.get("status") or ""),
+                "claim": " ".join(str(frame.get("text") or "").split())[:220],
+                "predicate": frame.get("predicate"),
+                "source": frame.get("quote_source"),
+                "quote": " ".join(str(frame.get("quote") or "").split())[:160],
+                "chunk": str(frame.get("chunk_id") or "")[:8],
+            }
+        )
+
+    for unit in range(ledger.units):
+        if unit in covered:
+            continue
+
+        rows.append(
+            {
+                "#": len(rows) + 1,
+                "status": "uncovered",
+                "claim": f"unit {unit} produced no frame",
+                "predicate": None,
+                "source": None,
+                "quote": "",
+                "chunk": "",
+            }
+        )
+
+    return rows
 
 
 def gate_calls(run_id: str) -> dict[int, list[GateCall]]:

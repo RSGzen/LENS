@@ -955,8 +955,38 @@ def render_evidence(view: data.RunView) -> None:
     )
 
 
+def render_claims(view: data.RunView) -> None:
+    """The claim ledger: what the verifier grounded, above the answer it describes."""
+    ledger = view.claims
+
+    if ledger is None:
+        return
+
+    st.markdown("## Claim ledger")
+    counts = ledger.counts
+    st.caption(
+        f"coverage **{ledger.coverage:.0%}** · "
+        f"{counts.get('grounded', 0)} grounded · "
+        f"{counts.get('contradicted', 0)} contradicted · "
+        f"{counts.get('unverifiable', 0)} unverifiable · "
+        f"{ledger.units} units · ${ledger.cost_usd:.4f} · "
+        f"{ledger.tokens_out:,} output tokens"
+    )
+
+    rows = data.claim_rows(ledger)
+    statuses = ["all", "grounded", "contradicted", "unverifiable", "uncovered"]
+    chosen = st.selectbox("status", statuses, key=f"claims_status_{view.run_id}")
+    shown = rows if chosen == "all" else [row for row in rows if row["status"] == chosen]
+
+    st.dataframe(shown, hide_index=True, width="stretch")
+
+    if ledger.errors:
+        st.warning("claim extractor errors: " + "; ".join(ledger.errors[:3]))
+
+
 def render_answer(view: data.RunView) -> None:
     """The answer and its citation trace (U8) - the model's words, then the join."""
+    render_claims(view)
     st.markdown("## Answer")
     st.markdown(_CITE_CSS, unsafe_allow_html=True)
 
