@@ -57,6 +57,30 @@ class ReplayTestCase(unittest.TestCase):
             latency_ms=900,
         )
 
+    def _sub_chat(self, step: int, *, items: int = 2) -> None:
+        self.traj.log_event(
+            trace_ctx=TraceCtx("run-replay", step, "sub"),
+            call_type="chat",
+            action="chat.completion",
+            model="deepseek/deepseek-v4.1-flash",
+            provider="wafer/us",
+            prompt_ref=self.traj.store_blob(json.dumps({"messages": []})),
+            completion_ref=self.traj.store_blob(
+                json.dumps(
+                    {
+                        "records": [{"id": "c1", "quotes": ["a"]}],
+                        "missing_ids": [],
+                        "errors": [],
+                    }
+                )
+            ),
+            tokens_in=50,
+            tokens_out=10,
+            cost_usd=0.001,
+            latency_ms=300,
+            extra={"sub_task": "extract", "items": items},
+        )
+
     def _verdict(self, step: int, stage: str, verdict: str, confidence: float) -> None:
         """Log one gate verdict the way the runtime does: its own event."""
         self.trajectory.log_event(
@@ -155,6 +179,25 @@ class ReplayTestCase(unittest.TestCase):
         self.assertEqual(step.latency_ms, 120)
         self.assertEqual(step.gate, gate)
         self.assertIsNotNone(step.result_ref)
+
+    def test_a_sub_task_is_a_card_not_a_host_tool(self) -> None:
+        self._chat(0, "```python\nx = 1\n```")
+        self._sub_chat(0)
+        self._exec(0, "x = 1", "")
+
+        turn = replay_turns(self.traj)[0]
+
+        self.assertEqual(len(turn.tools), 0)
+        self.assertEqual(len(turn.sub_tasks), 1)
+        task = turn.sub_tasks[0]
+        self.assertEqual(task.name, "extract")
+        self.assertEqual(task.items, 2)
+        self.assertEqual(task.tokens_in, 50)
+        self.assertIn("1 records", task.result_summary or "")
+        self.assertIsNotNone(task.result_ref)
+        summary = replay_summary([turn])
+        self.assertEqual(summary["sub_tasks"], 1)
+        self.assertEqual(summary["code_blocks"], 1)
 
     def test_observation_is_what_the_model_saw(self) -> None:
         self._chat(0, "```python\nprint(x)\n```")

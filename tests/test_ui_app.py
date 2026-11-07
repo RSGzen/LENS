@@ -138,6 +138,29 @@ class UiAppTestCase(unittest.TestCase):
                 },
             )
 
+        traj.log_event(
+            trace_ctx=TraceCtx(run_id, 0, "sub"),
+            call_type="chat",
+            action="chat.completion",
+            model="deepseek/deepseek-v4.1-flash",
+            provider="wafer/us",
+            prompt_ref=traj.store_blob(json.dumps({"messages": []})),
+            completion_ref=traj.store_blob(
+                json.dumps(
+                    {
+                        "records": [{"id": CHUNK, "quotes": ["quote"]}],
+                        "missing_ids": [],
+                        "errors": [],
+                    }
+                )
+            ),
+            tokens_in=50,
+            tokens_out=10,
+            cost_usd=0.001,
+            latency_ms=400,
+            extra={"sub_task": "extract", "items": 2},
+        )
+
         runstore.write_manifest(
             self.root / run_id,
             runstore.RunManifest(
@@ -169,8 +192,12 @@ class UiAppTestCase(unittest.TestCase):
         self.assertEqual(labels["turns"], "2")
         self.assertEqual(labels["cap"], "$1.00")  # from the manifest, not config
         self.assertEqual(labels["cached tokens"], "60")
-        self.assertEqual(labels["cache hit"], "20%")
+        self.assertEqual(labels["cache hit"], "17%")
+        self.assertEqual(str(labels["host tools"]), "2")
+        self.assertEqual(str(labels["sub-tasks"]), "1")
+        self.assertEqual(str(labels["code blocks"]), "0")
         self.assertTrue(any("60 cached (30%)" in c.value for c in at.caption))
+        self.assertTrue(any("sub-task" in m.value for m in at.markdown))
         self.assertTrue(any("Recorded playback" in c.value for c in at.caption))
 
     def _add_gate(self, run_id: str, step: int = 0) -> None:
@@ -300,10 +327,23 @@ class UiAppTestCase(unittest.TestCase):
     def test_payload_toggle_renders_the_blob(self) -> None:
         at = self._app()
 
-        self.assertEqual(len(at.checkbox), 1)  # one tool call in the turn 0 card
+        self.assertEqual(len(at.checkbox), 2)  # one tool + one sub-task in turn 0
+
         at.checkbox[0].check().run()
 
         self.assertEqual([str(e.value) for e in at.exception], [])
+        self.assertTrue(
+            any(button.label == "Download Full Payload" for button in at.download_button)
+        )
+
+    def test_the_sub_task_card_has_its_own_payload_download(self) -> None:
+        at = self._app()
+
+        # Turn 0 renders the tool card first, then the sub-task card.
+        at.checkbox[1].check().run()
+
+        self.assertEqual([str(e.value) for e in at.exception], [])
+        self.assertTrue(any(c.value == "2 items" for c in at.caption))
         self.assertTrue(
             any(button.label == "Download Full Payload" for button in at.download_button)
         )

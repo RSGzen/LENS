@@ -46,6 +46,7 @@ from lens.clients import LensClient
 from lens.experiments.campaign import build_jobs, load_campaign
 from lens.experiments.polarity import PolarityResult, probe_polarity
 from lens.observability.citations import resolve_citations
+from lens.observability.replay import replay_summary, replay_turns
 from lens.observability.trajectory import TraceCtx, Trajectory
 
 
@@ -126,6 +127,13 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
     manifest = runstore.read_manifest(runstore.runs_root() / job["run_id"])
     totals = (manifest.totals if manifest else None) or {}
     counts = resolve_citations(job["run_id"]).counts if manifest else {}
+    turns = []
+    trajectory_path = runstore.runs_root() / job["run_id"] / "trajectory.jsonl"
+
+    if manifest is not None and trajectory_path.is_file():
+        turns = replay_turns(Trajectory(job["run_id"]))
+
+    work = replay_summary(turns)
     cost = float(totals.get("cost_usd") or 0.0)
     tokens_in = int(totals.get("tokens_in") or 0)
     tokens_out = int(totals.get("tokens_out") or 0)
@@ -153,6 +161,12 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
         "cost_usd": round(cost, 6),
         # The credit-load fee is part of the reported $/query.
         "cost_usd_with_fee": round(cost * config.CREDIT_FEE, 6),
+        # Work counters. A sub-task is a chat call and a code block is an exec;
+        # neither is a host-tool dispatch, and the tool column alone made a
+        # 35-chunk, 9-sub-task run look idle.
+        "host_tools": int(work.get("tool_calls") or 0),
+        "sub_tasks": int(work.get("sub_tasks") or 0),
+        "code_blocks": int(work.get("code_blocks") or 0),
         "cited": counts.get("cited") or 0,
         "resolved": counts.get("resolved") or 0,
         "unresolved": counts.get("unresolved") or 0,

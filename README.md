@@ -217,7 +217,9 @@ keeps the full id as the copy surface. The Paper lookup page lists a paper's
 chunks and reads the selected chunk's text. A run with a claim ledger shows its
 coverage, statuses and one row per claim above the answer. The run meters show
 cached prompt tokens and the cache-hit share, and each turn card repeats them
-beside `tokens in`.
+beside `tokens in`. Host-mediated sub-task calls (`sub_extract`, `sub_summarise`,
+`sub_classify`) render as their own cards with the item count, latency, result
+summary and a full-payload download.
 
 ![Recorded Runs page](docs/images/recorded-runs.png)
 

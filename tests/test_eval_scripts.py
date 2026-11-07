@@ -339,6 +339,9 @@ class CampaignRowTests(unittest.TestCase):
         self.assertEqual(row["cached_share"], 0.75)
         self.assertEqual(row["reasoning_share"], 0.5)
         self.assertEqual(row["stop_reason"], "iterations")
+        self.assertEqual(row["host_tools"], 0)
+        self.assertEqual(row["sub_tasks"], 0)
+        self.assertEqual(row["code_blocks"], 0)
         self.assertAlmostEqual(row["cost_usd_with_fee"], 0.25 * 1.055, places=6)
 
     def test_a_missing_run_still_produces_a_row(self) -> None:

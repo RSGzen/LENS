@@ -45,7 +45,7 @@ from typing import Any, Sequence
 import streamlit as st
 
 from lens.agent import runstore
-from lens.observability.replay import ToolStep, Turn
+from lens.observability.replay import SubTaskStep, ToolStep, Turn
 from lens.tools import evaluate
 from lens.ui import data
 
@@ -527,17 +527,19 @@ def render_meters(view: data.RunView) -> None:
     summary = view.summary
     cursor = st.session_state["cursor"]
 
-    top = st.columns(4)
+    top = st.columns(5)
     top[0].metric("tokens in (chat)", f"{summary['tokens_in']:,}")
     top[1].metric("cached tokens", f"{summary['cached_tokens']:,}")
     top[2].metric("cache hit", _cache_text(summary["cached_tokens"], summary["tokens_in"]))
     top[3].metric("tokens out", f"{summary['tokens_out']:,}")
+    top[4].metric("reasoning tokens", f"{summary['reasoning_tokens']:,}")
 
-    bottom = st.columns(4)
-    bottom[0].metric("gate tokens", f"{summary['jev_tokens_in']:,}")
-    bottom[1].metric("tool calls", summary["tool_calls"])
-    bottom[2].metric("gates pass/fail", f"{summary['gates_passed']} / {summary['gates_failed']}")
-    bottom[3].metric("reasoning tokens", f"{summary['reasoning_tokens']:,}")
+    bottom = st.columns(5)
+    bottom[0].metric("host tools", summary["tool_calls"])
+    bottom[1].metric("sub-tasks", summary["sub_tasks"])
+    bottom[2].metric("code blocks", summary["code_blocks"])
+    bottom[3].metric("gate tokens", f"{summary['jev_tokens_in']:,}")
+    bottom[4].metric("gates pass/fail", f"{summary['gates_passed']} / {summary['gates_failed']}")
 
     series = view.tokens_in_series[: cursor + 1]
     cached = view.cached_series[: cursor + 1]
@@ -695,6 +697,9 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
 
         for slot, tool in enumerate(turn.tools):
             render_tool(run_id, tool, f"{turn.turn}-{slot}")
+
+        for slot, task in enumerate(turn.sub_tasks):
+            render_sub_task(run_id, task, f"{turn.turn}-sub-{slot}")
 
         if turn.observation:
             st.markdown("**Observation — what the model actually saw**")
@@ -920,6 +925,66 @@ def render_tool(run_id: str, tool: ToolStep, slot: str) -> None:
         "Download Full Payload",
         data=text,
         file_name=f"{run_id}-{tool.name}-{slot}.json",
+        key=f"download::{toggle_key}",
+    )
+
+    if len(text) > PAYLOAD_PREVIEW_CHARS:
+        st.caption(
+            f"Payload is {len(text):,} chars — previewing the first "
+            f"{PAYLOAD_PREVIEW_CHARS:,}; the button above has all of it."
+        )
+        text = text[:PAYLOAD_PREVIEW_CHARS]
+
+    try:
+        st.json(json.loads(text), expanded=False)
+    except ValueError:
+        st.code(text, language="text")
+
+
+def render_sub_task(run_id: str, task: SubTaskStep, slot: str) -> None:
+    """One host-mediated sub-task: name · items · latency · full reply (U5).
+
+    It sits beside the tool cards because it is the same unit of work — the root
+    asked the host for something and got a result — but it is labelled a sub-task
+    and kept out of the host-tool count. The full result is a model reply, not a
+    tool payload; the toggle downloads it exactly as recorded.
+    """
+    columns = st.columns([3, 1, 1, 1, 2])
+    columns[0].markdown(f"`{task.name}` · *sub-task*")
+    columns[1].caption(f"{task.items:,} item{'s' if task.items != 1 else ''}")
+    columns[2].caption(_duration(task.latency_ms))
+    columns[3].caption(f"${task.cost_usd:.6f}" if task.cost_usd else "")
+
+    toggle_key = f"sub-payload::{run_id}::{slot}"
+    show = columns[4].checkbox(
+        "Full Payload",
+        key=toggle_key,
+        help="Show the full sub-task reply",
+    )
+
+    if task.error:
+        st.error(f"sub-task error: {task.error.get('type')}: {task.error.get('message')}")
+
+    if task.result_summary:
+        with st.expander("Result Summary (sub-task reply)"):
+            st.code(task.result_summary, language="text")
+
+    if task.tokens_in or task.tokens_out:
+        st.caption(f"{task.tokens_in or 0:,} in / {task.tokens_out or 0:,} out")
+
+    if not show or not task.result_ref:
+        return
+
+    text = data.blob_text(run_id, task.result_ref)
+
+    if text is None:
+        st.warning("Sub-task reply blob missing from the bundle")
+        return
+
+    st.download_button(
+        "Download Full Payload",
+        data=text,
+        file_name=f"{run_id}-{task.name}-{slot}.json",
         key=f"download::{toggle_key}",
     )
 

@@ -55,6 +55,26 @@ class ToolStep:
 
 
 @dataclass
+class SubTaskStep:
+    """One host-mediated sub-task call inside a turn.
+
+    Rendered like a tool call, but kept separate: a sub-task is a model call, not
+    a registry dispatch. Counting it as a tool would make the host-tool meter
+    report work the registry never did.
+    """
+
+    name: str
+    items: int = 0
+    result_summary: str | None = None
+    result_ref: str | None = None
+    latency_ms: int | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
+    error: dict[str, Any] | None = None
+
+
+@dataclass
 class Turn:
     """Everything one root iteration did, ready to render."""
 
@@ -95,6 +115,10 @@ class Turn:
     ok: bool | None = None
     error: dict[str, Any] | None = None
     tools: list[ToolStep] = field(default_factory=list)
+    #: Host-mediated sub-task calls made inside this turn, in call order. They are
+    #: chat calls, not tool dispatches, so they are rendered as their own cards and
+    #: excluded from the host-tool count.
+    sub_tasks: list[SubTaskStep] = field(default_factory=list)
     emits: list[str] = field(default_factory=list)
     gate: dict[str, Any] | None = None
     #: Every verdict logged in this turn, in order. A turn can hold several (a
@@ -136,6 +160,43 @@ def _load_json(trajectory: Trajectory, ref: str | None, missing: list[str]) -> A
     except ValueError:
         missing.append(ref or "")
         return None
+
+
+def _sub_task_summary(text: str | None) -> str | None:
+    """Return a bounded digest of one sub-task reply, for its card.
+
+    The replies are JSON objects with different keys per task (``records`` for
+    ``extract``, counts for the others). The card shows the counts; the full
+    payload stays behind the toggle. A non-JSON or empty reply degrades to a
+    character count rather than hiding the call.
+    """
+    if not text:
+        return None
+
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return f"{len(text):,} chars"
+
+    if isinstance(body, dict):
+        parts: list[str] = []
+
+        for key in ("records", "items", "results", "answers"):
+            value = body.get(key)
+
+            if isinstance(value, list):
+                parts.append(f"{len(value)} {key}")
+
+        for key in ("missing_ids", "errors"):
+            value = body.get(key)
+
+            if isinstance(value, list):
+                parts.append(f"{len(value)} {key}")
+
+        if parts:
+            return ", ".join(parts)
+
+    return f"{len(text):,} chars"
 
 
 def replay_turns(trajectory: Trajectory) -> list[Turn]:
@@ -247,13 +308,26 @@ def _apply(turn: Turn, event: dict[str, Any], trajectory: Trajectory) -> None:
 
         # The root completion is the turn's message; a sub-task sharing the step
         # must not overwrite it (its text belongs to that call, not the turn).
-        if event.get("completion_ref") and (
-            event.get("actor") == "root" or turn.completion is None
-        ):
-            completion = _load(trajectory, event.get("completion_ref"), turn.missing_refs)
+        # The same load feeds the sub-task card, so a shared step reads the blob once.
+        completion = _load(trajectory, event.get("completion_ref"), turn.missing_refs)
 
-            if completion is not None:
-                turn.completion = completion
+        if completion is not None and (event.get("actor") == "root" or turn.completion is None):
+            turn.completion = completion
+
+        if event.get("actor") == "sub":
+            turn.sub_tasks.append(
+                SubTaskStep(
+                    name=str(extra.get("sub_task") or "sub_task"),
+                    items=int(extra.get("items") or 0),
+                    result_summary=_sub_task_summary(completion),
+                    result_ref=event.get("completion_ref"),
+                    latency_ms=event.get("latency_ms"),
+                    tokens_in=event.get("tokens_in"),
+                    tokens_out=event.get("tokens_out"),
+                    cost_usd=event.get("cost_usd"),
+                    error=event.get("error"),
+                )
+            )
 
     elif call_type == "jev":
         # Gate calls cost money (the decision layer is real spend) but are not context:
@@ -339,8 +413,9 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
 
     Contract: ``{"turns", "tokens_in", "tokens_out", "cached_tokens",
     "reasoning_tokens", "jev_tokens_in", "cost_usd", "chat_cost_usd", "tool_calls",
-    "emits", "gates_passed", "gates_failed", "missing_refs"}`` — all summed or
-    counted from ``turns``, missing values counted as zero.
+    "sub_tasks", "code_blocks", "emits", "gates_passed", "gates_failed",
+    "missing_refs"}`` — all summed or counted from ``turns``, missing values
+    counted as zero.
 
     ``cost_usd`` (chat + gate calls) matches ``Trajectory.totals()["cost_usd"]``
     for the same log; ``chat_cost_usd`` and ``tokens_in/tokens_out`` stay chat-only
@@ -352,6 +427,11 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
     is the part of the prompt the provider served from its cache, the second the
     reasoning half of the output. Both are subsets of ``tokens_in`` /
     ``tokens_out`` and neither changes the caps.
+
+    ``sub_tasks`` and ``code_blocks`` are work counters, not host tools:
+    a sub-task is a chat call, and one code block is the executed block of a turn.
+    They are reported apart so a run that does its reading in ``sub_extract`` does
+    not look idle on the tool meter.
     """
     # Verdicts are logged as their own events; an earlier recorder attached them to
     # the tool call that triggered the gate, and runs recorded that way still have to
@@ -372,6 +452,8 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
         "cost_usd": sum((turn.cost_usd or 0.0) + (turn.jev_cost_usd or 0.0) for turn in turns),
         "chat_cost_usd": sum(turn.cost_usd or 0.0 for turn in turns),
         "tool_calls": sum(len(turn.tools) for turn in turns),
+        "sub_tasks": sum(len(turn.sub_tasks) for turn in turns),
+        "code_blocks": sum(1 for turn in turns if turn.code),
         "emits": sum(len(turn.emits) for turn in turns),
         "gates_passed": sum(1 for gate in gates if gate.get("verdict") == "pass"),
         "gates_failed": sum(1 for gate in gates if gate.get("verdict") == "fail"),
@@ -379,4 +461,4 @@ def replay_summary(turns: list[Turn]) -> dict[str, Any]:
     }
 
 
-__all__ = ["ToolStep", "Turn", "replay_summary", "replay_turns"]
+__all__ = ["SubTaskStep", "ToolStep", "Turn", "replay_summary", "replay_turns"]
