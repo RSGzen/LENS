@@ -78,6 +78,11 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
         },
         "models": {role: spec.id for role, spec in config.MODEL_REGISTRY.items()}
         | {"jev": config.JEV_MODEL_ID},
+        # The reasoning object is part of the arm: a sub role at low and one at high
+        # are different environments even when the model id is identical.
+        "reasoning": {
+            role: dict(spec.reasoning or {}) for role, spec in config.MODEL_REGISTRY.items()
+        },
     }
 
 

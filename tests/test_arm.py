@@ -21,13 +21,18 @@ class ArmFingerprintTestCase(unittest.TestCase):
 
         # It is written into manifest.json, so it must serialise unchanged.
         self.assertEqual(json.loads(json.dumps(arm)), arm)
-        self.assertEqual(set(arm), {"retrieval", "kg", "gate", "mode", "models", "prompt"})
+        self.assertEqual(
+            set(arm), {"retrieval", "kg", "gate", "mode", "models", "prompt", "reasoning"}
+        )
         self.assertEqual(arm["prompt"]["variant"], config.PROMPT_VARIANT)
         self.assertEqual(arm["prompt"]["context_files"], config.CONTEXT_FILES)
         self.assertEqual(arm["retrieval"]["k"], config.RETRIEVAL_K)
         self.assertEqual(arm["retrieval"]["c"], config.RETRIEVAL_C_TOP)
         self.assertEqual(arm["mode"]["recorded"], True)
         self.assertEqual(arm["mode"]["replay"], False)
+        self.assertEqual(
+            arm["reasoning"]["sub"], dict(config.MODEL_REGISTRY["sub"].reasoning or {})
+        )
 
     def test_reads_config_at_call_time(self) -> None:
         # Patched config must show up: the fingerprint describes the run it is

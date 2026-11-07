@@ -684,6 +684,22 @@ def _model_override(spec: ModelSpec, raw: str | None) -> ModelSpec:
     return replace(spec, id=raw, provider_only=(), provider_order=())
 
 
+#: Reasoning effort for the ``sub`` role. The sub model serves structured calls
+#: (segmentation, typed sub-tasks, claim extraction); at ``high`` a four-chunk
+#: extract batch spent 12-15k of its 16k cap on reasoning and one batch per run
+#: returned empty. The probe on the recorded failed batch: high = 16,000 tokens /
+#: 0 records; low = 8,862 tokens / 4 records / 12 quotes; off = 1,376 tokens but
+#: dropped 2 quotes and lost claim coverage. Low is the trade-off; the root stays
+#: high. ``off`` is kept for probes, not as a default.
+SUB_EFFORT = os.environ.get("LENS_SUB_EFFORT", "low").strip().lower()
+
+if SUB_EFFORT not in {"high", "medium", "low", "off"}:
+    raise ValueError(f"bad LENS_SUB_EFFORT {SUB_EFFORT!r} (high, medium, low or off)")
+
+SUB_REASONING = (
+    {"enabled": False} if SUB_EFFORT == "off" else {"enabled": True, "effort": SUB_EFFORT}
+)
+
 MODEL_REGISTRY: dict[Role, ModelSpec] = {
     "root": _model_override(
         ModelSpec(
@@ -706,10 +722,11 @@ MODEL_REGISTRY: dict[Role, ModelSpec] = {
         ModelSpec(
             id="deepseek/deepseek-v4.1-flash",
             supports_reasoning=True,
-            # Same model and same effort as the root: the sub-tasks are extraction
-            # calls whose replies are capped, and a separate reasoning setting would
-            # be a second variable in every arm comparison.
-            reasoning={"enabled": True, "effort": "high"},
+            # The sub model serves structured extraction, not open reasoning. High
+            # effort is paid for in the 16k output cap: one four-chunk batch per run
+            # spent the cap on thinking and returned no records. Low keeps 4 records
+            # and 12 quotes on the same batch. Root stays high.
+            reasoning=SUB_REASONING,
             supports_tools=True,
             supports_response_format=True,
             provider_only=("wafer/us",),
