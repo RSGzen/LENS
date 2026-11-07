@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-11-07T06:55:02+00:00",
-  "commit": "c818bf2fa18c4568416c4dbf4edf2bdc50debd70",
+  "created_at": "2026-11-07T09:22:19+00:00",
+  "commit": "7c85c3e0f3a37701bfcc5ea486f4b1e25266dccf",
   "branch": "main",
   "git_dirty": false,
   "models": {
@@ -21,7 +21,7 @@
       ],
       "reasoning": {
         "enabled": true,
-        "effort": "high"
+        "effort": "low"
       }
     },
     "dev": {
