@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from lens.observability.citations import normalize_span
@@ -109,6 +109,9 @@ class ClaimFrame:
     direction: str | None = None
     quote: str = ""
     chunk_id: str | None = None
+    #: Where the quote came from: ``"answer"`` (the span the answer displays) or
+    #: ``"chunk"`` (a span the extractor chose when the answer has no quotation).
+    quote_source: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON shape written to the claim ledger."""
@@ -125,6 +128,7 @@ class ClaimFrame:
             "direction": self.direction,
             "quote": self.quote,
             "chunk_id": self.chunk_id,
+            "quote_source": self.quote_source,
         }
 
 
@@ -423,6 +427,61 @@ def verify_units(
     return report
 
 
+#: A quoted span in an answer: straight or typographic quotes, long enough to be
+#: a quotation rather than a scare-quote around one word.
+_QUOTED = re.compile(r"[\u201c\"]([^\u201d\"]{25,400})[\u201d\"]")
+
+
+def quoted_spans(text: str) -> list[str]:
+    """Return the quoted spans in one claim unit, in reading order."""
+    return [match.group(1) for match in _QUOTED.finditer(text or "")]
+
+
+def _closest_quote(quote: str, candidates: Sequence[str]) -> str:
+    """Return the candidate that shares the most content with ``quote``."""
+    if len(candidates) == 1:
+        return candidates[0]
+
+    wanted = set(_content_tokens(quote))
+
+    return max(
+        candidates,
+        key=lambda candidate: len(wanted & set(_content_tokens(candidate))) / max(1, len(wanted)),
+    )
+
+
+def align_quotes(
+    frames: Sequence[ClaimFrame],
+    answer_quotes: Mapping[int, Sequence[str]],
+) -> list[ClaimFrame]:
+    """Point every frame at the span the answer displays, when it quotes one.
+
+    The extractor chooses a span from the chunk; the answer may display a
+    different one. Left alone, the ledger can call a claim grounded while the
+    reader cannot find the displayed quote in the chunk. This replaces the
+    frame's quote with the answer's own span and records where it came from.
+    A unit with no quotation keeps the extractor's chunk span.
+    """
+    aligned: list[ClaimFrame] = []
+
+    for frame in frames:
+        candidates = list(answer_quotes.get(frame.unit_index) or ())
+
+        if not candidates:
+            aligned.append(replace(frame, quote_source="chunk"))
+            continue
+
+        aligned.append(
+            replace(
+                frame,
+                quote=_closest_quote(frame.quote, candidates),
+                quote_source="answer",
+            )
+        )
+
+    return aligned
+
+
 def parse_frames(
     payload: Mapping[str, Any] | None,
     units: Sequence[tuple[str, Sequence[str]]],
@@ -513,7 +572,9 @@ __all__ = [
     "ClaimFrame",
     "ClaimReport",
     "FrameVerdict",
+    "align_quotes",
     "parse_frames",
+    "quoted_spans",
     "verify_frame",
     "verify_units",
 ]

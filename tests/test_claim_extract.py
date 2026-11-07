@@ -161,6 +161,49 @@ class ExtractFramesTests(unittest.TestCase):
         content = client.calls[0][1][1]["content"]
         self.assertIn("a unique chunk sentence", content)
 
+    def test_the_instruction_carries_the_answer_quotes(self) -> None:
+        client = FakeClient([_reply(_frame(0))])
+
+        extract_frames(
+            client,
+            self.units,
+            None,
+            answer_quotes={0: ["the answer span"]},
+        )
+
+        content = client.calls[0][1][1]["content"]
+        self.assertIn("the answer span", content)
+
+    def test_verify_answer_uses_the_answer_quote(self) -> None:
+        answer = (
+            'The RLM method "reaches 56.0 accuracy on the OOLONG benchmark" '
+            f"in the reported run [{CHUNK_A}]."
+        )
+        texts = {CHUNK_A: "The RLM method reaches 56.0 accuracy on the OOLONG benchmark."}
+        client = FakeClient(
+            [
+                _reply(
+                    _frame(
+                        0,
+                        CHUNK_A,
+                        predicate="other",
+                        benchmark=None,
+                        metric=None,
+                        value=None,
+                        quote="The RLM method reaches 56.0 accuracy on the OOLONG benchmark",
+                    )
+                )
+            ]
+        )
+
+        report = verify_answer(answer, texts, client, None, run_id="run-1")
+
+        self.assertEqual(report.frames[0].quote_source, "answer")
+        self.assertEqual(
+            report.frames[0].quote,
+            "reaches 56.0 accuracy on the OOLONG benchmark",
+        )
+
     def test_verify_answer_marks_a_supported_frame(self) -> None:
         answer = (
             "The RLM method reaches 56.0 accuracy on the OOLONG trec_coarse "

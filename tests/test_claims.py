@@ -13,6 +13,7 @@ from lens.observability.claims import (
     GROUNDED,
     UNVERIFIABLE,
     ClaimFrame,
+    align_quotes,
     parse_frames,
     verify_frame,
     verify_units,
@@ -187,6 +188,25 @@ class ComparisonTests(unittest.TestCase):
         )
 
         self.assertEqual(verdict.status, UNVERIFIABLE)
+
+
+class AlignTests(unittest.TestCase):
+    def test_the_answer_span_wins(self) -> None:
+        frame = _frame(quote="reaches 56.0 accuracy on OOLONG")
+        answer_quote = "The RLM reaches 56.0 accuracy on the OOLONG benchmark"
+
+        aligned = align_quotes([frame], {0: [answer_quote]})
+
+        self.assertEqual(aligned[0].quote, answer_quote)
+        self.assertEqual(aligned[0].quote_source, "answer")
+
+    def test_a_unit_without_a_quote_keeps_the_chunk_span(self) -> None:
+        frame = _frame(quote="reaches 56.0 accuracy on OOLONG")
+
+        aligned = align_quotes([frame], {})
+
+        self.assertEqual(aligned[0].quote, "reaches 56.0 accuracy on OOLONG")
+        self.assertEqual(aligned[0].quote_source, "chunk")
 
 
 class ParseTests(unittest.TestCase):

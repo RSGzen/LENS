@@ -21,7 +21,9 @@ from lens.observability.claims import (
     PREDICATES,
     ClaimFrame,
     ClaimReport,
+    align_quotes,
     parse_frames,
+    quoted_spans,
     verify_units,
 )
 
@@ -101,12 +103,15 @@ def _instruction(
     units: Sequence[tuple[str, Sequence[str]]],
     indices: Sequence[int],
     texts: Mapping[str, str] | None = None,
+    answer_quotes: Mapping[int, Sequence[str]] | None = None,
 ) -> str:
     """Render the user message for one batch of claim units.
 
     The cited chunk text travels with the unit: a quote has to be copied from
     the chunk, and a model that can only see the answer can only quote the
-    answer, which is a paraphrase by construction.
+    answer, which is a paraphrase by construction. ``answer_quotes`` carries the
+    spans the answer displays, so the frame can use the same sentence the reader
+    sees instead of a different one from the chunk.
     """
     payload = []
 
@@ -125,6 +130,7 @@ def _instruction(
                 "text": units[index][0],
                 "chunk_ids": [str(chunk_id) for chunk_id in units[index][1]],
                 "chunks": chunks,
+                "answer_quotes": list((answer_quotes or {}).get(index) or ()),
             }
         )
 
@@ -144,7 +150,10 @@ def _instruction(
         "Rules:\n"
         "- The ``chunks`` array holds the cited text. Copy the quote character for "
         "character from there. Never paraphrase, shorten or join sentences.\n"
-        "- When the unit already contains a quoted span and an id, emit a reports frame "
+        "- If ``answer_quotes`` is not empty, the frame's quote must be one of those "
+        "spans, copied exactly; the reader sees that quote, so do not choose a "
+        "different sentence from the chunk.\n"
+        "- When the unit contains a quoted span and an id, emit a reports frame "
         "with that quote; do not return other with an empty quote.\n"
         "- The subject must be a name that appears in the quote. Never use a section "
         "heading or a label such as 'Empirical results' as the subject.\n"
@@ -163,6 +172,7 @@ def extract_frames(
     trace_ctx: Any,
     *,
     texts: Mapping[str, str] | None = None,
+    answer_quotes: Mapping[int, Sequence[str]] | None = None,
     usage: list[dict[str, Any]] | None = None,
     budget: Any | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
@@ -172,11 +182,12 @@ def extract_frames(
 
     ``units`` is ``[(claim_text, [chunk_id, ...]), ...]`` in the answer's order.
     ``texts`` maps ``chunk_uuid -> chunk_text`` and is sent with each unit so a
-    quote can be copied from the chunk rather than from the answer. ``usage``
-    collects one ``{cost_usd, tokens_out}`` entry per call, so the report can
-    state what the extractor spent. A failed batch is an error entry, never an
-    exception: one unavailable call must not lose the frames the other batches
-    produced.
+    quote can be copied from the chunk rather than from the answer.
+    ``answer_quotes`` maps a unit index to the spans the answer displays; when it
+    is non-empty the extractor must copy one of them. ``usage`` collects one
+    ``{cost_usd, tokens_out}`` entry per call, so the report can state what the
+    extractor spent. A failed batch is an error entry, never an exception: one
+    unavailable call must not lose the frames the other batches produced.
     """
     frames: list[ClaimFrame] = []
     errors: list[str] = []
@@ -190,7 +201,10 @@ def extract_frames(
                 "sub",
                 [
                     {"role": "system", "content": SYSTEM},
-                    {"role": "user", "content": _instruction(units, indices, texts)},
+                    {
+                        "role": "user",
+                        "content": _instruction(units, indices, texts, answer_quotes),
+                    },
                 ],
                 trace_ctx=trace_ctx,
                 response_format={
@@ -253,24 +267,29 @@ def verify_answer(
 
     ``texts`` maps ``chunk_uuid -> chunk_text`` for everything the run retrieved,
     so the check is offline against recorded evidence. An answer with no claim
-    unit returns an empty report without a model call.
+    unit returns an empty report without a model call. Frames are pointed at the
+    answer's own quoted spans before verification, so the ledger and the reader
+    are looking at the same sentence.
     """
     units = claim_units(answer, include_uncited=True)
 
     if not units:
         return ClaimReport(run_id=run_id, units=0)
 
+    answer_quotes = {index: quoted_spans(text) for index, (text, _ids) in enumerate(units)}
     usage: list[dict[str, Any]] = []
     frames, errors = extract_frames(
         client,
         units,
         trace_ctx,
         texts=texts,
+        answer_quotes=answer_quotes,
         usage=usage,
         budget=budget,
         batch_size=batch_size,
         max_tokens=max_tokens,
     )
+    frames = align_quotes(frames, answer_quotes)
     report = verify_units(units, frames, texts, run_id=run_id)
     report.errors = errors
     report.cost_usd = sum(float(item["cost_usd"]) for item in usage)
