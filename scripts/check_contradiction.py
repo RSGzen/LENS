@@ -33,6 +33,19 @@ _DECIMAL = re.compile(r"\b\d+\.\d+\b")
 #: year is excluded because perturbing it would change the id, not the claim.
 _INTEGER = re.compile(r"(?<![.\d])\b\d{1,3}\b(?![.\d])")
 
+#: Chunk ids, arXiv ids and their bracketed forms. A number inside one is a
+#: citation, not a claim, and must not be the one the control perturbs.
+_CITATION = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"|\b\d{4}\.\d{4,5}(?:v\d+)?\b"
+    r"|\([^)]*\)|\[[^\]]*\]"
+)
+
+
+def claim_text(text: str) -> str:
+    """Return ``text`` without chunk ids, arXiv ids or their brackets."""
+    return " ".join(_CITATION.sub(" ", text).split())
+
 
 def perturb_number(text: str) -> tuple[str, float, float] | None:
     """Return ``(text_with_a_new_number, old, new)``, or ``None`` if no number."""
@@ -97,7 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     selected = None
 
     for unit, ids in units:
-        perturbed = perturb_number(unit)
+        clean = claim_text(unit)
+        perturbed = perturb_number(clean)
 
         if perturbed is None or not ids:
             continue
@@ -107,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         if chunk_id is None:
             continue
 
-        selected = (unit, ids, chunk_id, perturbed)
+        selected = (clean, ids, chunk_id, perturbed)
         break
 
     if selected is None:

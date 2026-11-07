@@ -48,6 +48,15 @@ class PerturbNumberTests(unittest.TestCase):
     def test_an_arxiv_id_is_not_perturbed(self) -> None:
         self.assertIsNone(check_contradiction.perturb_number("2512.24601"))
 
+    def test_a_citation_is_stripped_before_the_number_is_chosen(self) -> None:
+        text = "The system uses 3 stages (a861854f-81de-5011-bfc5-2a4ff6ee159e)."
+        clean = check_contradiction.claim_text(text)
+        perturbed, original, _ = check_contradiction.perturb_number(clean)
+
+        self.assertNotIn("a861854f", clean)
+        self.assertIn("20", perturbed)
+        self.assertEqual(original, 3.0)
+
     def test_text_without_a_number_is_none(self) -> None:
         self.assertIsNone(check_contradiction.perturb_number("no numbers here"))
 
