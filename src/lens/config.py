@@ -465,7 +465,28 @@ PROMPT_VARIANT = (
     .strip()
     .lower()
 )
-PROMPT_VARIANTS = ("full", "naive", "document")
+PROMPT_VARIANTS = ("full", "thin", "naive", "document")
+
+# The prompt-experiment switches. Each is recorded in the arm, so a run that
+# changed one is not mistaken for the baseline. They default to the shipped
+# behaviour; a variant is one environment variable, not a code edit.
+CONTEXT_FILES = os.environ.get("LENS_CONTEXT_FILES", "full").strip().lower()
+KG_PROMPT = os.environ.get("LENS_KG_PROMPT", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+EXTRACT_HINT = os.environ.get("LENS_EXTRACT_HINT", "claims").strip().lower()
+RETRIEVAL_RULE = os.environ.get("LENS_RETRIEVAL_RULE", "refine").strip().lower()
+
+if CONTEXT_FILES not in {"full", "none"}:
+    raise ValueError(f"bad LENS_CONTEXT_FILES {CONTEXT_FILES!r} (full or none)")
+
+if EXTRACT_HINT not in {"claims", "quotes"}:
+    raise ValueError(f"bad LENS_EXTRACT_HINT {EXTRACT_HINT!r} (claims or quotes)")
+
+if RETRIEVAL_RULE not in {"once", "refine"}:
+    raise ValueError(f"bad LENS_RETRIEVAL_RULE {RETRIEVAL_RULE!r} (once or refine)")
 
 # ``0`` removes the ``/sub_task`` route instead of merely not mentioning it: an
 # arm that must not recurse has to be unable to, otherwise it measures prompt

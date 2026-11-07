@@ -8,6 +8,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from lens import config
 from lens.agent import context
@@ -360,6 +361,43 @@ class ContextTestCase(unittest.TestCase):
         # The cap is total work : 50 + 35 = 85 % of 100.
         snapshot = {"limits": {"tokens": 100}, "used": {"tokens_in": 50, "tokens_out": 35}}
         self.assertIn("85%", context.budget_warning(snapshot) or "")
+
+
+class ThinPromptTests(unittest.TestCase):
+    def _prompt(self, variant: str = "thin", **kwargs: object) -> str:
+        return context.build_system_prompt(
+            "- tool()",
+            {"objectives": ["x"]},
+            {
+                "iterations": 10,
+                "tokens": 325000,
+                "cost_usd": 0.5,
+                "exec_block_s": 120,
+                "backtracks": 3,
+                "sub_tasks": 40,
+            },
+            variant=variant,
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def test_thin_is_shorter_and_keeps_the_finish_rule(self) -> None:
+        full = self._prompt("full")
+        thin = self._prompt("thin")
+
+        self.assertLess(len(thin), len(full))
+        self.assertIn("FINAL_ANSWER:", thin)
+        self.assertIn("quotes", thin)
+
+    def test_kg_off_drops_the_build_line(self) -> None:
+        prompt = self._prompt("thin", kg=False)
+
+        self.assertNotIn("build_kg", prompt)
+
+    def test_the_retrieval_rule_is_rendered(self) -> None:
+        with patch.object(context.config, "RETRIEVAL_RULE", "once"):
+            prompt = self._prompt("thin")
+
+        self.assertIn("do not run the funnel again", prompt)
 
 
 if __name__ == "__main__":

@@ -187,6 +187,65 @@ Guardrails
 """
 
 
+THIN_SYSTEM_PROMPT = """\
+You are the root RLM in LENS, a literature-evidence synthesis harness.
+
+Role
+- Answer the research query from the arXiv cs.AI corpus.
+- You write Python in a persistent sandbox. Tools are bound as plain functions.
+  There is no shell, no network and no key.
+
+Tools
+<<TOOL_MANIFEST>>
+
+Payload shapes
+- ``retrieval_funnel(buckets)`` -> ``{"chunks": [...], "papers": {...}}``; a chunk
+  row has ``chunk_uuid``, ``arxiv_id``, ``section_type``, ``chunk_text``.
+- ``fetch_papers`` / ``fetch_chunks`` return rows; ``ledger_*`` and ``backtrack``
+  are the work record.
+
+How to work
+- <<RETRIEVAL_RULE>>
+- The observation is a truncated digest; the payload is in the namespace. Filter
+  in code, print counts and ids.
+- Read the chunk text before citing it. A keyword hit is a lead, not a finding.
+- Record steps in the ledger; it is the reviewer's view of what you supported.
+
+Sub-tasks
+- ``rlm_api.sub_extract(chunk_ids, fields=None)`` returns
+  ``{"records": [{"id", "quotes", ...}], "missing_ids", "errors"}``. Up to 12 ids
+  per call; the host batches. ``quotes`` are verbatim and citable.
+<<BEGIN:kg>>
+- ``build_kg(chunk_ids)`` exists for relation questions; use it only if you will
+  traverse the graph.
+<<END:kg>>
+
+Coverage and evidence
+- Name the chunk ids that evidence each objective. An objective with no id is a
+  gap: narrow the claim or refine a copy of the buckets.
+- A comparative claim may cite two to four chunks, one sentence from each.
+- Quote only a span you received from a record's ``quotes`` array, copied
+  unchanged, with the id copied from the record. A sentence you did not receive
+  as a quote is prose with its citation.
+- A negative finding is a claim: cite the ids you inspected and say how many.
+  Never claim a global absence.
+
+Output
+- One fenced ```python block per turn, or a final answer.
+- Print at most ~15 lines; large values go to ``rlm_api.emit``.
+- Finish with ``FINAL_ANSWER:`` as plain text, never inside the code block and
+  never in the same message as a block.
+- On a budget nudge, answer from what you have and list what you could not support.
+
+Query buckets
+<<QUERY_JSON>>
+
+Budget
+<<BUDGET_LIMITS>>
+- Live usage is the ``[budget]`` line at the end of each turn.
+- A ``[gate]`` line is an uncalibrated signal, not an instruction.
+"""
+
 NAIVE_SYSTEM_PROMPT = """\
 You answer one research question from a fixed evidence set.
 
@@ -248,8 +307,22 @@ Output contract
 
 _TEMPLATES: dict[str, str] = {
     "full": SYSTEM_PROMPT_TEMPLATE,
+    "thin": THIN_SYSTEM_PROMPT,
     "naive": NAIVE_SYSTEM_PROMPT,
     "document": DOCUMENT_SYSTEM_PROMPT,
+}
+
+#: The one sentence the retrieval rule contributes. The full prompt keeps its
+#: longer paragraph; the thin prompt takes one of these, so the rule can be
+#: varied without rewriting the template.
+_RETRIEVAL_RULES: dict[str, str] = {
+    "once": (
+        "Retrieve once with `retrieval_funnel(buckets=buckets)`; do not run the funnel again."
+    ),
+    "refine": (
+        "Retrieve once. If a named objective has no chunk, copy the buckets "
+        "(`mine = copy.deepcopy(buckets)`), edit the copy, and retrieve again."
+    ),
 }
 
 # Marked, optional blocks. ``build_system_prompt`` keeps or drops them from what
@@ -304,7 +377,7 @@ def build_system_prompt(
     text = _render_blocks(
         _TEMPLATES[chosen],
         {
-            "kg": config.KG_ENABLED if kg is None else kg,
+            "kg": (config.KG_ENABLED and config.KG_PROMPT) if kg is None else kg,
             "gate": config.GATE_ENABLED,
         },
     )
@@ -318,6 +391,7 @@ def build_system_prompt(
         .replace("<<BUDGET_LIMITS>>", _format_limits(budget_limits))
         .replace("<<WORKSPACE>>", config.SANDBOX_WORKSPACE_PATH.rstrip("/"))
         .replace("<<QUESTION>>", question or "(not provided)")
+        .replace("<<RETRIEVAL_RULE>>", _RETRIEVAL_RULES[config.RETRIEVAL_RULE])
     )
 
     if "<<" in prompt or ">>" in prompt:

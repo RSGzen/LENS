@@ -58,6 +58,17 @@ class BudgetDerivationTestCase(unittest.TestCase):
         self.assertEqual(config.TOOL_RESULT_SUMMARY_CHARS, 4000)
 
 
+class PromptOptionsTestCase(unittest.TestCase):
+    def test_thin_is_a_registered_variant(self) -> None:
+        self.assertIn("thin", config.PROMPT_VARIANTS)
+
+    def test_defaults_are_the_shipped_behaviour(self) -> None:
+        self.assertEqual(config.CONTEXT_FILES, "full")
+        self.assertTrue(config.KG_PROMPT)
+        self.assertEqual(config.EXTRACT_HINT, "claims")
+        self.assertEqual(config.RETRIEVAL_RULE, "refine")
+
+
 class PathAnchorTestCase(unittest.TestCase):
     def test_no_absolute_path_literals(self) -> None:
         # The portability bug this closes: five hard-coded ``r"D:\..."`` defaults.
