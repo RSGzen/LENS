@@ -119,10 +119,10 @@ EVIDENCE_FETCH_CHARS = 120000
 #: tools (ledger, backtrack) are never replayed.
 REPLAYABLE_TOOLS = frozenset({"retrieval_funnel", "fetch_papers", "fetch_chunks", "build_kg"})
 
-#: Sub-task batches one RPC call may run at the same time. Three because a
-#: twelve-id call is three batches of four: more workers would only queue, and each
-#: batch is a network call to the same provider.
-SUB_TASK_WORKERS = int(os.environ.get("LENS_SUB_TASK_WORKERS", "3"))
+#: Sub-task batches one RPC call may run at the same time. A 24-id call is six
+#: batches of four, and the root waits on that call as a unit, so the pool is sized
+#: to cover it. The value is recorded in the arm fingerprint.
+SUB_TASK_WORKERS = config.SUB_TASK_WORKERS
 
 #: Revision turns one answer may be rejected into. The gate is a control rule with
 #: an uncalibrated threshold, so a rejection is a signal to re-read the answer once

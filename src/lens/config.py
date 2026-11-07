@@ -352,6 +352,13 @@ MAX_ITERATIONS = int(os.environ.get("LENS_MAX_ITERATIONS", "10"))
 #: could otherwise spend the whole per-query cost cap in a single turn. Exceeding it
 #: returns an error to the sandbox and the run continues -- it is not a stop reason.
 MAX_SUB_TASKS = int(os.environ.get("LENS_MAX_SUB_TASKS", "40"))
+#: Sub-task batches one RPC may run at once. A 24-id call is six batches of four,
+#: and the host waits on that call as a unit, so the pool covers a full call.
+SUB_TASK_WORKERS = max(1, int(os.environ.get("LENS_SUB_TASK_WORKERS", "8")))
+#: Claim-extraction batches one answer may run at once. The batches are independent
+#: and the pass is sequential otherwise; four covers a 24-unit answer at six units
+#: per batch in one round.
+CLAIM_WORKERS = max(1, int(os.environ.get("LENS_CLAIM_WORKERS", "4")))
 MAX_EXEC_BLOCK_S = float(os.environ.get("LENS_MAX_EXEC_BLOCK_S", "120"))
 MAX_BACKTRACKS = int(os.environ.get("LENS_MAX_BACKTRACKS", "3"))
 # Per-query COST cap. Raised 0.50 -> 1.00 on 26 Oct 2026 because the

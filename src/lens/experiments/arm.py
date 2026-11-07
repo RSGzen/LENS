@@ -83,6 +83,12 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
         "reasoning": {
             role: dict(spec.reasoning or {}) for role, spec in config.MODEL_REGISTRY.items()
         },
+        # Concurrency is part of the arm: a run at three workers and one at eight
+        # are different schedules, and the wall-clock comparison must say which.
+        "workers": {
+            "sub_tasks": config.SUB_TASK_WORKERS,
+            "claim_extract": config.CLAIM_WORKERS,
+        },
     }
 
 

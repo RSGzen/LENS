@@ -973,7 +973,10 @@ class RuntimeTestCase(unittest.TestCase):
 
         started = time.perf_counter()
 
-        with patch("lens.tools.retrieval.fetch_chunks", return_value=rows):
+        with (
+            patch("lens.agent.runtime.SUB_TASK_WORKERS", 8),
+            patch("lens.tools.retrieval.fetch_chunks", return_value=rows),
+        ):
             response = self.runtime.handle_rpc(
                 "/sub_task",
                 {

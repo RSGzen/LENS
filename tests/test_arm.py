@@ -22,7 +22,8 @@ class ArmFingerprintTestCase(unittest.TestCase):
         # It is written into manifest.json, so it must serialise unchanged.
         self.assertEqual(json.loads(json.dumps(arm)), arm)
         self.assertEqual(
-            set(arm), {"retrieval", "kg", "gate", "mode", "models", "prompt", "reasoning"}
+            set(arm),
+            {"retrieval", "kg", "gate", "mode", "models", "prompt", "reasoning", "workers"},
         )
         self.assertEqual(arm["prompt"]["variant"], config.PROMPT_VARIANT)
         self.assertEqual(arm["prompt"]["context_files"], config.CONTEXT_FILES)
@@ -32,6 +33,10 @@ class ArmFingerprintTestCase(unittest.TestCase):
         self.assertEqual(arm["mode"]["replay"], False)
         self.assertEqual(
             arm["reasoning"]["sub"], dict(config.MODEL_REGISTRY["sub"].reasoning or {})
+        )
+        self.assertEqual(
+            arm["workers"],
+            {"sub_tasks": config.SUB_TASK_WORKERS, "claim_extract": config.CLAIM_WORKERS},
         )
 
     def test_reads_config_at_call_time(self) -> None:
