@@ -1,36 +1,57 @@
 {
   "name": "m11-w2b",
   "repeats": 3,
+  "note": "Answer-level check of the capacity step: the frozen default (n=20) against n=30, same query, 3 repeats. The retrieval grid ranked k200-n20 and k200-n30 identically at paper level, so this is the only comparison the grid left open; there is no second setting to confirm at n=20.",
   "arms": [
     {
-      "name": "s0-default",
+      "name": "s-default",
       "env": {
         "LENS_RECORDED": "1",
         "LENS_MODE": "rlm",
         "LENS_PROMPT_VARIANT": "full",
-        "LENS_RETRIEVAL_K": "100",
-        "LENS_RETRIEVAL_N": "20"
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_RETRIEVAL_K": "200",
+        "LENS_RETRIEVAL_N": "20",
+        "LENS_RETRIEVAL_C": "400",
+        "LENS_RETRIEVAL_C_TOP": "100"
       },
-      "note": "The operating point in force today. Six runs total = 2 settings x 3 repeats."
+      "note": "The frozen operating point."
     },
     {
-      "name": "s-opt",
+      "name": "s-capacity",
       "env": {
         "LENS_RECORDED": "1",
         "LENS_MODE": "rlm",
         "LENS_PROMPT_VARIANT": "full",
-        "LENS_RETRIEVAL_K": "100",
-        "LENS_RETRIEVAL_N": "20"
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_RETRIEVAL_K": "200",
+        "LENS_RETRIEVAL_N": "30",
+        "LENS_RETRIEVAL_C": "600",
+        "LENS_RETRIEVAL_C_TOP": "150"
       },
-      "note": "Replace k/n with the point the retrieval grid selects before this campaign runs. Leaving the defaults here would compare a setting with itself."
+      "note": "The capacity step: 50 % more papers and chunks."
     }
   ],
   "queries": [
     {
-      "id": "median-query",
+      "id": "compression",
       "expect": "answerable",
-      "text": "Which of the retrieved methods report a human evaluation, and what do they measure with it?",
-      "note": "Pre-registered by rule: the Tier-2 query whose default-config nDCG@10 is the median of the judged set. Replace the text with that query; never pick a query because it looked sensitive."
+      "text": "Which methods compress a long input into a shorter representation that a language model can still use?",
+      "note": "Pre-registered by rule: the Tier-2 query whose default-config nDCG@10 (0.8176) is the median of the 25 judged queries."
     }
   ]
 }
