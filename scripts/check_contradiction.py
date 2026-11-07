@@ -28,10 +28,14 @@ from lens.observability.claim_extract import extract_frames
 from lens.observability.claims import ClaimFrame, verify_frame, verify_units
 from lens.observability.trajectory import TraceCtx, Trajectory
 
-_DECIMAL = re.compile(r"\b\d+\.\d+\b")
-#: One to three digits, not part of a longer number or an arXiv id. A four-digit
-#: year is excluded because perturbing it would change the id, not the claim.
-_INTEGER = re.compile(r"(?<![.\d])\b\d{1,3}\b(?![.\d])")
+#: A number with a measurement cue. This is what the control is allowed to
+#: perturb: a section label ("Objective 2") or a citation digit is not a claim.
+_MEASURE = re.compile(
+    r"(?P<num>\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>%|K|k|M|m|B|b|tokens?|rounds?|papers?|chunks?|iterations?|points?|"
+    r"accuracy|score)\b"
+    r"|(?P<key>\b(?:K|k|n|C|c)\s*=\s*)(?P<num2>\d+(?:\.\d+)?)"
+)
 
 #: Chunk ids, arXiv ids and their bracketed forms. A number inside one is a
 #: citation, not a claim, and must not be the one the control perturbs.
@@ -48,29 +52,32 @@ def claim_text(text: str) -> str:
 
 
 def perturb_number(text: str) -> tuple[str, float, float] | None:
-    """Return ``(text_with_a_new_number, old, new)``, or ``None`` if no number."""
-    for pattern in (_DECIMAL, _INTEGER):
-        match = pattern.search(text)
+    """Return ``(text_with_a_new_number, old, new)``, or ``None`` if no measurement.
 
-        if match is None:
-            continue
+    Only a number with a measurement cue qualifies. A section label, a year or a
+    citation digit is not a claim, and perturbing one tests nothing.
+    """
+    match = _MEASURE.search(text)
 
-        original = float(match.group(0))
+    if match is None:
+        return None
 
-        if re.fullmatch(r"\d{4}\.\d{4,5}", match.group(0)):
-            # An arXiv id, not a measurement: perturbing it changes the citation.
-            continue
+    if match.group("num") is not None:
+        raw = match.group("num")
+        start, end = match.span("num")
+    else:
+        raw = match.group("num2")
+        start, end = match.span("num2")
 
-        replacement = original + 17.0
-        rendered = f"{replacement:.1f}" if "." in match.group(0) else str(int(replacement))
+    original = float(raw)
+    replacement = original + 17.0
+    rendered = f"{replacement:.1f}" if "." in raw else str(int(replacement))
 
-        return (
-            text[: match.start()] + rendered + text[match.end() :],
-            original,
-            replacement,
-        )
-
-    return None
+    return (
+        text[:start] + rendered + text[end:],
+        original,
+        replacement,
+    )
 
 
 def _numeric_sentence(text: str, number: float) -> str | None:

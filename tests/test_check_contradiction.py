@@ -45,11 +45,14 @@ class PerturbNumberTests(unittest.TestCase):
         self.assertEqual(original, 64.0)
         self.assertEqual(replacement, 81.0)
 
+    def test_a_section_label_is_not_a_measurement(self) -> None:
+        self.assertIsNone(check_contradiction.perturb_number("Objective 2 is below."))
+
     def test_an_arxiv_id_is_not_perturbed(self) -> None:
         self.assertIsNone(check_contradiction.perturb_number("2512.24601"))
 
     def test_a_citation_is_stripped_before_the_number_is_chosen(self) -> None:
-        text = "The system uses 3 stages (a861854f-81de-5011-bfc5-2a4ff6ee159e)."
+        text = "The system uses 3 rounds (a861854f-81de-5011-bfc5-2a4ff6ee159e)."
         clean = check_contradiction.claim_text(text)
         perturbed, original, _ = check_contradiction.perturb_number(clean)
 
