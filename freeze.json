@@ -1,19 +1,43 @@
 {
-  "created_at": "2026-11-01T10:36:50+00:00",
-  "commit": "e5c02ce7056d2e72f598db0205715e111df9bd13",
+  "created_at": "2026-11-07T04:55:54+00:00",
+  "commit": "0dcb208cf0a912afc9b169e48566e1706ee4798b",
   "branch": "main",
   "git_dirty": false,
   "models": {
-    "root": "openai/gpt-5",
-    "sub": "openai/gpt-5-mini",
-    "dev": "qwen/qwen3-coder",
+    "root": {
+      "id": "deepseek/deepseek-v4.1-flash",
+      "provider_only": [
+        "wafer/us"
+      ],
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    },
+    "sub": {
+      "id": "deepseek/deepseek-v4.1-flash",
+      "provider_only": [
+        "wafer/us"
+      ],
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    },
+    "dev": {
+      "id": "qwen/qwen3-coder",
+      "provider_only": [
+        "google-vertex"
+      ],
+      "reasoning": {}
+    },
     "jev": "typesafe/jev-1.13"
   },
   "jev": "typesafe/jev-1.13",
   "caps": {
     "iterations": 10,
-    "tokens": 175000,
-    "cost_usd": 1.0,
+    "tokens": 325000,
+    "cost_usd": 0.5,
     "context_tokens": 12000,
     "flat_evidence_tokens": 40000,
     "exec_block_s": 120.0
@@ -25,11 +49,17 @@
     "n": 20,
     "C": 400,
     "c": 100,
-    "ef_search": 400
+    "ef_search": 800
   },
   "python": "3.12.14",
   "platform": "Windows-11-10.0.26300-SP0",
   "prompt": "full",
+  "prompt_switches": {
+    "context_files": "none",
+    "kg_prompt": true,
+    "extract_hint": "claims",
+    "retrieval_rule": "refine"
+  },
   "run_mode": "rlm",
   "sub_calls": true,
   "kg_enabled": true,
@@ -43,5 +73,13 @@
     "papers": 166704,
     "chunks": 4681955
   },
-  "instruments": {}
+  "instruments": {
+    "pilot-qrels-aggregation.json": "3b5a1c87f304ba21be611916b805486b04bdc043fc01dc9c4fd0be116f1e73a7",
+    "qrels-rubric-v1.md": "fc58c924ef399ce727ff160f6540b72054b4bde511711d80c91767e857ebff34",
+    "tier2-queries-v1.json": "c1862aa4f86b90d442ddaf472415e032efcab1ae5f0b145cb6403f83eb87a336",
+    "w2-grid-v1.json": "d2e74ff2e59f14594b5f1bb130a142600ee8da1fe79d32812e253baa5e038561",
+    "w2a-tuples-confirm.json": "0522cf41858b51d15cc80c02c9ee7373f8bc2182f30fb987f8008acc70f88468",
+    "w2a-tuples-refine.json": "4cb5acc5ec5c44c09ec1c3fb84129045461e16666ae40f806c9b64e75f3ac39a",
+    "w2a-tuples.json": "dc202b3cb90c6250bfedbd7c6738a5470dc4670a5148c49cb78e122c988b45d8"
+  }
 }
