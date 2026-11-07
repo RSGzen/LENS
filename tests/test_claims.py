@@ -328,6 +328,19 @@ class GapAndQuoteTests(unittest.TestCase):
         self.assertNotIn("Could not support", stripped)
         self.assertIn("Finding one", stripped)
 
+    def test_an_inline_bold_gap_heading_is_stripped(self) -> None:
+        # The model can put the whole gap list on the heading's line.
+        answer = (
+            "Finding one [11111111-1111-5111-8111-111111111111].\n\n"
+            "**What I could not support.** (a) I did not read the rest. "
+            "(b) I kept only a prefix.\n"
+        )
+
+        stripped = strip_self_reported_gaps(answer)
+
+        self.assertNotIn("could not support", stripped.lower())
+        self.assertIn("Finding one", stripped)
+
     def test_a_plain_sentence_with_a_gap_phrase_is_not_a_heading(self) -> None:
         text = "I could not support this claim with the evidence I read."
 

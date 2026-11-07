@@ -469,15 +469,19 @@ def strip_self_reported_gaps(answer: str) -> str:
 
     for index, line in enumerate(lines):
         raw = line.strip()
-        heading = raw.strip("*_#`: ").strip()
+        bold = re.match(r"^\*\*(.+?)\*\*", raw)
+        candidate = bold.group(1) if bold else raw
+        heading = candidate.strip().strip("*_#`: ").strip()
 
         if not heading or len(heading) > GAP_HEADING_MAX_CHARS:
             continue
 
         # A heading, not a sentence: short, starts a line with a capital, and does
         # not end in a full stop -- unless it is marked as a heading (bold or #),
-        # where a trailing period is common: `**Could not support.**`.
-        marked = raw.startswith(("#", "**", "__")) or raw.endswith("**")
+        # where a trailing period is common: `**Could not support.**`. The model
+        # also writes the gap text on the same line as the bold heading, so the
+        # bold span at the start is enough.
+        marked = bool(bold) or raw.startswith(("#", "__")) or raw.endswith("**")
 
         if (heading.endswith(".") and not marked) or not heading[:1].isupper():
             continue
