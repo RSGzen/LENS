@@ -359,7 +359,7 @@ def _evidence_index(turns: list[Turn], trajectory: Trajectory) -> tuple[dict, di
 #: A quoted span in an answer. The straight quote is both opening and closing, so a
 #: boundary is required: an opener is not preceded by a letter/digit and a closer is
 #: not followed by one. Without it, a short quoted word's closing quote opened a
-#: false span that ran to the next quote (measured on a rig-v10 answer). Curly
+#: false span that ran to the next quote (measured on a recorded answer). Curly
 #: quotes are unambiguous.
 _QUOTED = re.compile(
     r'(?<![0-9A-Za-z])"(?=\S)([^"\n]{25,400}?)(?<=\S)"(?![0-9A-Za-z])'
