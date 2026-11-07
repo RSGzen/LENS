@@ -172,6 +172,12 @@ def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> d
         "python": platform.python_version(),
         "platform": platform.platform(),
         "prompt": config.PROMPT_VARIANT,
+        "prompt_switches": {
+            "context_files": config.CONTEXT_FILES,
+            "kg_prompt": config.KG_PROMPT,
+            "extract_hint": config.EXTRACT_HINT,
+            "retrieval_rule": config.RETRIEVAL_RULE,
+        },
         "run_mode": config.RUN_MODE,
         "sub_calls": config.SUB_CALLS_ENABLED,
         "kg_enabled": config.KG_ENABLED,
