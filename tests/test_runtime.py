@@ -222,6 +222,14 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertFalse((self.runtime.workspace / "tools.md").is_file())
         self.assertFalse((self.runtime.workspace / "budget.md").is_file())
 
+    @unittest.skipUnless(config.SUB_CALLS_ENABLED, "sub-tasks are disabled")
+    def test_sub_tasks_are_bound_as_plain_functions(self) -> None:
+        self.runtime._seed_workspace()
+        code = self.sandbox.executed[0]
+
+        self.assertIn("from rlm_api import", code)
+        self.assertIn("sub_extract", code)
+
     def test_a_turn_can_run_code_and_answer(self) -> None:
         # Two failure modes meet here. First: a real FINAL_ANSWER after a fence
         # used to be discarded on every turn, so the run ended with an empty

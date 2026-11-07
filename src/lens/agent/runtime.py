@@ -838,6 +838,13 @@ class Runtime:
             tool_bindings(self.registry.parameters())
         )
 
+        if config.SUB_CALLS_ENABLED:
+            # The sub-tasks are façade functions, not registry tools, so the
+            # namespace has no bare name for them. The model reads
+            # ``rlm_api.sub_extract`` in one block and ``sub_extract`` in the next;
+            # binding both forms removes a NameError that cost a turn.
+            lines.append("from rlm_api import sub_classify, sub_extract, sub_summarise")
+
         if config.KG_ENABLED:
             # The traversal helpers are sandbox-side, so they are not in the tool
             # manifest; binding them here is what makes the namespace match
