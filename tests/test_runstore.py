@@ -249,6 +249,7 @@ class RunStoreTestCase(unittest.TestCase):
             "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8"
         )
         (run_dir / "answer.md").write_text("answer\n", encoding="utf-8")
+        (run_dir / "claims.json").write_text('{"units": 1}\n', encoding="utf-8")
         return run_dir
 
     def test_referenced_refs_is_deduplicated_and_ordered(self) -> None:
@@ -266,6 +267,7 @@ class RunStoreTestCase(unittest.TestCase):
         self.assertTrue((bundle / runstore.BUNDLE_INDEX).is_file())
         self.assertTrue((bundle / "trajectory.jsonl").is_file())
         self.assertTrue((bundle / "answer.md").is_file())
+        self.assertTrue((bundle / "claims.json").is_file())
         exported = sorted(p.name for p in (bundle / "blobs").iterdir())
         self.assertEqual(exported, sorted([self.digest_a, self.digest_b]))  # not the stray one
         index = json.loads((bundle / runstore.BUNDLE_INDEX).read_text(encoding="utf-8"))

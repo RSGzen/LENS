@@ -538,6 +538,7 @@ BUNDLE_RUN_FILES: tuple[str, ...] = (
     "trajectory.jsonl",
     "tasks.json",
     "answer.md",
+    "claims.json",
     "resume.json",
 )
 # Every event field that holds a blob ref. Keep in sync with ``log_event``.
