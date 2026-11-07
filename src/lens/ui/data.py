@@ -24,8 +24,10 @@ Contract tests: ``tests/test_ui_data.py`` (no streamlit, no key, no DB, no Docke
 
 from __future__ import annotations
 
+import html
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -161,6 +163,8 @@ class RunView:
     answer: str
     #: turn number -> chunk rows hydrated by that turn's tool calls.
     evidence: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
+    #: arxiv_id -> paper metadata (title, authors, year) from the recorded payloads.
+    papers: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: turn number -> the gate calls made in that turn, in the order they ran.
     gates: dict[int, list[GateCall]] = field(default_factory=dict)
     has_sources: bool = False
@@ -350,6 +354,7 @@ def load_run(run_id: str) -> RunView | None:
         citations=resolve_citations(str(run_id)),
         answer=answer,
         evidence=_evidence_by_turn(turns, trajectory),
+        papers=_papers_by_turn(turns, trajectory),
         gates=gate_calls(str(run_id)),
         has_sources=(run_dir / "sources.md").is_file(),
         has_report=(run_dir / "report.md").is_file(),
@@ -631,6 +636,136 @@ def _evidence_by_turn(turns: list[Turn], trajectory: Trajectory) -> dict[int, li
             evidence[turn.turn] = rows
 
     return evidence
+
+
+def _papers_by_turn(turns: list[Turn], trajectory: Trajectory) -> dict[str, dict[str, Any]]:
+    """Return ``arxiv_id -> metadata`` from the recorded paper payloads.
+
+    The funnel's ``papers`` dict already carries title, authors and year; keeping
+    them on the view lets the answer show a human label without a database read,
+    which is what a bundle on a laptop needs.
+    """
+    papers: dict[str, dict[str, Any]] = {}
+
+    for turn in turns:
+        for tool in turn.tools:
+            if tool.name not in {"retrieval_funnel", "fetch_papers", "rerank_papers"}:
+                continue
+
+            if not tool.result_ref:
+                continue
+
+            try:
+                payload = json.loads(trajectory.load_blob(tool.result_ref))
+            except (OSError, KeyError, ValueError, IndexError):
+                continue
+
+            rows = payload.get("papers") if isinstance(payload, dict) else payload
+
+            if isinstance(rows, dict):
+                for arxiv_id, meta in rows.items():
+                    if isinstance(meta, dict):
+                        papers.setdefault(str(arxiv_id), meta)
+            elif isinstance(rows, list):
+                for row in rows:
+                    if isinstance(row, dict) and row.get("arxiv_id"):
+                        papers.setdefault(str(row["arxiv_id"]), row)
+
+    return papers
+
+
+#: How long a citation label may run before it is ellipsised; the full title is
+#: in the hover text and the citation table.
+CITE_LABEL_CHARS = 36
+
+
+def short_title(title: str | None, limit: int = CITE_LABEL_CHARS) -> str:
+    """Return a one-line label for a paper title."""
+    body = " ".join(str(title or "").split())
+
+    return body if len(body) <= limit else body[: limit - 1].rstrip() + "…"
+
+
+#: Chunk and arXiv ids in an answer. One alternation, so a token can never be
+#: replaced twice (the first pass would otherwise rewrite the id inside the
+#: tooltip it had just emitted).
+_CITE_ANY = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+    r"|\b\d{4}\.\d{4,5}(?:v\d+)?\b"
+)
+
+
+def citation_labels(view: RunView) -> dict[str, str]:
+    """Return ``token -> short label`` for every resolved citation in the answer."""
+    labels: dict[str, str] = {}
+
+    for citation in view.citations.citations:
+        if not citation.resolved:
+            continue
+
+        meta = view.papers.get(citation.arxiv_id or "", {})
+        title = citation.title or meta.get("title") or citation.arxiv_id or "source"
+        label = short_title(title)
+
+        if citation.kind == "chunk" and citation.section_type:
+            label = f"{label} · {citation.section_type}"
+
+        labels[citation.token] = label
+
+    return labels
+
+
+def citation_tip(view: RunView, token: str) -> str:
+    """Return the hover text for one citation token."""
+    citation = next((c for c in view.citations.citations if c.token == token), None)
+
+    if citation is None:
+        return "not resolved against the recorded evidence"
+
+    meta = view.papers.get(citation.arxiv_id or "", {})
+    title = citation.title or meta.get("title") or citation.arxiv_id or "source"
+    lines = [str(title)]
+
+    if meta.get("authors"):
+        lines.append(str(meta["authors"]))
+    if meta.get("year"):
+        lines.append(f"year {meta['year']}")
+    if citation.arxiv_id:
+        lines.append(f"arXiv {citation.arxiv_id}")
+    if citation.kind == "chunk":
+        if citation.section_type:
+            lines.append(f"section {citation.section_type}")
+        lines.append(str(citation.token))
+
+    return "\n".join(lines)
+
+
+def render_answer_html(view: RunView) -> str:
+    """Replace citation ids with readable chips, keeping the id in the hover text.
+
+    The answer itself is unchanged on disk; this is display only. A resolved id
+    becomes ``paper title · section`` with the full title, authors, year and id in
+    the tooltip; an unresolved id stays visible and says so.
+    """
+    labels = citation_labels(view)
+    resolved = {c.token for c in view.citations.citations if c.resolved}
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+
+        if token not in resolved:
+            return token
+
+        label = labels.get(token) or short_title(token)
+        tip = citation_tip(view, token)
+
+        return (
+            f'<span class="lens-cite" data-tip="{html.escape(tip, quote=True)}">'
+            f"{html.escape(label)}</span>"
+        )
+
+    return _CITE_ANY.sub(replace, view.answer or "")
 
 
 #: How long one lookup may take. The query is a single indexed row or a list of ids;

@@ -53,6 +53,20 @@ from lens.ui import data
 #: Streamlit >= 1.37 — a full-page rerun per tick would make ``Play`` unusable.
 PLAY_SECONDS = 1.5
 
+#: Inline citation chip and its hover card. The full id is in the tooltip; the
+#: citation table below remains the copy surface.
+_CITE_CSS = """<style>
+.lens-cite { position: relative; border-bottom: 1px dotted #8a8f98; cursor: help; }
+.lens-cite:hover::after {
+  content: attr(data-tip);
+  position: absolute; left: 0; bottom: 1.45em; z-index: 1000;
+  max-width: 360px; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: #1f2430; color: #f5f5f5; padding: .55em .7em;
+  border-radius: .4em; font-size: .8rem; line-height: 1.35;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+}
+</style>"""
+
 #: ``Show full payload`` renders the JSON only when toggled: a collapsed
 #: ``st.expander`` still builds its DOM, and a ``build_kg`` node-link is the
 #: largest blob in a run.
@@ -936,11 +950,12 @@ def render_evidence(view: data.RunView) -> None:
 
 
 def render_answer(view: data.RunView) -> None:
-    """The answer and its citation trace (U8) — the model's words, then the join."""
+    """The answer and its citation trace (U8) - the model's words, then the join."""
     st.markdown("## Answer")
+    st.markdown(_CITE_CSS, unsafe_allow_html=True)
 
     if view.answer.strip():
-        st.markdown(view.answer)
+        st.markdown(data.render_answer_html(view), unsafe_allow_html=True)
     else:
         st.caption(
             "No `answer.md` — the run stopped before an outside-a-fence `FINAL_ANSWER:` sentinel."
@@ -1063,6 +1078,47 @@ def page_paper_lookup() -> None:
     if abstract:
         with st.expander("abstract"):
             st.write(abstract)
+
+    chunks = result.get("chunks") or []
+
+    if result.get("chunks_error"):
+        st.warning(str(result["chunks_error"]))
+
+    if chunks:
+        st.markdown(f"### Chunks ({len(chunks)})")
+        st.caption(
+            "Read-only corpus rows. The full chunk id is in the `chunk` column; "
+            "select a row to read its text."
+        )
+        st.dataframe(
+            [
+                {
+                    "#": index + 1,
+                    "section": row.get("section_type"),
+                    "tokens": row.get("token_count"),
+                    "chars": row.get("chars"),
+                    "preview": row.get("preview"),
+                    "chunk": str(row.get("chunk_uuid")),
+                }
+                for index, row in enumerate(chunks)
+            ],
+            hide_index=True,
+            width="stretch",
+        )
+        labels = [
+            f"{row.get('section_type') or 'Other'} · {row.get('token_count')} tokens · "
+            f"{str(row.get('chunk_uuid'))[:8]}"
+            for row in chunks
+        ]
+        chosen = st.selectbox("read one chunk", labels, key=f"paper_chunk_{row.get('arxiv_id')}")
+        chunk_id = str(chunks[labels.index(chosen)].get("chunk_uuid"))
+        full = data.lookup_chunks([chunk_id])
+        found_rows = full.get("found") or []
+
+        if full.get("ok") and found_rows:
+            st.code(str(found_rows[0].get("chunk_text") or ""), language="text")
+        else:
+            st.info(f"full text for `{chunk_id}` is not available")
 
 
 def page_chunk_lookup() -> None:

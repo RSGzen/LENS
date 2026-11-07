@@ -247,6 +247,23 @@ class UiDataTestCase(unittest.TestCase):
         assert view is not None
         self.assertEqual(view.citations.counts, {"cited": 1, "resolved": 1, "unresolved": 0})
 
+    def test_the_answer_renders_a_chip_with_the_id_in_the_tooltip(self) -> None:
+        self._make_run("run-a", answer=f"only chunk one: {CHUNK_A}\n")
+
+        view = data.load_run("run-a")
+
+        assert view is not None
+        rendered = data.render_answer_html(view)
+        self.assertIn("lens-cite", rendered)
+        self.assertIn(CHUNK_A, rendered)
+        self.assertNotIn(f"`{CHUNK_A}`", rendered)
+
+    def test_short_title_ellipsises_at_the_limit(self) -> None:
+        label = data.short_title("a" * 80)
+
+        self.assertEqual(len(label), data.CITE_LABEL_CHARS)
+        self.assertTrue(label.endswith("…"))
+
     # ------------------------------------------------------------- the cap
     def test_cap_comes_from_the_manifest_not_todays_default(self) -> None:
         self._make_run("run-old", caps={"cost_usd": 0.25})

@@ -142,6 +142,25 @@ def _fail(message: str) -> dict[str, Any]:
     return {"ok": False, "error": message}
 
 
+def chunks_for_paper(conn: Any, arxiv_id: str, *, limit: int = 500) -> list[dict[str, Any]]:
+    """Return one paper's chunks, ordered by section and id, with a short preview.
+
+    The full text is not shipped for every row: a long paper can hold hundreds of
+    chunks, and the page only needs the one the reader selects.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT chunk_uuid, arxiv_id, section_type, token_count, section_order, "
+            "left(chunk_text, 160) AS preview, length(chunk_text) AS chars "
+            "FROM chunks WHERE arxiv_id = %s "
+            "ORDER BY section_order NULLS LAST, chunk_uuid LIMIT %s",
+            (arxiv_id, limit),
+        )
+        rows = [_trim(row) for row in _rows(cur)]
+
+    return rows
+
+
 def lookup_paper(conn: Any, arxiv_id: str) -> dict[str, Any]:
     """Validate one arXiv id and return the lookup envelope."""
     cleaned = (arxiv_id or "").strip()
@@ -155,9 +174,21 @@ def lookup_paper(conn: Any, arxiv_id: str) -> dict[str, Any]:
         return _fail(f"query failed: {type(exc).__name__}")
 
     if row is None:
-        return {"ok": True, "found": [], "missing": [cleaned]}
+        return {"ok": True, "found": [], "chunks": [], "missing": [cleaned]}
 
-    return {"ok": True, "found": [row], "missing": []}
+    try:
+        chunks = chunks_for_paper(conn, cleaned)
+    except Exception as exc:  # noqa: BLE001 - the paper row is still useful without them
+        chunks = []
+        return {
+            "ok": True,
+            "found": [row],
+            "chunks": chunks,
+            "chunks_error": f"chunk query failed: {type(exc).__name__}",
+            "missing": [],
+        }
+
+    return {"ok": True, "found": [row], "chunks": chunks, "missing": []}
 
 
 def lookup_chunks(conn: Any, chunk_ids: Sequence[str]) -> dict[str, Any]:
