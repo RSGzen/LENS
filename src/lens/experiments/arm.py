@@ -66,6 +66,16 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
             "sub_calls": config.SUB_CALLS_ENABLED,
             "documents": bool(config.DOCUMENTS_PATH),
         },
+        # The prompt-audit switches. A variant that changes one of these must be
+        # distinguishable from the baseline in the manifest, not only in the operator's
+        # memory.
+        "prompt": {
+            "variant": config.PROMPT_VARIANT,
+            "context_files": config.CONTEXT_FILES,
+            "kg": config.KG_PROMPT,
+            "extract_hint": config.EXTRACT_HINT,
+            "retrieval_rule": config.RETRIEVAL_RULE,
+        },
         "models": {role: spec.id for role, spec in config.MODEL_REGISTRY.items()}
         | {"jev": config.JEV_MODEL_ID},
     }

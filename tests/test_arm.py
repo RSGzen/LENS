@@ -21,7 +21,9 @@ class ArmFingerprintTestCase(unittest.TestCase):
 
         # It is written into manifest.json, so it must serialise unchanged.
         self.assertEqual(json.loads(json.dumps(arm)), arm)
-        self.assertEqual(set(arm), {"retrieval", "kg", "gate", "mode", "models"})
+        self.assertEqual(set(arm), {"retrieval", "kg", "gate", "mode", "models", "prompt"})
+        self.assertEqual(arm["prompt"]["variant"], config.PROMPT_VARIANT)
+        self.assertEqual(arm["prompt"]["context_files"], config.CONTEXT_FILES)
         self.assertEqual(arm["retrieval"]["k"], config.RETRIEVAL_K)
         self.assertEqual(arm["retrieval"]["c"], config.RETRIEVAL_C_TOP)
         self.assertEqual(arm["mode"]["recorded"], True)

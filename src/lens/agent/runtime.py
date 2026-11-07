@@ -780,7 +780,7 @@ class Runtime:
         only when the model builds a graph, and a turn that never traverses the
         graph should not pay for the whole ontology on every call.
         """
-        if not config.KG_ENABLED:
+        if not (config.KG_ENABLED and config.KG_PROMPT):
             return None
 
         from lens.tools.kg import load_ontology
@@ -802,13 +802,14 @@ class Runtime:
         ``run.resume`` note is appended here (after the restore) so it can carry
         the real ``namespace_complete``.
         """
-        write_context_files(
-            self.workspace,
-            tool_manifest=self.registry.manifest(),
-            budget_snapshot=self.budget.snapshot(),
-            ontology_summary=self._ontology_summary(),
-            kg_helpers=config.KG_ENABLED,
-        )
+        if config.CONTEXT_FILES == "full":
+            write_context_files(
+                self.workspace,
+                tool_manifest=self.registry.manifest(),
+                budget_snapshot=self.budget.snapshot(),
+                ontology_summary=self._ontology_summary(),
+                kg_helpers=config.KG_ENABLED and config.KG_PROMPT,
+            )
 
         lines = [
             # ``copy`` is seeded because the prompt tells the root to refine retrieval

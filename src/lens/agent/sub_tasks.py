@@ -531,12 +531,13 @@ def render_prompt_block() -> str:
         lines.append(f"  Returns ``{task.result_shape}``{note}.")
 
         if task.name == "extract":
+            hint = "quotes" if config.EXTRACT_HINT == "quotes" else "claims"
             lines.append(
                 "  ``fields`` is a subset of: "
                 + ", ".join(EXTRACT_FIELDS)
                 + ". Every record also carries ``quotes``: verbatim sentences with the id "
                 "they came from, checked host-side, and the only part of a record you may "
-                'cite. Ask for ``fields=["claims"]`` when you are collecting evidence: '
+                f'cite. Ask for ``fields=["{hint}"]`` when you are collecting evidence: '
                 "each extra field spends the reply's output cap, and a truncated reply "
                 "parses to no records at all."
             )

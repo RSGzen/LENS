@@ -214,6 +214,14 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertTrue(path.is_file())
         self.assertIn("entities", path.read_text(encoding="utf-8"))
 
+    def test_context_files_can_be_skipped_for_a_prompt_experiment(self) -> None:
+        with patch.object(config, "CONTEXT_FILES", "none"):
+            self.runtime._seed_workspace()
+
+        self.assertFalse((self.runtime.workspace / "AGENTS.md").is_file())
+        self.assertFalse((self.runtime.workspace / "tools.md").is_file())
+        self.assertFalse((self.runtime.workspace / "budget.md").is_file())
+
     def test_a_turn_can_run_code_and_answer(self) -> None:
         # Two failure modes meet here. First: a real FINAL_ANSWER after a fence
         # used to be discarded on every turn, so the run ended with an empty
