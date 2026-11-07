@@ -25,6 +25,7 @@ from lens.observability.claims import (
     parse_frames,
     quoted_spans,
     split_long_units,
+    strip_self_reported_gaps,
     verify_units,
 )
 
@@ -267,18 +268,23 @@ def verify_answer(
     """Extract and verify every claim unit in one answer.
 
     ``texts`` maps ``chunk_uuid -> chunk_text`` for everything the run retrieved,
-    so the check is offline against recorded evidence. An answer with no claim
-    unit returns an empty report without a model call. Frames are pointed at the
-    answer's own quoted spans before verification, so the ledger and the reader
+    so the check is offline against recorded evidence. A trailing self-reported-gap
+    section is excluded first: those lines are the answer's own limitations, not
+    findings, and counting them as claims understates coverage. An answer with no
+    claim unit returns an empty report without a model call. Frames are pointed at
+    the answer's own quoted spans before verification, so the ledger and the reader
     are looking at the same sentence.
     """
+    full = answer or ""
+    answer = strip_self_reported_gaps(full)
+    removed = answer != full
     expanded = expand_short_ids(answer, texts)
     units = claim_units(expanded, include_uncited=True)
     units = [(text, [str(value) for value in ids if str(value) in texts]) for text, ids in units]
     units = split_long_units(units)
 
     if not units:
-        return ClaimReport(run_id=run_id, units=0)
+        return ClaimReport(run_id=run_id, units=0, self_reported_gaps_removed=removed)
 
     answer_quotes = {index: quoted_spans(text) for index, (text, _ids) in enumerate(units)}
     usage: list[dict[str, Any]] = []
@@ -296,6 +302,7 @@ def verify_answer(
     frames = align_quotes(frames, answer_quotes)
     report = verify_units(units, frames, texts, run_id=run_id)
     report.errors = errors
+    report.self_reported_gaps_removed = removed
     report.cost_usd = sum(float(item["cost_usd"]) for item in usage)
     report.tokens_out = sum(int(item["tokens_out"]) for item in usage)
 

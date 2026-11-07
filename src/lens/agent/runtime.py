@@ -1297,6 +1297,7 @@ class Runtime:
                     "errors": len(report.errors),
                     "cost_usd": round(report.cost_usd, 6),
                     "tokens_out": report.tokens_out,
+                    "self_reported_gaps_removed": report.self_reported_gaps_removed,
                 },
             )
         except Exception:  # noqa: BLE001 - a log failure must not change the run

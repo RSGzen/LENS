@@ -232,6 +232,34 @@ class ExtractFramesTests(unittest.TestCase):
         self.assertEqual(report.tokens_out, 5)
         self.assertEqual(report.cost_usd, 0.0)
 
+    def test_verify_answer_excludes_a_self_reported_gap_section(self) -> None:
+        answer = (
+            "The RLM method reaches 56.0 accuracy on the OOLONG trec_coarse "
+            f"benchmark in this reported run [{CHUNK_A}].\n\n"
+            "Claims I could not support:\n"
+            "- I did not read the SRLM chunks, so I make no claim about them.\n"
+        )
+        texts = {
+            CHUNK_A: ("The RLM method reaches 56.0 accuracy on the OOLONG trec_coarse benchmark.")
+        }
+        client = FakeClient(
+            [
+                _reply(
+                    _frame(
+                        0,
+                        CHUNK_A,
+                        quote="reaches 56.0 accuracy on the OOLONG trec_coarse benchmark",
+                    )
+                )
+            ]
+        )
+
+        report = verify_answer(answer, texts, client, None, run_id="run-1")
+
+        self.assertTrue(report.self_reported_gaps_removed)
+        self.assertEqual(report.units, 1)
+        self.assertNotIn("I did not read", client.calls[0][1][1]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

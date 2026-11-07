@@ -157,6 +157,9 @@ class ClaimReport:
     #: Spend attributable to the claim extractor for this answer.
     cost_usd: float = 0.0
     tokens_out: int = 0
+    #: Whether a trailing self-reported-gap section was excluded before extraction.
+    #: The section is not a finding, and the full answer keeps it on disk.
+    self_reported_gaps_removed: bool = False
 
     @property
     def counts(self) -> dict[str, int]:
@@ -193,6 +196,7 @@ class ClaimReport:
             "counts": self.counts,
             "cost_usd": round(self.cost_usd, 6),
             "tokens_out": self.tokens_out,
+            "self_reported_gaps_removed": self.self_reported_gaps_removed,
             "errors": list(self.errors),
             "frames": [
                 {**frame.to_dict(), "verdict": verdict.to_dict()}
@@ -425,6 +429,61 @@ def verify_units(
     report.verdicts = [verify_frame(frame, texts) for frame in frames]
 
     return report
+
+
+#: Phrases that mark a line as the heading of the answer's own limitations section.
+#: Substring matching, not a whitelist of headings: three recorded runs produced
+#: three different wordings ("Claims I could not support with the verified chunks in
+#: this pass", "Claims we could not support from the inspected chunks", "Unsupported
+#: with current evidence (not claimed above)"), so any list of exact strings goes
+#: stale on the next run.
+GAP_PHRASES: tuple[str, ...] = (
+    "unsupported",
+    "could not support",
+    "cannot support",
+    "could not verify",
+    "not supported by",
+)
+
+#: Longest line treated as a heading rather than as prose that happens to match.
+#: Recorded headings run 18-84 characters, so the bound has to clear the longest of
+#: them. What separates a heading from prose that happens to contain the words is
+#: the first letter: a heading starts a line with a capital.
+GAP_HEADING_MAX_CHARS = 120
+
+
+def strip_self_reported_gaps(answer: str) -> str:
+    """Return ``answer`` without a trailing section that lists unsupported claims.
+
+    An answer that ends with "claims I could not support: ..." is being honest about
+    its own limits. A list of disclaimed items is not a finding: the aggregate gate
+    reads it as unsupported text, and the claim pass would count each line as a
+    claim that no chunk can state. Measured on three recorded answers, two were
+    rejected by the aggregate alone while every claim unit scored 0.26-0.56.
+
+    Nothing is deleted from the run: this only decides what the gate and the claim
+    pass are asked about. The full answer stays in ``answer.md`` and in the
+    trajectory.
+    """
+    lines = answer.splitlines()
+
+    for index, line in enumerate(lines):
+        heading = line.strip().strip("*_#`: ").strip()
+
+        if not heading or len(heading) > GAP_HEADING_MAX_CHARS:
+            continue
+
+        # A heading, not a sentence: short, starts a line with a capital, and does not
+        # end in a full stop.
+        if heading.endswith(".") or not heading[:1].isupper():
+            continue
+
+        lowered = heading.lower()
+
+        if any(phrase in lowered for phrase in GAP_PHRASES):
+            return "\n".join(lines[:index]).rstrip()
+
+    return answer
 
 
 #: A quoted span in an answer: straight or typographic quotes, long enough to be
