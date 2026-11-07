@@ -705,22 +705,72 @@ class Runtime:
         Without these the ledger stays empty and ``tasks.json`` is decorative.
         """
 
+        def _task_id(value: Any) -> str:
+            """Accept a task id string or the ``{"task_id": ...}`` create result."""
+            if isinstance(value, Mapping):
+                value = value.get("task_id")
+
+            if not isinstance(value, str) or not value:
+                raise ValueError(
+                    "task_id must be a string, or the {'task_id': ...} returned by ledger_create"
+                )
+
+            return value
+
+        def _status(value: Any) -> str:
+            """Accept a status string or the ``{"status": ...}`` object."""
+            if isinstance(value, Mapping):
+                value = value.get("status")
+
+            if not isinstance(value, str) or value not in VALID_STATUSES:
+                raise ValueError(
+                    f"invalid status {value!r}; expected one of {sorted(VALID_STATUSES)}"
+                )
+
+            return value
+
+        def _refs(value: Any) -> list[str]:
+            """Accept a list, a single string, or ``{"refs": [...]}``.
+
+            A model sometimes passes the whole ``{"chunk_uuid": ...}`` row; extract
+            the id rather than storing the dict and failing on the next read.
+            """
+            if isinstance(value, Mapping):
+                value = value.get("refs")
+
+            if isinstance(value, str):
+                value = [value]
+
+            if not isinstance(value, (list, tuple)):
+                raise ValueError("refs must be a list of chunk ids or sha256 refs")
+
+            cleaned: list[str] = []
+
+            for ref in value:
+                if isinstance(ref, Mapping):
+                    ref = ref.get("chunk_uuid") or ref.get("id") or ref.get("ref")
+
+                if not isinstance(ref, str) or not ref:
+                    raise ValueError(
+                        "each evidence ref must be a string (chunk_uuid or sha256 ref)"
+                    )
+
+                cleaned.append(ref)
+
+            return cleaned
+
         def ledger_create(requirement: str, parent_id: str | None = None) -> dict[str, Any]:
             """Create one ledger task for a requirement; returns {"task_id": "<id>"}."""
             task = self.ledger.create(requirement, parent_id=parent_id)
             return {"task_id": task.task_id}
 
         def ledger_update(task_id: str, status: str) -> dict[str, Any]:
-            """Set a task's status (pending / in_progress / done / failed); returns the task."""
-            if status not in VALID_STATUSES:
-                raise ValueError(
-                    f"invalid status {status!r}; expected one of {sorted(VALID_STATUSES)}"
-                )
-            return self.ledger.update(task_id, status=status).to_dict()
+            """Set a task's status; task_id may be the ledger_create result."""
+            return self.ledger.update(_task_id(task_id), status=_status(status)).to_dict()
 
         def ledger_add_evidence(task_id: str, refs: list[str]) -> dict[str, Any]:
-            """Attach evidence refs (chunk_uuid or sha256 refs) to a task."""
-            return self.ledger.add_evidence(task_id, list(refs)).to_dict()
+            """Attach evidence refs; task_id may be the ledger_create result."""
+            return self.ledger.add_evidence(_task_id(task_id), _refs(refs)).to_dict()
 
         def backtrack(stage: str, reason: str) -> dict[str, Any]:
             """Record one backtrack for a stage; refused past MAX_BACKTRACKS."""

@@ -290,6 +290,39 @@ class RuntimeTestCase(unittest.TestCase):
             runtime.client.chat_calls[-1]["messages"][-1]["content"],
         )
 
+    def test_the_ledger_tools_accept_the_create_result_dict(self) -> None:
+        # The model is told to keep the id in a variable, but it often passes the
+        # whole {"task_id": "t1"} object (and {"status": "done"}) back. A TypeError
+        # there used to lose the update/evidence call and leave tasks.json short.
+        self.runtime._register_runtime_tools()
+        trace = TraceCtx("run-test", 0, "tool")
+        created = self.runtime.registry.dispatch(
+            "ledger_create",
+            {"requirement": "objective"},
+            trace_ctx=trace,
+            trajectory=self.trajectory,
+        )
+        self.assertTrue(created.ok)
+        task_id = created.result["task_id"]
+
+        updated = self.runtime.registry.dispatch(
+            "ledger_update",
+            {"task_id": {"task_id": task_id}, "status": {"status": "done"}},
+            trace_ctx=trace,
+            trajectory=self.trajectory,
+        )
+        self.assertTrue(updated.ok)
+        self.assertEqual(updated.result["status"], "done")
+
+        evidenced = self.runtime.registry.dispatch(
+            "ledger_add_evidence",
+            {"task_id": {"task_id": task_id}, "refs": {"refs": [{"chunk_uuid": "c1"}]}},
+            trace_ctx=trace,
+            trajectory=self.trajectory,
+        )
+        self.assertTrue(evidenced.ok)
+        self.assertEqual(evidenced.result["evidence_refs"], ["c1"])
+
     def test_the_final_gate_sees_abbreviated_ids_as_full_uuids(self) -> None:
         # Measured: an answer citing 8-character prefixes reached the gate with no
         # chunk ids and no evidence, and was rejected four times.
