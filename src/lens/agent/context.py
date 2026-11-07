@@ -171,7 +171,8 @@ Output contract
    and buys nothing, and printing fewer quotes than you hold costs coverage.
 10. When asked to wrap up (budget nudge), answer from what you already have and
    list the claims you could not support. A labelled partial answer is a valid
-   result; an over-budget run is not.
+   result; an over-budget run is not. On the **last permitted turn** the harness
+   asks for the answer only: a code block written then does not run.
 
 <<SUB_TASKS>>
 
@@ -240,6 +241,7 @@ Output
 - Finish with ``FINAL_ANSWER:`` as plain text, never inside the code block and
   never in the same message as a block.
 - On a budget nudge, answer from what you have and list what you could not support.
+- On the last permitted turn, answer only: a code block written then does not run.
 
 Query buckets
 <<QUERY_JSON>>
@@ -669,6 +671,14 @@ WRAP_UP_NUDGE_TEMPLATE = """\
 Budget at {pct:.0f}% ({which}). Stop exploring: emit FINAL_ANSWER now from the
 evidence you already hold, and list the claims you could not support."""
 
+#: Appended instead of the nudge when this is the last root call the iteration cap
+#: permits. It is imperative because the advisory nudge was not enough: a recorded
+#: run spent its final turn on a failed ledger call and wrote no answer at all.
+LAST_TURN_INSTRUCTION = """\
+This is the last turn the iteration cap permits. Reply with FINAL_ANSWER: and no
+code block: a block written now will not run. Use the evidence you already hold,
+and list the claims you could not support."""
+
 # The caps that can stop the loop, in the order stop_reason() reports them.
 # exec_seconds is deliberately absent: it is a per-block limit enforced by the
 # runner, not a run budget.
@@ -823,6 +833,18 @@ def extract_final_answer(text: str) -> str | None:
     answer = outside.rsplit(marker, 1)[-1].strip()
 
     return answer or None
+
+
+def visible_text(text: str) -> str:
+    """Return the prose part of a completion: fenced blocks removed.
+
+    Used when the loop has no turn left to ask again: the reply is not executed,
+    so the model's own words are kept as a labelled partial answer. A block is
+    not an answer, and a block written after the final turn cannot inform one.
+    """
+    prose = _FENCE_RE.sub(" ", text or "")
+
+    return re.sub(r"\n{3,}", "\n\n", prose).strip()
 
 
 # Static: no per-run numbers (those live in budget.md) and no tool list (that is

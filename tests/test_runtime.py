@@ -253,6 +253,43 @@ class RuntimeTestCase(unittest.TestCase):
         # The block still executed: evidence first, then the answer.
         self.assertIn("print('ran')", self.sandbox.executed)
 
+    def test_the_last_turn_is_answer_only(self) -> None:
+        # Measured: a run spent its final turn on code at the iteration cap and
+        # returned a one-character answer with no ledger. The last permitted call
+        # is now answer-only; a block written there is dropped, and the visible
+        # prose is kept as a labelled partial answer.
+        runtime = Runtime(
+            "test query",
+            "run-last-turn",
+            client=self.client,
+            trajectory=Trajectory("run-last-turn"),
+            conn=None,
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=self.sandbox,  # type: ignore[arg-type]
+            registry=self.registry,
+            budget=Budget(BudgetLimits(max_iterations=2)),
+        )
+        runtime.client = FakeClient(
+            [
+                "```python\nprint('work')\n```",
+                "I have enough evidence.\n\n```python\nprint('too late')\n```",
+            ],
+            runtime.trajectory,
+        )
+
+        result = runtime.run()
+
+        self.assertTrue(result.partial)
+        self.assertEqual(result.stop_reason, "iterations")
+        self.assertIn("I have enough evidence.", result.answer)
+        self.assertFalse(any("too late" in code for code in self.sandbox.executed))
+        self.assertIn(
+            "last turn the iteration cap permits",
+            runtime.client.chat_calls[-1]["messages"][-1]["content"],
+        )
+
     def test_the_final_gate_sees_abbreviated_ids_as_full_uuids(self) -> None:
         # Measured: an answer citing 8-character prefixes reached the gate with no
         # chunk ids and no evidence, and was rejected four times.

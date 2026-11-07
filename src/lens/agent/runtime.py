@@ -53,6 +53,7 @@ from typing import Any, Mapping
 from lens import config
 from lens.agent.budget import Budget
 from lens.agent.context import (
+    LAST_TURN_INSTRUCTION,
     budget_usage_line,
     budget_warning,
     build_messages,
@@ -67,6 +68,7 @@ from lens.agent.context import (
     kg_bindings,
     tool_bindings,
     truncate_observation,
+    visible_text,
     write_context_files,
 )
 from lens.agent.ledger import VALID_STATUSES, TaskLedger
@@ -882,7 +884,7 @@ class Runtime:
                 extra={"from_seq": self._from_seq, "namespace_complete": self._namespace_complete},
             )
 
-    def _build_context(self) -> list[dict[str, Any]]:
+    def _build_context(self, *, last_turn: bool = False) -> list[dict[str, Any]]:
         """Assemble the root message list, compacting when over the threshold.
 
         Compaction must keep: the system message (it holds the
@@ -896,6 +898,10 @@ class Runtime:
         wrap-up nudge). Both ride at the **end**, never inside the system prompt:
         they change every turn, and a changing system prompt would invalidate the
         provider's prefix cache for the whole conversation.
+
+        ``last_turn`` replaces the advisory nudge with the answer-only instruction:
+        this call is the last the iteration cap permits, so a code block cannot be
+        run and the reply has to be the answer.
         """
         system_prompt = build_system_prompt(
             self.registry.manifest(),
@@ -930,10 +936,14 @@ class Runtime:
         # this point is the previous turn's prompt plus what that turn produced —
         # exactly what a provider can cache.
         tail = [{"role": "user", "content": budget_usage_line(self.budget.snapshot())}]
-        warning = budget_warning(self.budget.snapshot())
 
-        if warning:
-            tail.append({"role": "user", "content": warning})
+        if last_turn:
+            tail.append({"role": "user", "content": LAST_TURN_INSTRUCTION})
+        else:
+            warning = budget_warning(self.budget.snapshot())
+
+            if warning:
+                tail.append({"role": "user", "content": warning})
 
         return [*messages, *tail]
 
@@ -950,6 +960,11 @@ class Runtime:
          and check
         :meth:`Budget.can_continue`.
 
+        The **last call the iteration cap permits** is answer-only: a code block in
+        that reply is not executed, and if no ``FINAL_ANSWER:`` arrives the visible
+        prose is kept as a labelled partial answer rather than discarded. An empty
+        answer at the cap is the failure this rule exists to prevent.
+
         **Final gate** (the second half of the double gate): on ``FINAL_ANSWER``
         call ``evaluate_stage("final", {"score": None, "summary": {"answer":
         …, "citations": [...]}})``. A ``fail`` hands the ``failing_criterion``
@@ -962,9 +977,13 @@ class Runtime:
 
         while self.budget.can_continue():
             trace_ctx = TraceCtx(trace_id=self._trace_id, step_idx=self._step_idx, actor="root")
+            # The last call the iteration cap permits is answer-only: there is no
+            # turn left to ask again after it, so a code block written there cannot
+            # inform the answer.
+            last_turn = self.budget.iterations + 1 >= self.budget.limits.max_iterations
             result = self.client.chat(
                 "root",
-                self._build_context(),
+                self._build_context(last_turn=last_turn),
                 trace_ctx=trace_ctx,
                 max_tokens=config.ROOT_MAX_OUTPUT_TOKENS,
             )
@@ -978,6 +997,24 @@ class Runtime:
             # Fence-aware: the sentinel counts only outside a code block, so a
             # turn may run one last block *and* answer.
             final = extract_final_answer(completion)
+
+            if last_turn and final is None:
+                # No call remains to ask again: the block is not executed and the
+                # model's own words are kept as a labelled partial answer. Returning
+                # an empty answer is the one outcome this harness must not produce.
+                answer = visible_text(completion)
+                self._note(
+                    "iteration cap reached: kept the visible text as a partial answer"
+                    if answer
+                    else "iteration cap reached with no answer text"
+                )
+                self._after_turn()
+                return answer, True, "iterations"
+
+            if last_turn:
+                # A block in the answer-only turn cannot inform the answer, so it is
+                # dropped rather than executed.
+                code = None
 
             if code is not None:
                 observation = self._execute_block(code)
