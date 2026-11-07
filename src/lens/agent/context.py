@@ -223,6 +223,10 @@ Sub-tasks
 Coverage and evidence
 - Name the chunk ids that evidence each objective. An objective with no id is a
   gap: narrow the claim or refine a copy of the buckets.
+- Cite the full 36-character ``chunk_uuid`` (and the arXiv id) for every claim.
+  A prefix is not an id.
+- For every factual claim, point at the sentence in a retrieved chunk that states
+  it. If you cannot, put it under what you could not support.
 - A comparative claim may cite two to four chunks, one sentence from each.
 - Quote only a span you received from a record's ``quotes`` array, copied
   unchanged, with the id copied from the record. A sentence you did not receive

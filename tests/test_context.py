@@ -387,6 +387,7 @@ class ThinPromptTests(unittest.TestCase):
         self.assertLess(len(thin), len(full))
         self.assertIn("FINAL_ANSWER:", thin)
         self.assertIn("quotes", thin)
+        self.assertIn("36-character", thin)
 
     def test_kg_off_drops_the_build_line(self) -> None:
         prompt = self._prompt("thin", kg=False)
