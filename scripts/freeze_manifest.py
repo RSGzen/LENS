@@ -55,8 +55,9 @@ REQUIRED = (
 #: Instrument files that a reported number depends on. The query set, the capacity
 #: grid and the judging rubric are JSON/Markdown, not JSONL: a freeze that hashed
 #: only ``.jsonl`` recorded an empty block while the wave's definitions sat beside it
-#: in the same directory.
-INSTRUMENT_SUFFIXES = (".jsonl", ".json", ".md")
+#: in the same directory. ``.csv`` is a label instrument (the judged qrels), not a
+#: result file: results are written under the data root, never here.
+INSTRUMENT_SUFFIXES = (".jsonl", ".json", ".md", ".csv")
 
 
 def _run(command: Sequence[str], *, cwd: Path | None = None) -> str | None:

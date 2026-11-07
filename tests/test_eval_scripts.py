@@ -302,13 +302,15 @@ class FreezeTests(unittest.TestCase):
             (Path(tmp) / "cag.jsonl").write_text("{}\n", encoding="utf-8")
             (Path(tmp) / "queries.json").write_text("{}", encoding="utf-8")
             (Path(tmp) / "rubric.md").write_text("x", encoding="utf-8")
+            (Path(tmp) / "qrels.csv").write_text("query_id,doc_id,rel\n", encoding="utf-8")
             (Path(tmp) / "notes.txt").write_text("x", encoding="utf-8")
 
             hashes = freeze_manifest.instrument_hashes(Path(tmp))
 
         # The registry wrote ``{}`` for a directory full of ``.json`` instruments,
         # which is why a wave's own query set was missing from the freeze record.
-        self.assertEqual(set(hashes), {"cag.jsonl", "queries.json", "rubric.md"})
+        # A judged qrels is a label instrument, so ``.csv`` belongs here too.
+        self.assertEqual(set(hashes), {"cag.jsonl", "queries.json", "rubric.md", "qrels.csv"})
 
 
 class CampaignRowTests(unittest.TestCase):
