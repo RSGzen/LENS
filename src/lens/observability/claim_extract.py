@@ -16,7 +16,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from lens.observability.citations import claim_units
+from lens.observability.citations import claim_units, expand_short_ids
 from lens.observability.claims import (
     PREDICATES,
     ClaimFrame,
@@ -24,6 +24,7 @@ from lens.observability.claims import (
     align_quotes,
     parse_frames,
     quoted_spans,
+    split_long_units,
     verify_units,
 )
 
@@ -271,7 +272,10 @@ def verify_answer(
     answer's own quoted spans before verification, so the ledger and the reader
     are looking at the same sentence.
     """
-    units = claim_units(answer, include_uncited=True)
+    expanded = expand_short_ids(answer, texts)
+    units = claim_units(expanded, include_uncited=True)
+    units = [(text, [str(value) for value in ids if str(value) in texts]) for text, ids in units]
+    units = split_long_units(units)
 
     if not units:
         return ClaimReport(run_id=run_id, units=0)

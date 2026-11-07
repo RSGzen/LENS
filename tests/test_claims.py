@@ -15,6 +15,7 @@ from lens.observability.claims import (
     ClaimFrame,
     align_quotes,
     parse_frames,
+    split_long_units,
     verify_frame,
     verify_units,
 )
@@ -207,6 +208,29 @@ class AlignTests(unittest.TestCase):
 
         self.assertEqual(aligned[0].quote, "reaches 56.0 accuracy on OOLONG")
         self.assertEqual(aligned[0].quote_source, "chunk")
+
+
+class SplitTests(unittest.TestCase):
+    def test_a_long_unit_splits_at_sentences_and_keeps_its_ids(self) -> None:
+        text = (
+            "The first claim is stated in c1 and it has enough words to stand "
+            "as its own sentence. "
+            "The second claim is stated in c2 and it also has enough words to "
+            "stand as its own sentence. " + " ".join(["filler"] * 55)
+        )
+
+        units = split_long_units([(text, ["c1", "c2"])])
+
+        self.assertGreater(len(units), 1)
+        self.assertIn("c1", units[0][0])
+        self.assertEqual(units[0][1], ["c1"])
+        self.assertIn("c2", units[1][0])
+        self.assertEqual(units[1][1], ["c2"])
+
+    def test_a_short_unit_is_unchanged(self) -> None:
+        units = split_long_units([("one short claim with c1", ["c1"])])
+
+        self.assertEqual(units, [("one short claim with c1", ["c1"])])
 
 
 class ParseTests(unittest.TestCase):

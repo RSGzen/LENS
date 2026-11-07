@@ -437,6 +437,48 @@ def quoted_spans(text: str) -> list[str]:
     return [match.group(1) for match in _QUOTED.finditer(text or "")]
 
 
+def split_long_units(
+    units: Sequence[tuple[str, Sequence[str]]],
+    *,
+    max_words: int = 60,
+    min_words: int = 8,
+) -> list[tuple[str, list[str]]]:
+    """Split a long bullet into sentence-sized claim units.
+
+    A review bullet can hold several claims and a dozen ids; treating it as one
+    unit makes coverage a paragraph measure and gives the gate one question for
+    ten assertions. Sentences that name an id keep that id; a sentence that names
+    none inherits the parent's ids, so a split never drops evidence.
+    """
+    result: list[tuple[str, list[str]]] = []
+
+    for text, ids in units:
+        body = " ".join(text.split())
+
+        if len(body.split()) <= max_words:
+            result.append((body, [str(value) for value in ids]))
+            continue
+
+        for sentence in re.split(r"(?<=[.!?])\s+", body):
+            sentence = sentence.strip()
+
+            if not sentence:
+                continue
+
+            if len(sentence.split()) < min_words:
+                if result:
+                    previous, previous_ids = result[-1]
+                    result[-1] = (f"{previous} {sentence}", previous_ids)
+                else:
+                    result.append((sentence, [str(value) for value in ids]))
+                continue
+
+            named = [str(value) for value in ids if str(value) in sentence]
+            result.append((sentence, named or [str(value) for value in ids]))
+
+    return result
+
+
 def _closest_quote(quote: str, candidates: Sequence[str]) -> str:
     """Return the candidate that shares the most content with ``quote``."""
     if len(candidates) == 1:
@@ -575,6 +617,7 @@ __all__ = [
     "align_quotes",
     "parse_frames",
     "quoted_spans",
+    "split_long_units",
     "verify_frame",
     "verify_units",
 ]
