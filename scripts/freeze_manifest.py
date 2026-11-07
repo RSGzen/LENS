@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from lens import config
+from lens.tools.retrieval import hnsw_ef_for
 
 FREEZE_FILENAME = "freeze.json"
 REQUIRED = (
@@ -167,7 +168,8 @@ def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> d
             "n": config.RETRIEVAL_N,
             "C": config.RETRIEVAL_C,
             "c": config.RETRIEVAL_C_TOP,
-            "ef_search": config.HNSW_EF_SEARCH,
+            # The query path uses the per-query value, not the base constant.
+            "ef_search": hnsw_ef_for(config.RETRIEVAL_K),
         },
         "python": platform.python_version(),
         "platform": platform.platform(),
