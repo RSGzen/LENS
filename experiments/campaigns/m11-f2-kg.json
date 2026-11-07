@@ -1,0 +1,30 @@
+{
+  "name": "m11-f2-kg",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full-kg-nofiles",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1"
+      },
+      "note": "The F2 fallback after the audit: full prompt, KG instructions kept because the tool only builds when called, and no workspace files because no reviewed run opened them. Same query as the rigv5-v8 series."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Same query as m11-rigv5-cell through m11-rigv8-quotes and the claim-v4 F2 runs."
+    }
+  ]
+}

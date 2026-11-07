@@ -1,0 +1,40 @@
+{
+  "name": "m11-rigv9-cell",
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "rlm-full-kg-nofiles",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1"
+      },
+      "note": "The treatment arm on the rig being frozen: F2 plus the KG instructions, no workspace context files, the last-turn answer rule and the gap-stripped claim ledger. Three runs so the cost and wall-clock mean has a spread."
+    },
+    {
+      "name": "naive-flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      },
+      "note": "The baseline, three runs, because its spread is the denominator the treatment has to clear."
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
+      "note": "Same query as m11-rigv5-cell and the F2 confirmation, so the new unit costs are comparable to the pre-swap cell."
+    }
+  ]
+}
