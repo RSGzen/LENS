@@ -11,11 +11,13 @@ import unittest
 
 import lens.observability.trajectory as trajectory_module
 from lens.observability.citations import (
+    CitationReport,
     cited_ids,
     claim_units,
     expand_short_ids,
     recorded_chunk_texts,
     resolve_citations,
+    resolve_merged_ids,
     verify_quoted_spans,
     write_sources_md,
 )
@@ -217,6 +219,53 @@ class ExpandShortIdsTestCase(unittest.TestCase):
         self.assertEqual(expand_short_ids(text, self.KNOWN), text)
 
 
+class MergedIdTestCase(unittest.TestCase):
+    """A full uuid with an invented suffix is a typo, not a missing chunk."""
+
+    REAL = "c3be54f5-88d8-5111-8111-111111111111"
+    WRITTEN = "c3be54f5-8d39-5905-b23a-f911f0437cd2"
+    AMBIGUOUS_A = "c3be54f5-1111-5111-8111-111111111111"
+    AMBIGUOUS_B = "c3be54f5-2222-5222-8222-222222222222"
+
+    def test_a_unique_prefix_names_the_chunk(self) -> None:
+        text, repairs = resolve_merged_ids(f"See [{self.WRITTEN}].", [self.REAL])
+
+        self.assertEqual(text, f"See [{self.REAL}].")
+        self.assertEqual(repairs, [(self.WRITTEN, self.REAL)])
+
+    def test_an_ambiguous_prefix_stays_as_written(self) -> None:
+        text = f"See [{self.WRITTEN}]."
+
+        out, repairs = resolve_merged_ids(text, [self.AMBIGUOUS_A, self.AMBIGUOUS_B])
+
+        self.assertEqual(out, text)
+        self.assertEqual(repairs, [])
+
+    def test_a_known_id_is_left_alone(self) -> None:
+        text, repairs = resolve_merged_ids(f"See [{self.REAL}].", [self.REAL])
+
+        self.assertEqual(text, f"See [{self.REAL}].")
+        self.assertEqual(repairs, [])
+
+    def test_the_report_counts_merged_separately(self) -> None:
+        report = CitationReport(
+            run_id="r",
+            merged=[(self.WRITTEN, self.REAL)],
+            unresolved=[self.AMBIGUOUS_A],
+        )
+
+        self.assertEqual(report.counts["merged"], 1)
+        self.assertEqual(report.counts["unresolved"], 1)
+        self.assertEqual(report.to_dict()["merged"][0]["chunk_uuid"], self.REAL)
+
+    def test_a_quote_near_a_merged_id_is_in_cited(self) -> None:
+        quote = "designed to retrieve answers from long contexts"
+        answer = f'"{quote}" [{self.WRITTEN}]'
+        texts = {self.REAL: f"Retrieval-Augmented Generation {quote}."}
+
+        self.assertEqual(verify_quoted_spans(answer, texts), (1, 0, 1))
+
+
 class ClaimUnitShapeTestCase(unittest.TestCase):
     """The answer shapes the model actually writes."""
 
@@ -327,7 +376,7 @@ class CitationTestCase(unittest.TestCase):
 
         report = resolve_citations("run-cite")
 
-        self.assertEqual(report.counts, {"cited": 2, "resolved": 1, "unresolved": 1})
+        self.assertEqual(report.counts, {"cited": 2, "resolved": 1, "merged": 0, "unresolved": 1})
         self.assertEqual(report.unresolved, [GHOST])
 
         resolved = [c for c in report.citations if c.resolved][0]
@@ -356,7 +405,7 @@ class CitationTestCase(unittest.TestCase):
 
         report = resolve_citations("run-cite")
 
-        self.assertEqual(report.counts, {"cited": 1, "resolved": 1, "unresolved": 0})
+        self.assertEqual(report.counts, {"cited": 1, "resolved": 1, "merged": 0, "unresolved": 0})
         self.assertEqual(report.citations[0].token, CHUNK)
 
     def test_an_ambiguous_prefix_stays_unresolved(self) -> None:
@@ -393,7 +442,7 @@ class CitationTestCase(unittest.TestCase):
         # A failed run must still open: no answer.md is not an exception.
         report = resolve_citations("run-cite")
 
-        self.assertEqual(report.counts, {"cited": 0, "resolved": 0, "unresolved": 0})
+        self.assertEqual(report.counts, {"cited": 0, "resolved": 0, "merged": 0, "unresolved": 0})
         self.assertEqual(report.answer_chars, 0)
 
     def test_damaged_payload_does_not_raise(self) -> None:

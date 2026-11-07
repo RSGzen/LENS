@@ -130,9 +130,10 @@ Output contract
 3. **Retrieve first.** Run `retrieval_funnel`<<BEGIN:kg>> (and `build_kg` only if you will
    traverse the graph)<<END:kg>> and keep the returned chunks in a variable.
    Answering from memory is a failure: cite the real `chunk_uuid` + `arxiv_id` for
-   every claim. "See the retrieved evidence" or "[above]" is not a citation. Write
-   the **full** 36-character `chunk_uuid` in the answer, even if your digests print
-   a shortened one.
+   every claim. "See the retrieved evidence" or "[above]" is not a citation. Copy
+   the **full** 36-character `chunk_uuid` when a variable holds it. If it does not,
+   write the first 8 characters: the host expands a prefix that names exactly one
+   chunk. Never retype a suffix from memory.
 4. **Quote before you assert.** For every factual claim, be able to point at the
    sentence in a retrieved chunk that states it. If you cannot quote it, do not
    write it as a finding: put it under what you could not support. A claim whose
@@ -218,7 +219,7 @@ How to work
 
 Sub-tasks
 - ``rlm_api.sub_extract(chunk_ids, fields=None)`` returns
-  ``{"records": [{"id", "quotes", ...}], "missing_ids", "errors"}``. Up to 12 ids
+  ``{"records": [{"id", "quotes", ...}], "missing_ids", "errors"}``. Up to 24 ids
   per call; the host batches. ``quotes`` are verbatim and citable.
 <<BEGIN:kg>>
 - ``build_kg(chunk_ids)`` exists for relation questions; use it only if you will
@@ -228,8 +229,9 @@ Sub-tasks
 Coverage and evidence
 - Name the chunk ids that evidence each objective. An objective with no id is a
   gap: narrow the claim or refine a copy of the buckets.
-- Cite the full 36-character ``chunk_uuid`` (and the arXiv id) for every claim.
-  A prefix is not an id.
+- Cite the ``chunk_uuid`` (and the arXiv id) for every claim: the full
+  36-character ``chunk_uuid`` copied from a variable, or its first 8 characters.
+  The host expands an unambiguous prefix; an invented suffix is not a citation.
 - For every factual claim, point at the sentence in a retrieved chunk that states
   it. If you cannot, put it under what you could not support.
 - A comparative claim may cite two to four chunks, one sentence from each.

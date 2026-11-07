@@ -152,6 +152,9 @@ def check_run(run_id: str) -> bool:
     report = resolve_citations(run_id)
     counts = report.counts
 
+    for written, full in report.merged:
+        print(f"[INFO] merged id repaired: {written} -> {full}")
+
     # The gate checks the shape the mode can produce; see ``_event_shape``.
     mode = ((manifest.extra or {}).get("arm") or {}).get("mode", {}).get("run") or "rlm"
     required_types, allowed, ledger_required = _event_shape(mode)
@@ -232,7 +235,7 @@ def check_run(run_id: str) -> bool:
             "citations resolved",
             counts["unresolved"] == 0,
             f"cited {counts['cited']} · resolved {counts['resolved']}"
-            f" · unresolved {counts['unresolved']}",
+            f" · merged {counts['merged']} · unresolved {counts['unresolved']}",
         ),
         _check(
             "sandbox stopped",

@@ -264,13 +264,17 @@ class CitationReport:
     citations: list[Citation] = field(default_factory=list)
     # Ids present in the answer that no recorded payload explains.
     unresolved: list[str] = field(default_factory=list)
+    # ``(written, resolved)`` pairs: a full uuid whose suffix was invented but
+    # whose eight-character prefix names exactly one recorded chunk.
+    merged: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def counts(self) -> dict[str, int]:
-        """Return ``{cited, resolved, unresolved}`` (unique tokens per kind)."""
+        """Return ``{cited, resolved, merged, unresolved}`` (unique tokens per kind)."""
         return {
             "cited": len(self.citations),
             "resolved": sum(1 for c in self.citations if c.resolved),
+            "merged": len(self.merged),
             "unresolved": len(self.unresolved),
         }
 
@@ -281,6 +285,7 @@ class CitationReport:
             "answer_chars": self.answer_chars,
             "counts": self.counts,
             "citations": [c.to_dict() for c in self.citations],
+            "merged": [{"written": written, "chunk_uuid": full} for written, full in self.merged],
             "unresolved": list(self.unresolved),
         }
 
@@ -414,6 +419,7 @@ def verify_quoted_spans(
     not counted: a ledger task name or an emphasis quote is not an evidence quote.
     """
     answer = expand_short_ids(answer or "", texts)
+    answer, _ = resolve_merged_ids(answer, texts)
     normalized = {key: _words(value) for key, value in texts.items()}
     in_cited = elsewhere = total = 0
 
@@ -530,6 +536,40 @@ def expand_short_ids(text: str, known_ids: Iterable[str]) -> str:
     return _LOOSE_SHORT_ID_RE.sub(replace, text or "")
 
 
+def resolve_merged_ids(text: str, known_ids: Iterable[str]) -> tuple[str, list[tuple[str, str]]]:
+    """Return ``text`` with an invented full uuid replaced by the chunk it names.
+
+    A model can write a full uuid whose first eight characters are right and whose
+    suffix was reconstructed from memory. That token is neither a real id nor a
+    short prefix, so the prefix expansion leaves it alone and the answer is
+    reported as citing a chunk that was never retrieved. It is repaired here only
+    when its prefix names **exactly one** recorded chunk; anything else stays as
+    written and is reported unresolved by the caller.
+
+    The returned pairs are ``(written, resolved)``, so a report can show what the
+    answer said without rewriting the answer itself.
+    """
+    known = {str(full).lower(): str(full) for full in known_ids if full}
+    repairs: list[tuple[str, str]] = []
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        key = token.lower()
+
+        if key in known:
+            return known[key]
+
+        matches = [full for low, full in known.items() if low.startswith(key[:8])]
+
+        if len(matches) != 1:
+            return token
+
+        repairs.append((token, matches[0]))
+        return matches[0]
+
+    return _CHUNK_RE.sub(replace, text or ""), repairs
+
+
 def recorded_chunk_ids(trajectory: Trajectory) -> set[str]:
     """Return every chunk uuid a hydrating tool returned in this run's log."""
     ids: set[str] = set()
@@ -594,6 +634,7 @@ def resolve_citations(run_id: str) -> CitationReport:
     turns = replay_turns(trajectory)
     chunks, papers, provenance = _evidence_index(turns, trajectory)
     answer = expand_short_ids(answer, chunks)
+    answer, report.merged = resolve_merged_ids(answer, chunks)
 
     seen: set[str] = set()
 

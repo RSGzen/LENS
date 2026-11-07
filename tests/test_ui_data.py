@@ -250,7 +250,9 @@ class UiDataTestCase(unittest.TestCase):
         view = data.load_run("run-a")
 
         assert view is not None
-        self.assertEqual(view.citations.counts, {"cited": 1, "resolved": 1, "unresolved": 0})
+        self.assertEqual(
+            view.citations.counts, {"cited": 1, "resolved": 1, "merged": 0, "unresolved": 0}
+        )
 
     def test_the_answer_renders_a_chip_with_the_id_in_the_tooltip(self) -> None:
         self._make_run("run-a", answer=f"only chunk one: {CHUNK_A}\n")

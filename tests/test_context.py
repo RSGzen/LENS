@@ -111,6 +111,11 @@ class ToolBindingTestCase(unittest.TestCase):
         self.assertIn("concurrent batches of 4", prompt)
         self.assertIn("When to use them", prompt)
         self.assertIn("full** 36-character `chunk_uuid`", prompt)
+        # An invented suffix is worse than a short prefix: the prefix resolves,
+        # while a full id that names no chunk is listed as unresolved.
+        self.assertIn("Never retype a suffix", prompt)
+        self.assertNotIn("A prefix is not an id", prompt)
+        self.assertNotIn("Up to 12 ids", prompt)
         self.assertIn("never write it\n   in the same message as a block", prompt)
 
     def test_prompt_finishes_the_reading_and_the_printing_in_one_turn(self) -> None:
