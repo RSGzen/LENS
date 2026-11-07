@@ -215,7 +215,9 @@ Citation ids in the answer render as short paper-title chips. Hovering a chip
 shows the full title, authors, year and the exact id; the citation table below
 keeps the full id as the copy surface. The Paper lookup page lists a paper's
 chunks and reads the selected chunk's text. A run with a claim ledger shows its
-coverage, statuses and one row per claim above the answer.
+coverage, statuses and one row per claim above the answer. The run meters show
+cached prompt tokens and the cache-hit share, and each turn card repeats them
+beside `tokens in`.
 
 ![Recorded Runs page](docs/images/recorded-runs.png)
 
