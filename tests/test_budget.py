@@ -80,6 +80,25 @@ class BudgetTestCase(unittest.TestCase):
         self.assertFalse(self.budget.can_continue())
         self.assertEqual(self.budget.stop_reason(), "iterations")
 
+    def test_measurement_can_run_after_the_iteration_cap(self) -> None:
+        # The claim pass spends tokens, not a root turn; an iteration-capped run
+        # can still afford to measure the answer it produced.
+        self.budget.record_iteration()
+        self.budget.record_iteration()
+
+        self.assertFalse(self.budget.can_continue())
+        self.assertTrue(self.budget.can_measure())
+
+    def test_measurement_stops_at_the_token_cap(self) -> None:
+        self.budget.record_chat(make_result(tokens_in=90, tokens_out=10, cost=0.0))
+
+        self.assertFalse(self.budget.can_measure())
+
+    def test_measurement_stops_at_the_cost_cap(self) -> None:
+        self.budget.record_chat(make_result(tokens_in=1, tokens_out=1, cost=1.0))
+
+        self.assertFalse(self.budget.can_measure())
+
     def test_token_cap_stops_the_loop(self) -> None:
         self.budget.record_chat(make_result(tokens_in=90, tokens_out=10, cost=0.0))
         self.assertFalse(self.budget.can_continue())

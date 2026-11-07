@@ -1066,10 +1066,12 @@ class Runtime:
             claim_report = None
 
             if config.RUN_MODE != "document":
-                if self.budget.can_continue():
+                if self.budget.can_measure():
                     claim_report = self._claim_pass(gate_answer, trace_ctx)
                 else:
-                    self._note("claim pass skipped: budget exhausted before the final answer")
+                    self._note(
+                        "claim pass skipped: tokens or cost exhausted before the final answer"
+                    )
 
             if (
                 claim_report is not None

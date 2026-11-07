@@ -103,16 +103,28 @@ class Budget:
         thin alias for it. Two functions used to enumerate the same four caps;
         if they ever drift (one edited, the other not) the loop continues and
         then labels the partial answer with a *different* reason than the one that
-        actually stopped it — so the duplication is removed rather than
+        actually stopped it - so the duplication is removed rather than
         disciplined.
 
-        Caps: iterations, tokens (**input + output** — output is the expensive
+        Caps: iterations, tokens (**input + output** - output is the expensive
         half), cost, backtracks. Deliberately **not** a cap: ``exec_seconds``.
         The 120 s limit is *per block* and the runner enforces it, so summing
         blocks must never end a run early (5 x 25 s would otherwise "exhaust" a
         120 s budget with the token budget barely touched).
         """
         return self.stop_reason() is None
+
+    def can_measure(self) -> bool:
+        """``True`` while a final measurement can spend without exhausting tokens or cost.
+
+        Iterations are deliberately ignored: the claim pass is not a root turn,
+        so a run that hit the iteration cap can still afford to measure the
+        answer it produced. Tokens and cost are real spend and remain caps.
+        """
+        return (
+            self.tokens_in + self.tokens_out < self.limits.max_tokens
+            and self.cost_usd < self.limits.max_cost_usd
+        )
 
     def stop_reason(self) -> str | None:
         """Return the first exhausted cap name, or ``None``.
