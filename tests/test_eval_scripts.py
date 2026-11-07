@@ -344,6 +344,94 @@ class CampaignRowTests(unittest.TestCase):
         self.assertEqual(row["code_blocks"], 0)
         self.assertAlmostEqual(row["cost_usd_with_fee"], 0.25 * 1.055, places=6)
 
+    def test_a_row_carries_the_gate_claim_and_ledger_outcome(self) -> None:
+        # W7 reads one CSV, not 400 trajectories: the verdicts have to be columns.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "r1"
+            run_dir.mkdir()
+            (run_dir / "claims.json").write_text(
+                json.dumps({"units": 12, "coverage": 0.5}), encoding="utf-8"
+            )
+            (run_dir / "tasks.json").write_text(
+                json.dumps(
+                    [
+                        {"task_id": "t1", "status": "done"},
+                        {"task_id": "t2", "status": "failed"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "trajectory.jsonl").write_text(
+                "\n".join(
+                    json.dumps(event)
+                    for event in [
+                        {
+                            "action": "gate.verdict",
+                            "stage": "retrieval",
+                            "verdict": "pass",
+                            "confidence": 0.51,
+                        },
+                        {
+                            "action": "gate.verdict",
+                            "stage": "final",
+                            "verdict": "pass",
+                            "confidence": 0.22,
+                            "extra": {"decision": "aggregate"},
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            manifest = SimpleNamespace(
+                status="completed", iterations=4, stop_reason=None, totals={}
+            )
+            job = {"arm": "a", "query_id": "q", "expect": "answerable", "run_id": "r1"}
+
+            with (
+                patch.object(run_campaign.runstore, "runs_root", return_value=Path(tmp)),
+                patch.object(run_campaign.runstore, "read_manifest", return_value=manifest),
+                patch.object(
+                    run_campaign,
+                    "resolve_citations",
+                    return_value=SimpleNamespace(
+                        counts={"cited": 2, "resolved": 2, "merged": 1, "unresolved": 0}
+                    ),
+                ),
+                patch.object(run_campaign, "replay_turns", return_value=[]),
+            ):
+                row = run_campaign._row(job, 0, 1.0)
+
+        self.assertEqual(row["merged"], 1)
+        self.assertEqual(row["retrieval_gate"], "pass")
+        self.assertEqual(row["final_gate"], "pass")
+        self.assertEqual(row["final_gate_p"], 0.22)
+        self.assertEqual(row["claims_units"], 12)
+        self.assertEqual(row["claims_coverage"], 0.5)
+        self.assertEqual((row["tasks_done"], row["tasks_failed"], row["tasks_open"]), (1, 1, 0))
+
+    def test_a_row_is_appended_and_the_header_written_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "campaign.csv"
+            run_campaign._append_row(path, {"run_id": "a", "cost_usd": 1})
+            run_campaign._append_row(path, {"run_id": "b", "cost_usd": 2})
+
+            lines = path.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(lines, ["run_id,cost_usd", "a,1", "b,2"])
+
+    def test_skip_existing_only_treats_a_final_manifest_as_done(self) -> None:
+        with patch.object(
+            run_campaign.runstore,
+            "read_manifest",
+            return_value=SimpleNamespace(status="completed"),
+        ):
+            self.assertTrue(run_campaign._terminal("r"))
+
+        with patch.object(
+            run_campaign.runstore, "read_manifest", return_value=SimpleNamespace(status="running")
+        ):
+            self.assertFalse(run_campaign._terminal("r"))
+
     def test_a_missing_run_still_produces_a_row(self) -> None:
         job = {"arm": "a", "query_id": "q", "expect": "", "run_id": "r1"}
 

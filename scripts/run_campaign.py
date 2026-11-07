@@ -90,12 +90,19 @@ def check_polarity() -> PolarityResult:
     return probe_polarity(lambda state, questions: client.jev(state, questions, trace_ctx=trace))
 
 
-def run_jobs(jobs: list[dict[str, Any]], *, digest: str | None, dry_run: bool) -> list[dict]:
+def run_jobs(
+    jobs: list[dict[str, Any]],
+    *,
+    digest: str | None,
+    dry_run: bool,
+    csv_path: Path | None = None,
+) -> list[dict]:
     """Execute the matrix and return one result row per job.
 
     A failing run does **not** abort the campaign: the row says ``exit_code`` and
     the next arm still runs. Partial evidence beats a campaign that stops at the
-    first bad query.
+    first bad query. Each row is appended to ``csv_path`` as it finishes, so a
+    wave that stops mid-way keeps the runs it already paid for.
     """
     rows: list[dict[str, Any]] = []
 
@@ -113,27 +120,129 @@ def run_jobs(jobs: list[dict[str, Any]], *, digest: str | None, dry_run: bool) -
             print(f"  env: {job['env'] or '(inherited)'}")
             continue
 
-        started = datetime.now(timezone.utc)
+        started_at = datetime.now(timezone.utc)
         finished = subprocess.run(command, cwd=config.REPO_ROOT, env=env, check=False)
-        seconds = (datetime.now(timezone.utc) - started).total_seconds()
+        finished_at = datetime.now(timezone.utc)
+        seconds = (finished_at - started_at).total_seconds()
+        row = _row(
+            job,
+            finished.returncode,
+            seconds,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        rows.append(row)
 
-        rows.append(_row(job, finished.returncode, seconds))
+        if csv_path is not None:
+            _append_row(csv_path, row)
 
     return rows
 
 
-def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
+def _claims_columns(run_dir: Path) -> tuple[int, float]:
+    """Return ``(units, coverage)`` from ``claims.json`` (zeros when absent)."""
+    path = run_dir / "claims.json"
+
+    if not path.is_file():
+        return 0, 0.0
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0, 0.0
+
+    return int(payload.get("units") or 0), round(float(payload.get("coverage") or 0.0), 4)
+
+
+def _task_counts(run_dir: Path) -> dict[str, int]:
+    """Return task counts by status from ``tasks.json`` (empty when absent)."""
+    path = run_dir / "tasks.json"
+
+    if not path.is_file():
+        return {}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+    tasks = payload.get("tasks") if isinstance(payload, dict) else payload
+
+    if isinstance(tasks, dict):
+        tasks = list(tasks.values())
+
+    counts: dict[str, int] = {}
+
+    for task in tasks or []:
+        if isinstance(task, dict):
+            status = str(task.get("status") or "pending")
+            counts[status] = counts.get(status, 0) + 1
+
+    return counts
+
+
+def _gate_columns(trajectory_path: Path) -> dict[str, Any]:
+    """Return the last retrieval and final gate verdicts recorded in a run.
+
+    A rejected answer can be revised, so the final gate may appear more than once;
+    the last verdict is the one the run accepted or stopped on.
+    """
+    columns: dict[str, Any] = {
+        "retrieval_gate": "",
+        "final_gate": "",
+        "final_gate_p": "",
+        "final_gate_decision": "",
+    }
+
+    if not trajectory_path.is_file():
+        return columns
+
+    for line in trajectory_path.read_text(encoding="utf-8").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+
+        if not isinstance(event, dict) or event.get("action") != "gate.verdict":
+            continue
+
+        stage = event.get("stage")
+
+        if stage == "retrieval":
+            columns["retrieval_gate"] = str(event.get("verdict") or "")
+        elif stage == "final":
+            confidence = event.get("confidence")
+            columns["final_gate"] = str(event.get("verdict") or "")
+            columns["final_gate_p"] = round(float(confidence), 4) if confidence is not None else ""
+            columns["final_gate_decision"] = str((event.get("extra") or {}).get("decision") or "")
+
+    return columns
+
+
+def _row(
+    job: dict[str, Any],
+    exit_code: int,
+    seconds: float,
+    *,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
+) -> dict[str, Any]:
     """Build one CSV row from the run's own artifacts (never from stdout)."""
-    manifest = runstore.read_manifest(runstore.runs_root() / job["run_id"])
+    run_dir = runstore.runs_root() / job["run_id"]
+    manifest = runstore.read_manifest(run_dir)
     totals = (manifest.totals if manifest else None) or {}
-    counts = resolve_citations(job["run_id"]).counts if manifest else {}
+    report = resolve_citations(job["run_id"]) if manifest else None
+    counts = report.counts if report else {}
     turns = []
-    trajectory_path = runstore.runs_root() / job["run_id"] / "trajectory.jsonl"
+    trajectory_path = run_dir / "trajectory.jsonl"
 
     if manifest is not None and trajectory_path.is_file():
         turns = replay_turns(Trajectory(job["run_id"]))
 
     work = replay_summary(turns)
+    claims_units, claims_coverage = _claims_columns(run_dir)
+    tasks = _task_counts(run_dir)
+    gates = _gate_columns(trajectory_path)
     cost = float(totals.get("cost_usd") or 0.0)
     tokens_in = int(totals.get("tokens_in") or 0)
     tokens_out = int(totals.get("tokens_out") or 0)
@@ -148,6 +257,8 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
         "query_id": job["query_id"],
         "expect": job["expect"] or "",
         "run_id": job["run_id"],
+        "started_at": started_at.isoformat(timespec="seconds") if started_at else "",
+        "finished_at": finished_at.isoformat(timespec="seconds") if finished_at else "",
         "exit_code": exit_code,
         "status": manifest.status if manifest else "missing",
         "iterations": manifest.iterations if manifest else 0,
@@ -170,9 +281,48 @@ def _row(job: dict[str, Any], exit_code: int, seconds: float) -> dict[str, Any]:
         "code_blocks": int(work.get("code_blocks") or 0),
         "cited": counts.get("cited") or 0,
         "resolved": counts.get("resolved") or 0,
+        "merged": counts.get("merged") or 0,
         "unresolved": counts.get("unresolved") or 0,
+        "retrieval_gate": gates["retrieval_gate"],
+        "final_gate": gates["final_gate"],
+        "final_gate_p": gates["final_gate_p"],
+        "final_gate_decision": gates["final_gate_decision"],
+        "claims_units": claims_units,
+        "claims_coverage": claims_coverage,
+        "tasks_done": tasks.get("done", 0),
+        "tasks_failed": tasks.get("failed", 0),
+        "tasks_open": tasks.get("pending", 0) + tasks.get("in_progress", 0),
         "seconds": round(seconds, 1),
     }
+
+
+def _append_row(path: Path, row: dict[str, Any]) -> None:
+    """Append one row, writing the header on first use.
+
+    The CSV is where a wave's per-run numbers are aggregated. Writing it once at
+    the end loses the summary when a long wave stops mid-way, and the run
+    directories alone do not say what the matrix was.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = not path.is_file()
+
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(row))
+
+        if new:
+            writer.writeheader()
+
+        writer.writerow(row)
+
+
+def _terminal(run_id: str) -> bool:
+    """Return True when a previous attempt already wrote a final manifest."""
+    try:
+        manifest = runstore.read_manifest(runstore.runs_root() / run_id)
+    except (OSError, ValueError):
+        return False
+
+    return manifest is not None and manifest.status in {"completed", "partial", "failed"}
 
 
 def stop_reason_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -200,7 +350,7 @@ def _write_output(
     digest: str | None,
     polarity: dict[str, Any] | None = None,
 ) -> Path:
-    """Write ``campaign.json`` + ``campaign.csv``; return the directory.
+    """Write ``campaign.json`` and, when not already appended, ``campaign.csv``.
 
     The image identity and the polarity probes live in the JSON header, not in
     every row: one campaign ran on one image, and a per-row copy invites an edit
@@ -222,9 +372,10 @@ def _write_output(
     }
 
     (out / "campaign.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    csv_path = out / "campaign.csv"
 
-    if rows:
-        with (out / "campaign.csv").open("w", newline="", encoding="utf-8") as handle:
+    if rows and not csv_path.is_file():
+        with csv_path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
             writer.writeheader()
             writer.writerows(rows)
@@ -250,6 +401,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out", default=None, help="output directory (default: DATA_ROOT/campaigns)"
     )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="skip a cell whose run directory already has a final manifest",
+    )
     args = parser.parse_args(argv)
 
     # A campaign prints the queries it is about to run; the console is cp1252.
@@ -261,6 +417,20 @@ def main(argv: list[str] | None = None) -> int:
 
     campaign = load_campaign(args.campaign)
     jobs = build_jobs(campaign)
+
+    if args.skip_existing:
+        keep = []
+        skipped = 0
+
+        for job in jobs:
+            if _terminal(job["run_id"]):
+                skipped += 1
+            else:
+                keep.append(job)
+
+        jobs = keep
+        print(f"skipping {skipped} run(s) with a final manifest")
+
     digest = image_digest()
 
     print(f"campaign {campaign['name']}: {len(jobs)} run(s), {len(campaign['arms'])} arm(s)")
@@ -297,16 +467,25 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 3
 
-    rows = run_jobs(jobs, digest=digest, dry_run=args.dry_run)
+    out_root = Path(args.out) if args.out else config.DATA_ROOT / "campaigns"
+    out_dir = out_root / (
+        f"{campaign['name']}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+    )
+
+    rows = run_jobs(
+        jobs,
+        digest=digest,
+        dry_run=args.dry_run,
+        csv_path=None if args.dry_run else out_dir / "campaign.csv",
+    )
 
     if args.dry_run:
         return 0
 
-    out = Path(args.out) if args.out else config.DATA_ROOT / "campaigns"
     written = _write_output(
         rows,
         campaign,
-        out / f"{campaign['name']}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
+        out_dir,
         digest=digest,
         polarity=polarity.to_dict() if polarity is not None else None,
     )
