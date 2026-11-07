@@ -132,8 +132,8 @@ the JSON schema and the output cap, hydrates chunk text from ids the root alread
 holds, and stamps the ids on the way back, so an invented id cannot become
 evidence.
 
-Caps for every run: 10 iterations, 250,000 tokens (input plus output, sub-tasks
-included), $1.00, 120 seconds per code block, 3 backtracks and 40 sub-task calls.
+Caps for every run: 10 iterations, 325,000 tokens (input plus output, sub-tasks
+included), $0.50, 120 seconds per code block, 3 backtracks and 40 sub-task calls.
 A run ends at a cap, at `FINAL_ANSWER:`, or after at most three rejections from the
 final gate. The stop reason is recorded, so a partial answer is reported as a
 partial answer.
@@ -147,6 +147,7 @@ python scripts/check_run.py <run_id>        # asserts the run's contract
 python scripts/run_report.py <run_id>       # writes a static Markdown report
 python scripts/verify_claims.py --run <run_id>   # claim ledger for one recorded run
 python scripts/check_contradiction.py --run <run_id>   # negative control: a wrong number
+python scripts/truth_sample.py build --run <run_id> --out worksheet.csv   # blind claim-truth sheet
 ```
 
 Resume an interrupted run, or start a child run that records its parent:
@@ -209,6 +210,11 @@ streamlit run src/lens/ui/app.py
 turn timeline with code and tool calls, an evidence panel, and the answer with its
 resolved citations. It has no live controls, and every view is captioned as a
 recording.
+
+Citation ids in the answer render as short paper-title chips. Hovering a chip
+shows the full title, authors, year and the exact id; the citation table below
+keeps the full id as the copy surface. The Paper lookup page lists a paper's
+chunks and reads the selected chunk's text.
 
 ![Recorded Runs page](docs/images/recorded-runs.png)
 
