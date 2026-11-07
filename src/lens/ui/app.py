@@ -56,15 +56,21 @@ PLAY_SECONDS = 1.5
 #: Inline citation chip and its hover card. The full id is in the tooltip; the
 #: citation table below remains the copy surface.
 _CITE_CSS = """<style>
-.lens-cite { position: relative; border-bottom: 1px dotted #8a8f98; cursor: help; }
+.lens-cite {
+  position: relative; display: inline-block;
+  border-bottom: 1px dotted #8a8f98; cursor: help;
+}
 .lens-cite:hover::after {
   content: attr(data-tip);
   position: absolute; left: 0; bottom: 1.45em; z-index: 1000;
-  max-width: 360px; white-space: pre-wrap; overflow-wrap: anywhere;
+  width: max-content; min-width: 220px; max-width: min(360px, 80vw);
+  white-space: normal; overflow-wrap: anywhere;
   background: #1f2430; color: #f5f5f5; padding: .55em .7em;
   border-radius: .4em; font-size: .8rem; line-height: 1.35;
   box-shadow: 0 4px 14px rgba(0,0,0,.25);
 }
+.lens-answer { overflow: visible; }
+div[data-testid="stMarkdownContainer"] { overflow: visible; }
 </style>"""
 
 #: ``Show full payload`` renders the JSON only when toggled: a collapsed

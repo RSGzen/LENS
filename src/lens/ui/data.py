@@ -41,7 +41,12 @@ from lens.agent.runstore import (
     read_manifest,
     runs_root,
 )
-from lens.observability.citations import CitationReport, cited_ids, resolve_citations
+from lens.observability.citations import (
+    CitationReport,
+    cited_ids,
+    expand_short_ids,
+    resolve_citations,
+)
 from lens.observability.replay import Turn, replay_summary, replay_turns
 from lens.observability.trajectory import Trajectory
 
@@ -686,18 +691,25 @@ def short_title(title: str | None, limit: int = CITE_LABEL_CHARS) -> str:
     return body if len(body) <= limit else body[: limit - 1].rstrip() + "…"
 
 
-#: Chunk and arXiv ids in an answer. One alternation, so a token can never be
-#: replaced twice (the first pass would otherwise rewrite the id inside the
-#: tooltip it had just emitted).
+#: Chunk and arXiv ids in an answer, with an optional surrounding backtick pair.
+#: The backticks are consumed so the chip is not rendered as inline code; one
+#: alternation means a token can never be replaced twice.
 _CITE_ANY = re.compile(
+    r"`?(?P<token>"
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
     r"|\b\d{4}\.\d{4,5}(?:v\d+)?\b"
+    r")`?"
 )
 
 
 def citation_labels(view: RunView) -> dict[str, str]:
-    """Return ``token -> short label`` for every resolved citation in the answer."""
+    """Return ``token -> short label`` for every citation in the answer.
+
+    Besides the resolved citations, every chunk the run hydrated gets a label:
+    an 8-character prefix in the answer expands to a full id, and the chip still
+    has a title even when ``sources.md`` did not list it as a citation.
+    """
     labels: dict[str, str] = {}
 
     for citation in view.citations.citations:
@@ -713,6 +725,22 @@ def citation_labels(view: RunView) -> dict[str, str]:
 
         labels[citation.token] = label
 
+    for rows in view.evidence.values():
+        for row in rows:
+            token = str(row.get("chunk_uuid") or "")
+
+            if not token or token in labels:
+                continue
+
+            meta = view.papers.get(str(row.get("arxiv_id") or ""), {})
+            title = meta.get("title") or str(row.get("arxiv_id") or "") or "source"
+            label = short_title(str(title))
+
+            if row.get("section_type"):
+                label = f"{label} · {row['section_type']}"
+
+            labels[token] = label
+
     return labels
 
 
@@ -720,23 +748,50 @@ def citation_tip(view: RunView, token: str) -> str:
     """Return the hover text for one citation token."""
     citation = next((c for c in view.citations.citations if c.token == token), None)
 
-    if citation is None:
+    if citation is not None:
+        meta = view.papers.get(citation.arxiv_id or "", {})
+        title = citation.title or meta.get("title") or citation.arxiv_id or "source"
+        lines = [str(title)]
+
+        if meta.get("authors"):
+            lines.append(str(meta["authors"]))
+        if meta.get("year"):
+            lines.append(f"year {meta['year']}")
+        if citation.arxiv_id:
+            lines.append(f"arXiv {citation.arxiv_id}")
+        if citation.kind == "chunk":
+            if citation.section_type:
+                lines.append(f"section {citation.section_type}")
+            lines.append(str(citation.token))
+
+        return "\n".join(lines)
+
+    row = next(
+        (
+            row
+            for rows in view.evidence.values()
+            for row in rows
+            if str(row.get("chunk_uuid")) == token
+        ),
+        None,
+    )
+
+    if row is None:
         return "not resolved against the recorded evidence"
 
-    meta = view.papers.get(citation.arxiv_id or "", {})
-    title = citation.title or meta.get("title") or citation.arxiv_id or "source"
+    meta = view.papers.get(str(row.get("arxiv_id") or ""), {})
+    title = meta.get("title") or str(row.get("arxiv_id") or "") or "source"
     lines = [str(title)]
 
     if meta.get("authors"):
         lines.append(str(meta["authors"]))
     if meta.get("year"):
         lines.append(f"year {meta['year']}")
-    if citation.arxiv_id:
-        lines.append(f"arXiv {citation.arxiv_id}")
-    if citation.kind == "chunk":
-        if citation.section_type:
-            lines.append(f"section {citation.section_type}")
-        lines.append(str(citation.token))
+    if row.get("arxiv_id"):
+        lines.append(f"arXiv {row['arxiv_id']}")
+    if row.get("section_type"):
+        lines.append(f"section {row['section_type']}")
+    lines.append(token)
 
     return "\n".join(lines)
 
@@ -744,15 +799,23 @@ def citation_tip(view: RunView, token: str) -> str:
 def render_answer_html(view: RunView) -> str:
     """Replace citation ids with readable chips, keeping the id in the hover text.
 
-    The answer itself is unchanged on disk; this is display only. A resolved id
-    becomes ``paper title · section`` with the full title, authors, year and id in
-    the tooltip; an unresolved id stays visible and says so.
+    The answer itself is unchanged on disk; this is display only. A short prefix
+    is expanded against the chunks the run actually hydrated, a backticked id is
+    consumed with its backticks (otherwise Markdown renders the chip as code),
+    and a fenced code block is left untouched. An unresolved id stays visible.
     """
     labels = citation_labels(view)
-    resolved = {c.token for c in view.citations.citations if c.resolved}
+    resolved = {c.token for c in view.citations.citations if c.resolved} | set(labels)
+    known = {
+        str(row.get("chunk_uuid"))
+        for rows in view.evidence.values()
+        for row in rows
+        if row.get("chunk_uuid")
+    }
+    expanded = expand_short_ids(view.answer or "", known)
 
     def replace(match: re.Match[str]) -> str:
-        token = match.group(0)
+        token = match.group("token")
 
         if token not in resolved:
             return token
@@ -765,7 +828,15 @@ def render_answer_html(view: RunView) -> str:
             f"{html.escape(label)}</span>"
         )
 
-    return _CITE_ANY.sub(replace, view.answer or "")
+    parts = re.split(r"(```.*?```)", expanded, flags=re.DOTALL)
+
+    for index, part in enumerate(parts):
+        if part.startswith("```"):
+            continue
+
+        parts[index] = _CITE_ANY.sub(replace, part)
+
+    return "".join(parts)
 
 
 #: How long one lookup may take. The query is a single indexed row or a list of ids;

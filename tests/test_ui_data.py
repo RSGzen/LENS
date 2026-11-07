@@ -258,6 +258,26 @@ class UiDataTestCase(unittest.TestCase):
         self.assertIn(CHUNK_A, rendered)
         self.assertNotIn(f"`{CHUNK_A}`", rendered)
 
+    def test_a_backticked_id_is_a_chip_not_code(self) -> None:
+        self._make_run("run-a", answer=f"only `{CHUNK_A}` here\n")
+
+        view = data.load_run("run-a")
+
+        assert view is not None
+        rendered = data.render_answer_html(view)
+        self.assertIn("lens-cite", rendered)
+        self.assertNotIn("`<span", rendered)
+
+    def test_a_fenced_block_is_not_rewritten(self) -> None:
+        self._make_run("run-a", answer=f"```python\nprint('{CHUNK_A}')\n```\n")
+
+        view = data.load_run("run-a")
+
+        assert view is not None
+        rendered = data.render_answer_html(view)
+        self.assertNotIn("lens-cite", rendered)
+        self.assertIn(CHUNK_A, rendered)
+
     def test_short_title_ellipsises_at_the_limit(self) -> None:
         label = data.short_title("a" * 80)
 
