@@ -442,6 +442,25 @@ class ClaimUnitTests(unittest.TestCase):
         self.assertEqual(len(units), 1)
         self.assertEqual(units[0][1], [])
 
+    def test_prose_findings_survive_a_bulleted_gap_list(self) -> None:
+        # Measured on a rig-v10 answer: prose findings plus a bulleted gaps section.
+        # The bullet path used to replace the sentence path, so the findings vanished
+        # and coverage read 0 %.
+        text = (
+            f"The RLM externalizes the prompt and recurses over it [{CHUNK}].\n\n"
+            f"ReCAP keeps the plan in a sliding window [{OTHER}].\n\n"
+            "Claims I could not support:\n"
+            f"- I did not read the SLIDERS chunks in detail [{CHUNK}].\n"
+            f"- I did not extract the CORG aggregation step [{OTHER}].\n"
+        )
+
+        units = claim_units(text)
+
+        self.assertEqual(len(units), 4)
+        joined = " ".join(unit for unit, _ids in units)
+        self.assertIn("externalizes the prompt", joined)
+        self.assertIn("sliding window", joined)
+
     def test_each_sentence_is_scored_separately(self) -> None:
         text = (
             "The window is K rounds [11111111-1111-5111-8111-111111111111]. "

@@ -158,9 +158,9 @@ def claim_units(text: str, *, include_uncited: bool = False) -> list[tuple[str, 
       the pilot: without this filter the per-claim gate rejected answers on their
       id lists, and the named "failing claim" was a citation dump.
 
-    Returns ``[(unit_text, [id, ...]), ...]`` in reading order. An answer with no
-    claim at all collapses to one unit with an empty id list, so it is still judged
-    once rather than silently skipped.
+    Returns ``[(unit_text, [id, ...]), ...]`` with the bullets first and then the
+    prose outside them. An answer with no claim at all collapses to one unit with an
+    empty id list, so it is still judged once rather than silently skipped.
 
     ``include_uncited`` appends :func:`uncited_units` after the cited ones: those are
     the claims the aggregate can see and the per-claim questions could not, which is
@@ -174,8 +174,9 @@ def claim_units(text: str, *, include_uncited: bool = False) -> list[tuple[str, 
     # on a recorded answer with nine cited bullets, that produced **one** claim unit.
     # When there are bullets, each top-level bullet is the unit.
     blocks = _bullet_blocks(text or "")
+    bulleted = len(blocks) > 1
 
-    if len(blocks) > 1:
+    if bulleted:
         for block in blocks:
             unit = " ".join(block.split())
             ids = cited_ids(unit)
@@ -190,10 +191,12 @@ def claim_units(text: str, *, include_uncited: bool = False) -> list[tuple[str, 
 
             units.append((unit, ids))
 
-    # The sentence path is the fallback for prose without bullets; it is skipped when
-    # the bullet path produced units, because a bullet's own sentence would otherwise
-    # be counted twice.
-    for piece in [] if units else _SENTENCE_SPLIT.split(text or ""):
+    # A mixed answer — prose findings plus a bulleted gap list — lost its prose when
+    # the bullet path replaced the sentence path. The prose is the text outside the
+    # bullets, so both are read and no bullet sentence is counted twice.
+    prose = _BULLET_BLOCK.sub("", text or "") if bulleted else (text or "")
+
+    for piece in _SENTENCE_SPLIT.split(prose):
         unit = " ".join(piece.split())
 
         if not unit:
