@@ -168,18 +168,18 @@ def build_runtime(
     workspace = trajectory.run_dir / "work"
     client = LensClient(trajectory=trajectory)
 
-    # ``document`` mode reads a supplied evidence file, so there is no corpus: no
+    # ``document`` evidence reads a supplied file, so there is no corpus: no
     # connection, no encoder and no retrieval tool. Building them anyway would
     # spend a minute loading torch to register tools the run must not have — and
     # a manifest entry the model cannot use costs turns.
-    retrieve = config.RUN_MODE != "document"
+    retrieve = config.EVIDENCE_SOURCE == "corpus"
     conn = connect() if retrieve else None
     embedder, reranker = (Embedder(), Reranker()) if retrieve else (None, None)
     extractor = GlinerExtractor() if retrieve else None
 
     if not retrieve:
         if not config.DOCUMENTS_PATH:
-            raise ValueError("LENS_MODE=document needs LENS_DOCUMENTS=<path.jsonl>")
+            raise ValueError("document evidence needs LENS_DOCUMENTS=<path.jsonl>")
 
         source = Path(config.DOCUMENTS_PATH).expanduser()
         if not source.is_file():
@@ -238,7 +238,7 @@ def build_runtime(
         if config.KG_ENABLED:
             registry.register("build_kg", build_kg_tool)
 
-    if sql_is_allowed(recorded=recorded, allow_sql=allow_sql):
+    if retrieve and sql_is_allowed(recorded=recorded, allow_sql=allow_sql):
         sql_conn = connect(readonly=True, autocommit=False)
 
         def query_sql_tool(sql: str) -> list[dict[str, Any]]:
@@ -381,10 +381,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     # ------------------------------------------------------------------ a run
-    # Everything below needs the whole stack; everything above is read-only over
-    # the run store, so the check sits exactly on the boundary. A document run
-    # never touches the corpus, so it does not need the database.
-    require_environment(need=(API_KEY,) if config.RUN_MODE == "document" else (API_KEY, DB))
+    # A document run never touches the corpus, so it does not need the database.
+    require_environment(need=(API_KEY,) if config.EVIDENCE_SOURCE == "document" else (API_KEY, DB))
 
     resume = args.resume is not None
     fork_source = args.fork
@@ -426,7 +424,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     try:
-        result = runtime.run_flat() if config.RUN_MODE == "naive" else runtime.run()
+        result = runtime.run_flat() if config.TREATMENT == "naive" else runtime.run()
     finally:
         # The port and the DB connection are per-process resources; the sandbox is
         # stopped by ``Runtime._finalize``. Exceptions propagate — the caller sees

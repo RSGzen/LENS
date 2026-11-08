@@ -1234,6 +1234,90 @@ class FlatBaselineTestCase(unittest.TestCase):
         self.assertTrue(any("dropped for size" in text for text in notes))
 
 
+class FlatDocumentTestCase(unittest.TestCase):
+    """The flat document arm: the file inline, one call, no segmentation."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig_root = trajectory_module.LENS_RUNS_ROOT_PATH
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._tmp.name
+        self.trajectory = Trajectory("flat-doc-test")
+        self.sandbox = FakeSandbox(self.trajectory.run_dir / "work")
+        self.sandbox.workspace.mkdir(parents=True, exist_ok=True)
+        self._write_records(
+            [
+                {"id": "11111111-1111-1111-1111-111111111111", "text": "alpha", "label": ""},
+                {"id": "22222222-2222-2222-2222-222222222222", "text": "beta", "label": ""},
+            ]
+        )
+        self.client = FakeClient(
+            ["The answer [11111111-1111-1111-1111-111111111111]."], self.trajectory
+        )
+        self.runtime = Runtime(
+            "how many records",
+            "flat-doc-test",
+            client=self.client,  # type: ignore[arg-type]
+            trajectory=self.trajectory,
+            conn=None,
+            embedder=None,
+            reranker=None,
+            extractor=None,
+            sandbox=self.sandbox,  # type: ignore[arg-type]
+            registry=ToolRegistry(),
+            budget=Budget(),
+        )
+
+    def tearDown(self) -> None:
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._orig_root
+        self._tmp.cleanup()
+
+    def _write_records(self, records: list[dict]) -> None:
+        path = self.sandbox.workspace / "documents.jsonl"
+        path.write_text(
+            "\n".join(json.dumps(record) for record in records) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_one_call_with_the_file_inline_and_no_segmentation(self) -> None:
+        with patch.object(config, "EVIDENCE_SOURCE", "document"):
+            result = self.runtime.run_flat()
+
+        self.assertEqual(len(self.client.chat_calls), 1)
+        self.assertEqual(result.stop_reason, "flat")
+        self.assertFalse(result.partial)
+
+        messages = self.client.chat_calls[0]["messages"]
+        self.assertNotIn("retrieval_funnel", messages[0]["content"])
+        self.assertIn("alpha", messages[1]["content"])
+        self.assertIn("beta", messages[1]["content"])
+
+    def test_an_over_size_record_is_dropped_and_counted(self) -> None:
+        with (
+            patch.object(config, "EVIDENCE_SOURCE", "document"),
+            patch.object(config, "FLAT_DOCUMENT_TOKEN_LIMIT", 1),
+        ):
+            self.runtime.run_flat()
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+        ]
+        notes = [event["extra"]["text"] for event in events if event.get("call_type") == "note"]
+
+        self.assertTrue(any("flat document evidence" in text for text in notes))
+        self.assertTrue(any("dropped for size" in text for text in notes))
+
+    def test_a_record_without_an_id_ends_the_run_with_a_named_error(self) -> None:
+        self._write_records([{"text": "no id here"}])
+
+        with patch.object(config, "EVIDENCE_SOURCE", "document"):
+            result = self.runtime.run_flat()
+
+        self.assertTrue(result.partial)
+        self.assertEqual(result.stop_reason, "error")
+        self.assertIn("document record", result.answer)
+
+
 class GateInputTestCase(unittest.TestCase):
     """What the gate is shown, which is what decides whether it can answer."""
 

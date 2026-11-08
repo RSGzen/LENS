@@ -318,8 +318,12 @@ class Runtime:
         answer = ""
 
         try:
-            self._segment_query()
-            chunks, _dropped = self._flat_evidence()
+            if config.EVIDENCE_SOURCE == "document":
+                chunks, _dropped = self._flat_document_evidence()
+            else:
+                self._segment_query()
+                chunks, _dropped = self._flat_evidence()
+
             answer = self._flat_answer(chunks)
         except Exception as exc:  # noqa: BLE001 - a crash must still finalize
             self._note(f"run failed: {type(exc).__name__}: {exc}")
@@ -374,6 +378,49 @@ class Runtime:
         self._note(f"flat evidence: {len(chunks)} chunks, {dropped} dropped for size")
 
         return chunks, dropped
+
+    def _flat_document_evidence(self) -> tuple[list[dict[str, Any]], int]:
+        """Return ``(records, dropped)`` for the flat document arm.
+
+        The file is the evidence, so the whole thing is inlined; the budget is
+        the document one, not the corpus one. A record without an id is an error
+        rather than a silent skip: dropping one would change the aggregate and
+        look like a model failure.
+        """
+        path = self.workspace / "documents.jsonl"
+
+        if not path.is_file():
+            raise FileNotFoundError(f"document evidence not found: {path}")
+
+        records: list[dict[str, Any]] = []
+        dropped = 0
+        budget = config.FLAT_DOCUMENT_TOKEN_LIMIT
+
+        with path.open(encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                record = json.loads(line)
+
+                if not isinstance(record, dict) or not record.get("id"):
+                    raise ValueError(f"document record {line_number} has no id")
+
+                text = str(record.get("text") or "")
+                cost = count_tokens(text) + 8
+
+                if cost > budget:
+                    dropped += 1
+                    continue
+
+                budget -= cost
+                records.append({"chunk_uuid": str(record["id"]), "chunk_text": text})
+
+        self._note(f"flat document evidence: {len(records)} records, {dropped} dropped for size")
+
+        return records, dropped
 
     def _flat_answer(self, chunks: list[dict[str, Any]]) -> str:
         """One root call over the inline evidence; return the completion text."""
