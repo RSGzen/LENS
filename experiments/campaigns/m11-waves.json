@@ -1,89 +1,54 @@
 {
   "name": "m11-remaining",
-  "spend_estimate_usd": 48,
-  "note": "The remaining campaign in run order. A stop_after cell is a staged-spend decision point, not a batch boundary: the run stops there unless that cell is the one named by --through.",
+  "spend_estimate_usd": 22,
+  "note": "The remaining campaign in run order (Evaluation.md §9, revision 3). W0, W1 and W2 (including W2b) are complete and are deliberately not cells here. One cell is one campaign file plus the run count it must expand to; a cell whose file still carries a placeholder query list states the placeholder count, and the wave runner refuses to start when the two disagree, so replacing a list without updating expect fails loudly instead of spending. A stop_after cell is a staged-spend decision point, not a batch boundary: the run stops there unless --through names that cell. checkpoint_usd is the cumulative M11 ceiling from Evaluation.md §10.3.",
   "waves": [
     {
-      "id": "w2b",
-      "campaign": "experiments/campaigns/m11-w2b.json",
-      "expect": 6,
-      "checkpoint_usd": 55,
-      "note": "Default retrieval point vs the capacity step (n=20 vs n=30), 3 repeats, one median query."
-    },
-    {
-      "id": "w3-bridge",
-      "campaign": "experiments/campaigns/m11-w3-bridge.json",
-      "expect": 100,
-      "checkpoint_usd": 55,
-      "note": "OOLONG bridge, 50 instances x 2 arms."
-    },
-    {
-      "id": "w3-bridge-subset",
-      "campaign": "experiments/campaigns/m11-w3-bridge-subset.json",
-      "expect": 40,
-      "checkpoint_usd": 55,
+      "id": "w3",
+      "campaign": "experiments/campaigns/m11-w3.json",
+      "expect": 2,
+      "checkpoint_usd": 30,
       "stop_after": true,
-      "note": "10 instances x 2 arms x 2 repeats. Kill switch: run spread vs arm difference."
+      "note": "W3 bridge (I1), document mode, mechanism only. Placeholder: 1 instance x 2 arms. The wave is 140 runs once the instrument exists (50 x 2 plus 10 x 2 x 2), and its kill switch reads the subset's run spread against the arm difference."
     },
     {
-      "id": "w3-cag",
-      "campaign": "experiments/campaigns/m11-w3-cag.json",
-      "expect": 36,
-      "checkpoint_usd": 70,
-      "note": "CAG-15, 18 instances x 2 arms."
-    },
-    {
-      "id": "w3-cag-subset",
-      "campaign": "experiments/campaigns/m11-w3-cag-subset.json",
-      "expect": 16,
-      "checkpoint_usd": 70,
+      "id": "w4",
+      "campaign": "experiments/campaigns/m11-w4.json",
+      "expect": 2,
+      "checkpoint_usd": 34,
       "stop_after": true,
-      "note": "4 instances x 2 arms x 2 repeats. End of W3: report whether the two instruments agree in direction."
-    },
-    {
-      "id": "w4-needle",
-      "campaign": "experiments/campaigns/m11-w4-needle.json",
-      "expect": 110,
-      "checkpoint_usd": 100,
-      "stop_after": true,
-      "note": "Doc-needle guardrail, 55 instances x 2 arms. H2a reading."
+      "note": "W4 doc-needle guardrail (I3). Placeholder: 1 instance x 2 arms; 60 once the generator exists (30 x 2). H2a is read here."
     },
     {
       "id": "w5",
       "campaign": "experiments/campaigns/m11-w5.json",
-      "expect": 40,
-      "checkpoint_usd": 115,
-      "note": "Tier 3, 20 SLR queries x 2 arms."
-    },
-    {
-      "id": "w5-subset",
-      "campaign": "experiments/campaigns/m11-w5-subset.json",
-      "expect": 16,
-      "checkpoint_usd": 115,
+      "expect": 6,
+      "checkpoint_usd": 42,
       "stop_after": true,
-      "note": "4 queries x 2 arms x 2 repeats. Gate-calibration decision point."
+      "note": "W5 I5 corpus gold, the in-domain H1 reading. Placeholder: 3 dev queries x 2 arms; 44 once i5-gold-v1.jsonl exists (22 x 2), plus 16 for the subset. Final-gate calibration runs after the cells."
     },
     {
       "id": "w5b-compound",
       "campaign": "experiments/campaigns/m11-w5b-compound.json",
       "expect": 28,
-      "checkpoint_usd": 118,
-      "note": "I6 compound, 7 non-subset instances x 4 arms (A0 flat, A2 host, A2+Q host-raw, A2-R root) on rig v17. ~$1.9 at measured rates."
+      "checkpoint_usd": 46,
+      "note": "W5b I6 compound, 7 non-subset instances x 4 arms (A0, A2, A2+Q, A2-R) on rig v17. ~$2.7-4.3 at measured rates."
     },
     {
       "id": "w5b-subset",
       "campaign": "experiments/campaigns/m11-w5b-subset.json",
       "expect": 24,
-      "checkpoint_usd": 118,
+      "checkpoint_usd": 46,
       "stop_after": true,
-      "note": "I6 subset (cmp-05, cmp-07) at n=3 x 4 arms. Kill switch: run spread versus arm difference, and the decision point on whether A2-R is worth carrying."
+      "note": "W5b subset (cmp-05, cmp-07) at n=3 x 4 arms. Kill switch: run spread versus arm difference, and the decision on whether A2-R is worth carrying."
     },
     {
       "id": "w6",
       "campaign": "experiments/campaigns/m11-w6.json",
-      "expect": 45,
-      "checkpoint_usd": 133,
-      "note": "Ablations A3/A4/A5 x 15 queries; the A2 reference rows are the W5 runs."
+      "expect": 10,
+      "checkpoint_usd": 50,
+      "stop_after": true,
+      "note": "W6 ablations A3 (depth-0) and A5 (decision layer off). Placeholder: 5 dev queries x 2 arms; 30 once 15 I5 instances replace the list. The A2 reference rows are the W5 runs of the same queries, so the file carries no reference arm."
     }
   ]
 }

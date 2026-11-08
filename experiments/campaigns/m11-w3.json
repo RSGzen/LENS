@@ -1,48 +1,41 @@
 {
   "name": "m11-w3",
-  "repeats": 3,
+  "repeats": 1,
+  "note": "I1, the OOLONG bridge: document mode, one fixed document per instance, flat prompt (A0-doc) versus the loop (A2-doc). Mechanism test only — it may not support a claim about retrieval, citations, the gate or the corpus (Evaluation.md §3.1, §6.1). Each instance supplies its own LENS_DOCUMENTS in its env, so this file cannot run until the converter writes both the instance file and the documents. The query list below is a one-instance placeholder; the real wave is 50 instances x 2 arms (expect 100) plus a 10-instance subset at n=3, and m11-waves.json carries the placeholder count until the instrument lands.",
   "arms": [
     {
-      "name": "rlm-full",
+      "name": "a0-doc",
       "env": {
         "LENS_RECORDED": "1",
-        "LENS_MODE": "rlm",
-        "LENS_PROMPT_VARIANT": "full",
-        "LENS_SUB_CALLS": "1",
-        "LENS_KG_ENABLED": "1",
-        "LENS_GATE": "1"
-      },
-      "note": "Treatment. For the bridge (document) instances, set LENS_MODE=document and LENS_DOCUMENTS=<file> per instance; the arm block is otherwise unchanged."
-    },
-    {
-      "name": "naive-flat",
-      "env": {
-        "LENS_RECORDED": "1",
+        "LENS_EVIDENCE": "document",
         "LENS_MODE": "naive",
         "LENS_PROMPT_VARIANT": "naive",
-        "LENS_GATE": "0"
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
       },
-      "note": "Baseline: the same evidence set, one call."
+      "note": "A0-doc: the whole document in one prompt, one call. No loop, no tools."
+    },
+    {
+      "name": "a2-doc",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_EVIDENCE": "document",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "document",
+        "LENS_SUB_CALLS": "0",
+        "LENS_KG_ENABLED": "0",
+        "LENS_KG_PROMPT": "0",
+        "LENS_GATE": "1"
+      },
+      "note": "A2-doc: REPL over the same file. Sub-calls are 0 because the document prompt advertises no sub-task and sub_extract hydrates ids from the database, so the route would be a capability the run cannot use. The final gate and the claim pass are skipped in document mode and the skip is logged."
     }
   ],
   "queries": [
     {
-      "id": "cag-25-001",
-      "expect": "answerable",
-      "text": "How many of the papers in the evidence set evaluate on a dataset whose name contains QA? Answer with a single integer.",
-      "note": "Placeholder. Generate the real query list from experiments/instruments/*.jsonl so ids match the gold file, and score with scripts/score_instruments.py."
-    },
-    {
-      "id": "cag-25-002",
-      "expect": "answerable",
-      "text": "Which evaluation metric is most common in the evidence set, and in how many papers does it appear?",
-      "note": "Placeholder."
-    },
-    {
       "id": "bridge-001",
       "expect": "answerable",
       "text": "Aggregate the records in the document and answer the question it poses. Answer with the exact label.",
-      "note": "Placeholder. Bridge instances keep the benchmark's own question text verbatim; this line is replaced by the converter."
+      "note": "Placeholder. The converter replaces this row with the release's own question text, verbatim, and adds LENS_DOCUMENTS to its env."
     }
   ]
 }

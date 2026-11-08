@@ -1,28 +1,34 @@
 {
   "name": "m11-w4",
   "repeats": 1,
+  "note": "I3, the NIAH-style doc-needle guardrail: one planted UUID in a 128k-token document, 25 depths x 5 documents plus 5 negative controls, both arms in document mode. H2a is met iff A2 misses at most one more of the 25 than A0 (Evaluation.md §6.3, §9 W4). The A2 arm turns the verifier on against the record text (LENS_DOCUMENT_EVIDENCE=1), which is the one document instrument where the UUID claim is mechanically checkable. The query list below is a two-instance placeholder; the real wave is 30 instances x 2 arms (expect 60), and m11-waves.json carries the placeholder count until the generator lands.",
   "arms": [
     {
-      "name": "rlm-full",
+      "name": "a0-doc",
       "env": {
         "LENS_RECORDED": "1",
-        "LENS_MODE": "rlm",
-        "LENS_PROMPT_VARIANT": "full",
-        "LENS_SUB_CALLS": "1",
-        "LENS_KG_ENABLED": "0",
-        "LENS_GATE": "1"
-      },
-      "note": "Guardrail runs answer one fact; the KG adds cost without a mechanism for this task, so it is off in both arms."
-    },
-    {
-      "name": "naive-flat",
-      "env": {
-        "LENS_RECORDED": "1",
+        "LENS_EVIDENCE": "document",
         "LENS_MODE": "naive",
         "LENS_PROMPT_VARIANT": "naive",
-        "LENS_GATE": "0"
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
       },
-      "note": "Baseline for the same needles."
+      "note": "A0-doc: one call over the needle document."
+    },
+    {
+      "name": "a2-doc",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_EVIDENCE": "document",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "document",
+        "LENS_SUB_CALLS": "0",
+        "LENS_KG_ENABLED": "0",
+        "LENS_KG_PROMPT": "0",
+        "LENS_DOCUMENT_EVIDENCE": "1",
+        "LENS_GATE": "1"
+      },
+      "note": "A2-doc with the evidence-on sub-mode: the claim pass and the final gate read the record text, so a cited record either contains the code or does not."
     }
   ],
   "queries": [
@@ -30,13 +36,7 @@
       "id": "doc-needle-001",
       "expect": "answerable",
       "text": "What is the access code for project atlas?",
-      "note": "Placeholder. The document needles are generated with their document; the query list comes from experiments/instruments/doc-needle-*.jsonl."
-    },
-    {
-      "id": "corpus-needle-001",
-      "expect": "answerable",
-      "text": "In 2511.02817, what benchmark subset does trec_coarse use?",
-      "note": "Placeholder. Corpus needles name the paper so the test is retrieval plus reading, not guessing."
+      "note": "Placeholder. The generator writes one instance per (document, depth) with its document in the query env; negatives carry a project name that appears nowhere."
     }
   ]
 }

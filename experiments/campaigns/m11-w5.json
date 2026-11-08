@@ -1,28 +1,39 @@
 {
   "name": "m11-w5",
   "repeats": 1,
+  "note": "I5, the corpus gold set: 15 aggregation + 5 single-fact + 2 negative instances, both arms in corpus mode over the same funnel, so the contrast is what the loop adds given the built retrieval. This is the in-domain H1 reading; the floor and the direction are pre-registered in Eval D-22 before any answer is read (Evaluation.md §6.2, §9 W5). The arms mirror the W5b host arm so the A2 rows are the same environment the compound wave runs, and W6 joins its ablations to these rows on query_id. The query list below is a three-instance placeholder; the real wave is 22 instances x 2 arms (expect 44), and m11-waves.json carries the placeholder count until experiments/instruments/i5-gold-v1.jsonl exists.",
   "arms": [
     {
-      "name": "rlm-full",
+      "name": "a0",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
+      },
+      "note": "A0: flat RAG. The same segmentation and the same funnel, one chat call with the chunks inline, stop_reason=flat. No gate and no claim pass, so its grounding is scored offline through the same path as A2."
+    },
+    {
+      "name": "a2",
       "env": {
         "LENS_RECORDED": "1",
         "LENS_MODE": "rlm",
         "LENS_PROMPT_VARIANT": "full",
         "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
         "LENS_KG_ENABLED": "1",
-        "LENS_GATE": "1"
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "0"
       },
-      "note": "Treatment. Runs on the retrieval setting fixed by the grid, so this campaign starts after that decision is recorded."
-    },
-    {
-      "name": "naive-flat",
-      "env": {
-        "LENS_RECORDED": "1",
-        "LENS_MODE": "naive",
-        "LENS_PROMPT_VARIANT": "naive",
-        "LENS_GATE": "0"
-      },
-      "note": "Baseline for the same questions."
+      "note": "A2: the frozen treatment arm (F2+KG, sub reasoning low)."
     }
   ],
   "queries": [
@@ -30,19 +41,18 @@
       "id": "slr-01",
       "expect": "answerable",
       "text": "What do the retrieved papers report about the cost of recursive decomposition compared with a single long prompt?",
-      "note": "Placeholder. The authored SLR set replaces these before the campaign; the arm block does not change."
+      "note": "Placeholder. The 22 authored I5 instances replace these rows; every gold carries hand-verified chunk_uuids."
     },
     {
       "id": "slr-02",
       "expect": "answerable",
-      "text": "Which constraints do retrieved methods place on the evidence they keep between steps?",
-      "note": "Placeholder."
+      "text": "Which constraints do retrieved methods place on the evidence they keep between steps?"
     },
     {
       "id": "slr-03",
       "expect": "not-answerable",
       "text": "What reward function does LENS use to train its retriever?",
-      "note": "Negative control: LENS is not in the corpus, and the retrieval is not trained. A grounded refusal is the pass."
+      "note": "Negative control: LENS is not in the corpus and the retrieval is not trained, so a grounded refusal is the pass."
     }
   ]
 }
