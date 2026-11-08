@@ -14,7 +14,12 @@ Usage::
 
     python scripts/run_waves.py experiments/campaigns/m11-waves.json --dry-run
     python scripts/run_waves.py experiments/campaigns/m11-waves.json --prior-spend 22.0
-    python scripts/run_waves.py ... --through w3-bridge-subset
+    python scripts/run_waves.py ... --from w5b-compound --through w5b-subset
+
+``--from`` and ``--through`` are inclusive bounds on the slice this invocation
+runs; without them the plan starts at its first cell and stops at the first
+``stop_after``. A plan whose earlier cells are still placeholders therefore
+needs ``--from``, not ``--through`` alone, to reach a later one.
 
 The plan stops at a ``stop_after`` cell unless it is the one named by ``--through``:
 the staged-spend rule is a decision point, not a batch boundary.
@@ -32,7 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import lens.config as config
+from lens import config
 from lens.experiments.campaign import build_jobs, load_campaign
 
 #: Fields a cell must carry. ``checkpoint_usd`` and ``stop_after`` are optional.
@@ -356,10 +361,43 @@ def _print_table(plan: dict[str, Any]) -> bool:
     return all_ok
 
 
+def select_cells(
+    cells: list[dict[str, Any]],
+    *,
+    start: str | None = None,
+    through: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the slice of cells this invocation runs: ``start`` through ``through``.
+
+    Both bounds are inclusive and either may be omitted. Slicing here rather than
+    in ``main`` keeps a typo from costing a run: an unknown id, or a start that is
+    not before the stop, raises instead of returning an empty or a wider list.
+    """
+    ids = [str(cell["id"]) for cell in cells]
+
+    for label, ident in (("--from", start), ("--through", through)):
+        if ident is not None and ident not in ids:
+            raise ValueError(f"unknown cell {ident!r} for {label}")
+
+    first = ids.index(start) if start is not None else 0
+    last = ids.index(through) + 1 if through is not None else len(cells)
+
+    if first >= last:
+        raise ValueError(f"--from {start!r} is not before --through {through!r}")
+
+    return cells[first:last]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("plan", help="path to a wave plan JSON file")
     parser.add_argument("--dry-run", action="store_true", help="validate the plan; spend nothing")
+    parser.add_argument(
+        "--from",
+        dest="start",
+        default=None,
+        help="start at this cell id (default: the first cell)",
+    )
     parser.add_argument("--through", default=None, help="stop after this cell id")
     parser.add_argument("--prior-spend", type=float, default=0.0, help="spend already made")
     parser.add_argument(
@@ -372,18 +410,15 @@ def main(argv: list[str] | None = None) -> int:
 
     plan = load_plan(args.plan)
 
-    if args.through and args.through not in {cell["id"] for cell in plan["waves"]}:
-        print(f"unknown cell {args.through!r}", file=sys.stderr)
+    # ``--from`` and ``--through`` bound the slice this invocation covers, so a
+    # wave that is not built yet does not block the one that is. A cell that is
+    # still a placeholder keeps the *real* wave size in ``expect``, which makes
+    # the table below fail rather than run it.
+    try:
+        cells = select_cells(plan["waves"], start=args.start, through=args.through)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         return 2
-
-    # ``--through`` is the staged-spend boundary: cells after it are not part of
-    # this invocation, so a wave that is not built yet must not block the one that
-    # is. Validate and run only the slice that this invocation covers.
-    cells = plan["waves"]
-
-    if args.through:
-        order = [cell["id"] for cell in cells]
-        cells = cells[: order.index(args.through) + 1]
 
     view = {**plan, "waves": cells}
     plan_ok = _print_table(view)
@@ -418,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{_now()} plan_start name={plan['name']} cells={len(cells)} "
         f"expect={expected} prior=${cumulative:.2f} freeze={freeze} "
         f"digest={facts['digest']} key={key_text} disk={facts['free_gb']}GB "
-        f"through={args.through or '(all)'}",
+        f"from={args.start or '(first)'} through={args.through or '(last)'}",
     )
 
     consecutive_failures = 0

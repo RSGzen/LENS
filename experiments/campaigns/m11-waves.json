@@ -1,31 +1,31 @@
 {
   "name": "m11-remaining",
   "spend_estimate_usd": 22,
-  "note": "The remaining campaign in run order (Evaluation.md §9, revision 3). W0, W1 and W2 (including W2b) are complete and are deliberately not cells here. One cell is one campaign file plus the run count it must expand to; a cell whose file still carries a placeholder query list states the placeholder count, and the wave runner refuses to start when the two disagree, so replacing a list without updating expect fails loudly instead of spending. A stop_after cell is a staged-spend decision point, not a batch boundary: the run stops there unless --through names that cell. checkpoint_usd is the cumulative M11 ceiling from Evaluation.md §10.3.",
+  "note": "The remaining campaign in run order (Evaluation.md 9, revision 3). W0, W1 and W2 (including W2b) are complete and are deliberately not cells here. One cell is one campaign file plus the run count it must expand to. Every cell states the **real** wave size, so a campaign file that is still a placeholder (w3, w4, w5, w6) expands to fewer runs than expected and the runner refuses to start it: replacing a list without updating expect, or running a placeholder, fails loudly instead of spending. Reach a later cell with --from, because --through alone still starts at the first cell and pauses at its stop_after. A stop_after cell is a staged-spend decision point, not a batch boundary: the run stops there unless --through names that cell. checkpoint_usd is the cumulative M11 ceiling from Evaluation.md 10.3.",
   "waves": [
     {
       "id": "w3",
       "campaign": "experiments/campaigns/m11-w3.json",
-      "expect": 2,
+      "expect": 100,
       "checkpoint_usd": 30,
       "stop_after": true,
-      "note": "W3 bridge (I1), document mode, mechanism only. Placeholder: 1 instance x 2 arms. The wave is 140 runs once the instrument exists (50 x 2 plus 10 x 2 x 2), and its kill switch reads the subset's run spread against the arm difference."
+      "note": "W3 bridge (I1), document mode, mechanism only. 50 instances x 2 arms. The campaign file is still a one-instance placeholder, so this cell expands to 2 and refuses to start: the converter must write the instance file and the per-instance LENS_DOCUMENTS before the count matches. The 10-instance subset at n=3 is its own campaign, not this cell."
     },
     {
       "id": "w4",
       "campaign": "experiments/campaigns/m11-w4.json",
-      "expect": 2,
+      "expect": 60,
       "checkpoint_usd": 34,
       "stop_after": true,
-      "note": "W4 doc-needle guardrail (I3). Placeholder: 1 instance x 2 arms; 60 once the generator exists (30 x 2). H2a is read here."
+      "note": "W4 doc-needle guardrail (I3). 30 instances x 2 arms. The generator does not exist yet, so the file is a placeholder and this cell refuses to start. H2a is read here."
     },
     {
       "id": "w5",
       "campaign": "experiments/campaigns/m11-w5.json",
-      "expect": 6,
+      "expect": 44,
       "checkpoint_usd": 42,
       "stop_after": true,
-      "note": "W5 I5 corpus gold, the in-domain H1 reading. Placeholder: 3 dev queries x 2 arms; 44 once i5-gold-v1.jsonl exists (22 x 2), plus 16 for the subset. Final-gate calibration runs after the cells."
+      "note": "W5 I5 corpus gold, the in-domain H1 reading. 22 instances x 2 arms. The gold set does not exist yet, so the file is a 3-query placeholder and this cell refuses to start. The 4-instance subset is its own campaign; final-gate calibration runs after the cells."
     },
     {
       "id": "w5b-compound",
@@ -45,10 +45,10 @@
     {
       "id": "w6",
       "campaign": "experiments/campaigns/m11-w6.json",
-      "expect": 10,
+      "expect": 30,
       "checkpoint_usd": 50,
       "stop_after": true,
-      "note": "W6 ablations A3 (depth-0) and A5 (decision layer off). Placeholder: 5 dev queries x 2 arms; 30 once 15 I5 instances replace the list. The A2 reference rows are the W5 runs of the same queries, so the file carries no reference arm."
+      "note": "W6 ablations A3 (depth-0) and A5 (decision layer off). 15 I5 instances x 2 arms. The file is a 5-query placeholder and refuses to start until the I5 instances replace the list. The A2 reference rows are the W5 runs of the same queries, so the file carries no reference arm."
     }
   ]
 }

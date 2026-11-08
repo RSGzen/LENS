@@ -236,5 +236,76 @@ class DryRunTestCase(unittest.TestCase):
         self.assertNotIn("w2", out.getvalue())
 
 
+class WaveSelectionTests(unittest.TestCase):
+    """``--from``/``--through`` bound the slice; a bad bound must not run wider."""
+
+    CELLS = [{"id": ident} for ident in ("w3", "w4", "w5", "w5b", "w6")]
+
+    def test_no_bounds_runs_the_whole_plan(self) -> None:
+        self.assertEqual(
+            [cell["id"] for cell in run_waves.select_cells(self.CELLS)],
+            ["w3", "w4", "w5", "w5b", "w6"],
+        )
+
+    def test_through_alone_still_starts_at_the_first_cell(self) -> None:
+        self.assertEqual(
+            [cell["id"] for cell in run_waves.select_cells(self.CELLS, through="w5")],
+            ["w3", "w4", "w5"],
+        )
+
+    def test_from_skips_the_placeholders_in_front(self) -> None:
+        self.assertEqual(
+            [cell["id"] for cell in run_waves.select_cells(self.CELLS, start="w5b", through="w5b")],
+            ["w5b"],
+        )
+
+    def test_from_and_through_are_inclusive(self) -> None:
+        self.assertEqual(
+            [cell["id"] for cell in run_waves.select_cells(self.CELLS, start="w4", through="w5b")],
+            ["w4", "w5", "w5b"],
+        )
+
+    def test_an_unknown_id_names_the_flag_it_came_from(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            run_waves.select_cells(self.CELLS, start="nope")
+
+        self.assertIn("--from", str(caught.exception))
+
+        with self.assertRaises(ValueError) as caught:
+            run_waves.select_cells(self.CELLS, through="nope")
+
+        self.assertIn("--through", str(caught.exception))
+
+    def test_a_start_after_the_stop_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            run_waves.select_cells(self.CELLS, start="w6", through="w5b")
+
+        self.assertIn("not before", str(caught.exception))
+
+
+class PlaceholderCellTests(unittest.TestCase):
+    """A placeholder must fail the count check, not run and die at job 1."""
+
+    def test_a_placeholder_expands_to_fewer_runs_than_expected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            campaign = Path(tmp) / "w3.json"
+            campaign.write_text(
+                json.dumps(
+                    {
+                        "name": "w3",
+                        "repeats": 1,
+                        "arms": [{"name": "a0-doc", "env": {"LENS_RECORDED": "1"}}],
+                        "queries": [{"id": "bridge-001", "text": "placeholder"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            status = run_waves.cell_status({"id": "w3", "campaign": str(campaign), "expect": 100})
+
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["runs"], 1)
+        self.assertIn("expected 100", status["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()
