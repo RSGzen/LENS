@@ -1,6 +1,6 @@
 {
   "name": "m11-remaining",
-  "spend_estimate_usd": 45,
+  "spend_estimate_usd": 48,
   "note": "The remaining campaign in run order. A stop_after cell is a staged-spend decision point, not a batch boundary: the run stops there unless that cell is the one named by --through.",
   "waves": [
     {
@@ -64,10 +64,25 @@
       "note": "4 queries x 2 arms x 2 repeats. Gate-calibration decision point."
     },
     {
+      "id": "w5b-compound",
+      "campaign": "experiments/campaigns/m11-w5b-compound.json",
+      "expect": 28,
+      "checkpoint_usd": 118,
+      "note": "I6 compound, 7 non-subset instances x 4 arms (A0 flat, A2 host, A2+Q host-raw, A2-R root) on rig v17. ~$1.9 at measured rates."
+    },
+    {
+      "id": "w5b-subset",
+      "campaign": "experiments/campaigns/m11-w5b-subset.json",
+      "expect": 24,
+      "checkpoint_usd": 118,
+      "stop_after": true,
+      "note": "I6 subset (cmp-05, cmp-07) at n=3 x 4 arms. Kill switch: run spread versus arm difference, and the decision point on whether A2-R is worth carrying."
+    },
+    {
       "id": "w6",
       "campaign": "experiments/campaigns/m11-w6.json",
       "expect": 45,
-      "checkpoint_usd": 130,
+      "checkpoint_usd": 133,
       "note": "Ablations A3/A4/A5 x 15 queries; the A2 reference rows are the W5 runs."
     }
   ]
