@@ -42,7 +42,12 @@ from lens.observability.trajectory import Trajectory
 from lens.preflight import API_KEY, DB, require_environment
 from lens.reranking import Reranker
 from lens.tools.kg import build_kg
-from lens.tools.retrieval import fetch_chunks, fetch_papers, retrieval_funnel
+from lens.tools.retrieval import (
+    fetch_chunks,
+    fetch_paper_chunks,
+    fetch_papers,
+    retrieval_funnel,
+)
 from lens.tools.sql import query_sql, sql_is_allowed
 
 
@@ -222,6 +227,12 @@ def build_runtime(
         """Fetch chunk rows by chunk_uuid."""
         return fetch_chunks(conn, chunk_ids)
 
+    def fetch_paper_chunks_tool(
+        arxiv_ids: list[str], per_paper: int = config.FETCH_PAPER_CHUNK_LIMIT
+    ) -> list[dict[str, Any]]:
+        """Fetch chunk rows for whole papers by arxiv_id (use when the query names a paper)."""
+        return fetch_paper_chunks(conn, arxiv_ids, per_paper)
+
     def kg_jev_call(state, questions):
         """One JEV call for the direction verifier, on the turn that caused it.
 
@@ -240,6 +251,7 @@ def build_runtime(
         registry.register("retrieval_funnel", retrieval_funnel_tool)
         registry.register("fetch_papers", fetch_papers_tool)
         registry.register("fetch_chunks", fetch_chunks_tool)
+        registry.register("fetch_paper_chunks", fetch_paper_chunks_tool)
 
         if config.KG_ENABLED:
             registry.register("build_kg", build_kg_tool)

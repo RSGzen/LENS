@@ -30,6 +30,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
@@ -801,16 +802,24 @@ def short_title(title: str | None, limit: int = CITE_LABEL_CHARS) -> str:
     return body if len(body) <= limit else body[: limit - 1].rstrip() + "…"
 
 
-#: Chunk and arXiv ids in an answer, with an optional surrounding backtick pair.
-#: The backticks are consumed so the chip is not rendered as inline code; one
-#: alternation means a token can never be replaced twice.
+#: Chunk and arXiv ids in an answer. Backticks are **not** consumed here: an answer
+#: that writes `` `1fc562ac…` `` has a closing backtick the token cannot swallow, so
+#: consuming the opening one leaves an odd count and the next chip lands inside a
+#: code span, where the HTML is escaped and rendered literally. A code span is
+#: unwrapped first (:data:`_CODE_SPAN`) and then treated as plain text.
 _CITE_ANY = re.compile(
-    r"`?(?P<token>"
+    r"(?P<token>"
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
     r"|\b\d{4}\.\d{4,5}(?:v\d+)?\b"
-    r")`?"
+    r")"
 )
+
+#: One inline code span, with its backticks. A span whose whole body is a citation
+#: token (optionally followed by an ellipsis) is a citation, not code: the model
+#: prints an abbreviated id inside backticks and the reader wants a chip.
+_CODE_SPAN = re.compile(r"`(?P<body>[^`\n]+)`")
+_CODE_TRAILERS = ("…", "...")
 
 
 def citation_labels(view: RunView) -> dict[str, str]:
@@ -854,6 +863,16 @@ def citation_labels(view: RunView) -> dict[str, str]:
     return labels
 
 
+def _one_line(parts: Sequence[str]) -> str:
+    """Join tooltip parts on one line.
+
+    A line ending inside a quoted HTML attribute is not allowed by the CommonMark
+    raw-HTML grammar, and the corpus ``authors`` field is itself multi-line, so
+    every part is collapsed, not just the separators.
+    """
+    return " · ".join(" ".join(str(part).split()) for part in parts if str(part).strip())
+
+
 def citation_tip(view: RunView, token: str) -> str:
     """Return the hover text for one citation token."""
     citation = next((c for c in view.citations.citations if c.token == token), None)
@@ -874,7 +893,7 @@ def citation_tip(view: RunView, token: str) -> str:
                 lines.append(f"section {citation.section_type}")
             lines.append(str(citation.token))
 
-        return "\n".join(lines)
+        return _one_line(lines)
 
     row = next(
         (
@@ -903,16 +922,50 @@ def citation_tip(view: RunView, token: str) -> str:
         lines.append(f"section {row['section_type']}")
     lines.append(token)
 
-    return "\n".join(lines)
+    return _one_line(lines)
+
+
+def _cite_code_span(match: re.Match[str]) -> str:
+    """Unwrap a code span that is only a citation token, keeping its trailing ellipsis.
+
+    `` `1fc562ac…` `` is the model's way of writing an abbreviated id; leaving the
+    backticks would make the chip inline code, and consuming just the opening one
+    unbalances the pair for the rest of the paragraph.
+    """
+    body = match.group("body")
+    stripped = body.strip()
+
+    for trailer in _CODE_TRAILERS:
+        if stripped.endswith(trailer):
+            stripped = stripped[: -len(trailer)].rstrip()
+            break
+
+    return body if _CITE_ANY.fullmatch(stripped) else match.group(0)
+
+
+def _substitute_citations(text: str, replace: Callable[[re.Match[str]], str]) -> str:
+    """Rewrite citation tokens in prose and in citation-only code spans, not in code."""
+    out: list[str] = []
+    last = 0
+
+    for match in _CODE_SPAN.finditer(text):
+        out.append(_CITE_ANY.sub(replace, text[last : match.start()]))
+        span = _cite_code_span(match)
+        out.append(_CITE_ANY.sub(replace, span) if span != match.group(0) else span)
+        last = match.end()
+
+    out.append(_CITE_ANY.sub(replace, text[last:]))
+
+    return "".join(out)
 
 
 def render_answer_html(view: RunView) -> str:
     """Replace citation ids with readable chips, keeping the id in the hover text.
 
     The answer itself is unchanged on disk; this is display only. A short prefix
-    is expanded against the chunks the run actually hydrated, a backticked id is
-    consumed with its backticks (otherwise Markdown renders the chip as code),
-    and a fenced code block is left untouched. An unresolved id stays visible.
+    is expanded against the chunks the run actually hydrated, a code span that
+    holds nothing but an id becomes a chip, and a fenced or inline code block that
+    holds anything else is left untouched. An unresolved id stays visible.
     """
     labels = citation_labels(view)
     resolved = {c.token for c in view.citations.citations if c.resolved} | set(labels)
@@ -944,7 +997,7 @@ def render_answer_html(view: RunView) -> str:
         if part.startswith("```"):
             continue
 
-        parts[index] = _CITE_ANY.sub(replace, part)
+        parts[index] = _substitute_citations(part, replace)
 
     return "".join(parts)
 

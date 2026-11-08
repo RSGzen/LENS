@@ -275,6 +275,21 @@ class UiDataTestCase(unittest.TestCase):
         self.assertIn("lens-cite", rendered)
         self.assertNotIn("`<span", rendered)
 
+    def test_two_ellipsised_backticked_ids_do_not_swallow_a_chip(self) -> None:
+        # The answer's own wording: `965f5e12…`, `1fc562ac…` - the closing backtick of
+        # each span sits after an ellipsis, so a pass that consumed only the opening
+        # one left an odd count and the second chip rendered as literal HTML.
+        answer = f"e.g. `{CHUNK_A}…`, `{CHUNK_A}…`\n"
+        self._make_run("run-a", answer=answer)
+
+        view = data.load_run("run-a")
+
+        assert view is not None
+        rendered = data.render_answer_html(view)
+        self.assertEqual(rendered.count("`"), 0)
+        self.assertEqual(rendered.count("lens-cite"), 2)
+        self.assertNotIn("`<span", rendered)
+
     def test_a_fenced_block_is_not_rewritten(self) -> None:
         self._make_run("run-a", answer=f"```python\nprint('{CHUNK_A}')\n```\n")
 

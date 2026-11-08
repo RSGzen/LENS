@@ -167,6 +167,52 @@ class RowToDictTest(unittest.TestCase):
         self.assertEqual(row_to_dict(("a", "b"), (1, 2)), {"a": 1, "b": 2})
 
 
+class FetchPaperChunksTest(unittest.TestCase):
+    """A named paper's text is reachable by arXiv id, not only through the funnel."""
+
+    def _row(self, arxiv_id: str, section: str) -> tuple:
+        return (
+            "11111111-1111-5111-8111-111111111111",
+            arxiv_id,
+            section,
+            1,
+            "text",
+            10,
+        )
+
+    def test_empty_input_does_not_query(self) -> None:
+        conn = FakeConn([])
+
+        self.assertEqual(retrieval.fetch_paper_chunks(conn, []), [])
+        self.assertEqual(conn.cursor().statements, [])
+
+    def test_a_non_positive_limit_does_not_query(self) -> None:
+        conn = FakeConn([])
+
+        self.assertEqual(retrieval.fetch_paper_chunks(conn, ["2103.12345"], per_paper=0), [])
+        self.assertEqual(conn.cursor().statements, [])
+
+    def test_rows_come_back_in_chunk_columns(self) -> None:
+        conn = FakeConn([self._row("2103.12345", "Result/Discussion")])
+
+        rows = retrieval.fetch_paper_chunks(conn, ["2103.12345"], per_paper=4)
+
+        self.assertEqual(set(rows[0]), set(retrieval.CHUNK_COLUMNS))
+        self.assertEqual(rows[0]["section_type"], "Result/Discussion")
+
+    def test_the_query_prefers_section_spread_over_section_order(self) -> None:
+        # Taking the first N chunks by section_order alone would spend a paper's
+        # budget on its introduction; the ranking is within a section first.
+        conn = FakeConn([])
+
+        retrieval.fetch_paper_chunks(conn, ["2103.12345"], per_paper=8)
+
+        statement, params = conn.cursor().statements[0]
+        self.assertIn("PARTITION BY arxiv_id, section_type", statement)
+        self.assertIn("ORDER BY section_rank", statement)
+        self.assertEqual(params, (["2103.12345"], 8))
+
+
 class VectorLiteralTest(unittest.TestCase):
     def test_round_trips_as_json(self) -> None:
         vec = np.array([0.5, -1.0, 0.25], dtype=np.float32)

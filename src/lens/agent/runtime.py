@@ -118,7 +118,9 @@ EVIDENCE_FETCH_CHARS = 120000
 #: Tools whose result depends only on their arguments, so a repeated call can be
 #: served from the recorded blob (within a run, and on resume). State-changing
 #: tools (ledger, backtrack) are never replayed.
-REPLAYABLE_TOOLS = frozenset({"retrieval_funnel", "fetch_papers", "fetch_chunks", "build_kg"})
+REPLAYABLE_TOOLS = frozenset(
+    {"retrieval_funnel", "fetch_papers", "fetch_chunks", "fetch_paper_chunks", "build_kg"}
+)
 
 #: Sub-task batches one RPC call may run at the same time. A 24-id call is six
 #: batches of four, and the root waits on that call as a unit, so the pool is sized

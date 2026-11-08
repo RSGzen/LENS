@@ -82,6 +82,8 @@ Payload shapes — do not guess them
   and ``papers`` (a dict ``{arxiv_id: {"title", "authors", "year", "abstract"}}``).
 - ``fetch_papers`` -> ``list[dict]``: paper rows.
 - ``fetch_chunks`` -> ``list[dict]``: chunk rows.
+- ``fetch_paper_chunks(arxiv_ids)`` -> ``list[dict]``: chunk rows for whole papers,
+  for a paper the query names that the funnel did not return.
 - A chunk row has ``chunk_uuid``, ``arxiv_id``, ``section_type``, ``chunk_text``.
 
 Search the variable, not the digest you printed
@@ -225,8 +227,8 @@ Tools
 Payload shapes
 - ``retrieval_funnel(buckets)`` -> ``{"chunks": [...], "papers": {...}}``; a chunk
   row has ``chunk_uuid``, ``arxiv_id``, ``section_type``, ``chunk_text``.
-- ``fetch_papers`` / ``fetch_chunks`` return rows; ``ledger_*`` and ``backtrack``
-  are the work record.
+- ``fetch_papers`` / ``fetch_chunks`` / ``fetch_paper_chunks`` return rows;
+  ``ledger_*`` and ``backtrack`` are the work record.
 
 How to work
 - <<RETRIEVAL_RULE>>

@@ -426,6 +426,54 @@ def fetch_chunks(conn: Any, chunk_ids: Sequence[str]) -> list[dict[str, Any]]:
         return [row_to_dict(CHUNK_COLUMNS, row) for row in cur.fetchall()]
 
 
+def fetch_paper_chunks(
+    conn: Any,
+    arxiv_ids: Sequence[str],
+    per_paper: int = config.FETCH_PAPER_CHUNK_LIMIT,
+) -> list[dict[str, Any]]:
+    """T2 — fetch chunk rows for whole papers, by ``arxiv_id``.
+
+    The funnel only reaches a paper whose abstract matches the query, so a paper
+    the user *names* can be missing from its ``n = 20`` and then no chunk of it is
+    reachable at all (``fetch_papers`` returns paper rows, and ``fetch_chunks``
+    needs ids the caller already holds). This is the missing direction: an
+    ``arxiv_id`` in, that paper's text out.
+
+    Chunks are taken **one at a time from each section in turn** rather than by
+    ``section_order`` alone, so a paper's method and results are represented and
+    not just its introduction: rank within a section, then rank across sections by
+    that inner rank. ``per_paper`` bounds each paper, so a long paper cannot
+    displace the others. Empty input -> ``[]``; an unknown id is simply absent.
+    """
+    ids = [str(arxiv_id).strip() for arxiv_id in arxiv_ids if str(arxiv_id).strip()]
+
+    if not ids or per_paper < 1:
+        return []
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "WITH ranked AS ("
+            "  SELECT chunk_uuid::text AS chunk_uuid, arxiv_id, section_type, "
+            "         section_order, chunk_text, token_count, "
+            "         row_number() OVER ("
+            "             PARTITION BY arxiv_id, section_type "
+            "             ORDER BY section_order, chunk_uuid"
+            "         ) AS section_rank "
+            "  FROM chunks WHERE arxiv_id = ANY(%s)"
+            "), picked AS ("
+            "  SELECT *, row_number() OVER ("
+            "      PARTITION BY arxiv_id "
+            "      ORDER BY section_rank, section_order, chunk_uuid"
+            "  ) AS paper_rank "
+            "  FROM ranked"
+            ") SELECT chunk_uuid, arxiv_id, section_type, section_order, chunk_text, "
+            "       token_count FROM picked WHERE paper_rank <= %s "
+            "ORDER BY arxiv_id, paper_rank",
+            (ids, int(per_paper)),
+        )
+        return [row_to_dict(CHUNK_COLUMNS, row) for row in cur.fetchall()]
+
+
 def rerank_chunks(
     conn: Any,
     chunk_ids: Sequence[str],

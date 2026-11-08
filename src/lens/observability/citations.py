@@ -50,7 +50,9 @@ _LOOSE_SHORT_ID_RE = re.compile(r"(?<![0-9A-Za-z-])([0-9a-fA-F]{6,12})(?![0-9A-Z
 # Tools whose payload hydrates chunks / papers. Only these carry the evidence map.
 # ``rerank_chunks`` / ``rerank_papers`` stay listed so runs recorded before the
 # funnel became one tool still resolve.
-_CHUNK_TOOLS = frozenset({"retrieval_funnel", "rerank_chunks", "fetch_chunks"})
+_CHUNK_TOOLS = frozenset(
+    {"retrieval_funnel", "rerank_chunks", "fetch_chunks", "fetch_paper_chunks"}
+)
 _PAPER_TOOLS = frozenset({"rerank_papers", "fetch_papers"})
 
 #: Sentence and list-line boundaries. A claim unit is what sits between two of them.

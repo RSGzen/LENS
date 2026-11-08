@@ -221,6 +221,12 @@ RETRIEVAL_C_TOP = int(os.environ.get("LENS_RETRIEVAL_C_TOP", "100"))  # chunks a
 if RETRIEVAL_C < RETRIEVAL_C_TOP:
     raise ValueError("RETRIEVAL_C must be >= RETRIEVAL_C_TOP")
 
+#: Chunks returned per paper by ``fetch_paper_chunks`` - the T2 path for a paper
+#: the query *names* but the funnel did not reach. Small on purpose: it is a way
+#: to read a named paper, not a second retrieval, and eight chunks per paper is
+#: about a tenth of the funnel's payload.
+FETCH_PAPER_CHUNK_LIMIT = int(os.environ.get("LENS_FETCH_PAPER_CHUNK_LIMIT", "8"))
+
 # HNSW query-time recall/latency knob. `m` / `ef_construction` are build-time
 # (see scripts/build_indexes.py); `ef_search` is set per query. Record all three
 # per run.

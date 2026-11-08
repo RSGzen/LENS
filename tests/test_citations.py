@@ -396,6 +396,29 @@ class CitationTestCase(unittest.TestCase):
         self.assertFalse(by_token["2601.99999"].resolved)
         self.assertEqual(report.unresolved, ["2601.99999"])
 
+    def test_a_paper_fetch_counts_as_recorded_evidence(self) -> None:
+        # fetch_paper_chunks exists so a named paper the funnel missed can still be
+        # read; a citation of what it returned must resolve, or the fix only moves
+        # the "no evidence" rejection one tool over.
+        self._tool(
+            1,
+            "fetch_paper_chunks",
+            [
+                {
+                    "chunk_uuid": CHUNK,
+                    "arxiv_id": "2512.24601",
+                    "section_type": "Methodology",
+                    "chunk_text": "Recursive language models recurse.",
+                }
+            ],
+        )
+        self._answer(f"A named paper says so ({CHUNK}).")
+
+        report = resolve_citations("run-cite")
+
+        self.assertEqual(report.counts["resolved"], 1)
+        self.assertEqual(report.unresolved, [])
+
     def test_an_abbreviated_id_resolves_to_the_one_chunk_it_matches(self) -> None:
         # A model that writes the first eight characters is citing the chunk. A
         # strict matcher counted those answers as uncited, which under-reported
