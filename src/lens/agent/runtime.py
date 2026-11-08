@@ -740,7 +740,7 @@ class Runtime:
     def _register_runtime_tools(self) -> None:
         """Register the host-runtime operations the RLM is allowed to call.
 
-        : these are **not** sandbox-local functions — they touch host
+        These are **not** sandbox-local functions — they touch host
         state (budget, ledger) and are reached through the façade like any tool.
         Register them as small closures with a one-line docstring each (the
         docstring *is* the manifest entry the root reads; a ``functools.partial``

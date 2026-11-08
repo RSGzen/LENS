@@ -104,7 +104,7 @@ services:
     tmpfs:
       - /tmp:size=64m
     volumes:
-      - "${LENS_RUN_WORKSPACE:-D:/lens-data/runs/_sandbox}:/workspace"
+      - "${LENS_RUN_WORKSPACE:?SandboxSession sets this per run; export it before starting lens-repl by hand}:/workspace"
     environment:
       PYTHONPATH: /app
       LENS_WORKSPACE: /workspace

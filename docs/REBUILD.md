@@ -13,8 +13,16 @@ Never pass `-v` here, and never delete the volume's `postgres` directory.
 ```powershell
 wsl --update                        # Docker Desktop 4.93 needs a current WSL VM
 docker version --format "{{.Server.Version}}"
+# compose refuses to resolve the sandbox mount without a workspace: the harness
+# sets this per run, so a hand-driven compose command has to supply one.
+$env:LENS_RUN_WORKSPACE = "$env:TEMP\lens-sandbox"
 cd D:\lens; docker compose config -q   # no output = OK
 ```
+
+`LENS_RUN_WORKSPACE` has **no default** on purpose: a compiled-in path would be a
+machine-specific literal, and a wrong one mounts an empty directory over the run's
+workspace without saying so. `SandboxSession` sets it per run; `scripts/verify_sandbox.py`
+sets it too; only a hand-started `lens-repl` needs the export above.
 
 ## 2. Rebuild the sandbox image
 
