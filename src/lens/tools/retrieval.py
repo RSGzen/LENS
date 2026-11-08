@@ -288,10 +288,11 @@ def fetch_papers(conn: Any, arxiv_ids: Sequence[str]) -> list[dict[str, Any]]:
     """T2 — fetch full paper rows by ``arxiv_id``.
 
     ``SELECT <PAPER_COLUMNS> FROM papers WHERE arxiv_id = ANY(%s)``; map each row
-    with :func:`row_to_dict`. Rows are returned in the DB's order (unordered) —
-    callers that need a specific order re-index by ``arxiv_id``. Empty input ->
-    ``[]`` (do **not** run the query). Uses a host connection; ``categories`` comes
-    back as a Python ``list[str]``.
+    with :func:`row_to_dict` and add ``year`` derived from the arXiv id prefix.
+    Rows are returned in the DB's order (unordered) — callers that need a
+    specific order re-index by ``arxiv_id``. Empty input -> ``[]`` (do **not**
+    run the query). Uses a host connection; ``categories`` comes back as a Python
+    ``list[str]``.
     """
     if not arxiv_ids:
         return []
@@ -303,7 +304,15 @@ def fetch_papers(conn: Any, arxiv_ids: Sequence[str]) -> list[dict[str, Any]]:
             f"SELECT {', '.join(PAPER_COLUMNS)} FROM papers WHERE arxiv_id = ANY(%s)",
             (list(arxiv_ids),),
         )
-        return [row_to_dict(PAPER_COLUMNS, row) for row in cur.fetchall()]
+        rows = [row_to_dict(PAPER_COLUMNS, row) for row in cur.fetchall()]
+
+    # The table has ``update_date``, not a publication year. The arXiv id prefix
+    # is the manifest's year rule and the same function the funnel uses, so the
+    # two paper payloads agree without a schema change.
+    for row in rows:
+        row["year"] = year_from_arxiv_id(str(row.get("arxiv_id") or ""))
+
+    return rows
 
 
 def rerank_papers(

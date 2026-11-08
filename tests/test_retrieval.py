@@ -21,6 +21,7 @@ from lens.tools import retrieval
 from lens.tools.retrieval import (
     PAPER_COLUMNS,
     deep_match,
+    fetch_papers,
     format_query,
     hnsw_config_sql,
     rerank_chunks,
@@ -121,6 +122,44 @@ class YearFromArxivIdTest(unittest.TestCase):
         self.assertIsNone(year_from_arxiv_id("acc-phys/9411001"))
         self.assertIsNone(year_from_arxiv_id("2a01.0001"))
         self.assertIsNone(year_from_arxiv_id(""))
+
+
+class FetchPapersTest(unittest.TestCase):
+    """The T2 paper payload carries the same derived year as the funnel."""
+
+    def _row(self, arxiv_id: str) -> tuple:
+        return (
+            arxiv_id,
+            "title",
+            "authors",
+            [],
+            None,
+            None,
+            "v1",
+            "2021-03-01",
+            "abstract",
+        )
+
+    def test_year_is_derived_from_the_id_prefix(self) -> None:
+        conn = FakeConn([self._row("2103.12345")])
+
+        rows = fetch_papers(conn, ["2103.12345"])
+
+        self.assertEqual(rows[0]["year"], 2021)
+        self.assertIn("year", rows[0])
+
+    def test_an_old_style_id_has_no_year(self) -> None:
+        conn = FakeConn([self._row("acc-phys/9411001")])
+
+        rows = fetch_papers(conn, ["acc-phys/9411001"])
+
+        self.assertIsNone(rows[0]["year"])
+
+    def test_empty_input_does_not_query(self) -> None:
+        conn = FakeConn([])
+
+        self.assertEqual(fetch_papers(conn, []), [])
+        self.assertEqual(conn.cursor().statements, [])
 
 
 class RowToDictTest(unittest.TestCase):
