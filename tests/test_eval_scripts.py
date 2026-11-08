@@ -619,6 +619,29 @@ class CheckRunShapeTests(unittest.TestCase):
             self.check_run._event_shape("something-new"), self.check_run._event_shape("rlm")
         )
 
+    def test_the_two_axes_resolve_to_one_shape(self) -> None:
+        self.assertEqual(
+            self.check_run._run_shape({"evidence": "document", "treatment": "naive"}),
+            "document",
+        )
+        self.assertEqual(
+            self.check_run._run_shape({"evidence": "document", "treatment": "rlm"}),
+            "document",
+        )
+        self.assertEqual(
+            self.check_run._run_shape({"evidence": "corpus", "treatment": "naive"}),
+            "naive",
+        )
+        self.assertEqual(
+            self.check_run._run_shape({"evidence": "corpus", "treatment": "rlm"}),
+            "rlm",
+        )
+
+    def test_a_run_recorded_before_the_split_still_resolves(self) -> None:
+        self.assertEqual(self.check_run._run_shape({"run": "document"}), "document")
+        self.assertEqual(self.check_run._run_shape({"run": "naive"}), "naive")
+        self.assertEqual(self.check_run._run_shape({"run": "rlm"}), "rlm")
+
 
 class RegradeTests(unittest.TestCase):
     """The regrade probe: old verdict from the log, new verdict from the current gate."""

@@ -23,6 +23,7 @@ import argparse
 import json
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -138,6 +139,23 @@ def _event_shape(mode: str) -> tuple[int, frozenset[str] | None, bool]:
     return shapes.get(mode, shapes["rlm"])
 
 
+def _run_shape(mode: Mapping[str, Any]) -> str:
+    """Return the event-shape key for one recorded arm block.
+
+    The arm records the evidence source and the treatment separately; ``run`` is
+    kept for runs recorded before that split, so both spellings resolve. A
+    document run has no tool calls whichever treatment produced it.
+    """
+    legacy = str(mode.get("run") or "rlm")
+    evidence = str(mode.get("evidence") or ("document" if legacy == "document" else "corpus"))
+    treatment = str(mode.get("treatment") or ("naive" if legacy == "naive" else "rlm"))
+
+    if evidence == "document":
+        return "document"
+
+    return "naive" if treatment == "naive" else "rlm"
+
+
 def check_run(run_id: str) -> bool:
     """Run every assertion; return True when the run passes the gate."""
     run_dir = runstore.runs_root() / run_id
@@ -176,8 +194,9 @@ def check_run(run_id: str) -> bool:
         print(f"[INFO] merged id repaired: {written} -> {full}")
 
     # The gate checks the shape the mode can produce; see ``_event_shape``.
-    mode = ((manifest.extra or {}).get("arm") or {}).get("mode", {}).get("run") or "rlm"
-    required_types, allowed, ledger_required = _event_shape(mode)
+    mode_block = ((manifest.extra or {}).get("arm") or {}).get("mode", {})
+    shape = _run_shape(mode_block)
+    required_types, allowed, ledger_required = _event_shape(shape)
     event_types = (
         call_types if allowed is None else [name for name in call_types if name in allowed]
     )
@@ -238,7 +257,7 @@ def check_run(run_id: str) -> bool:
         _check(
             "ledger non-empty",
             ledger_size > 0 if ledger_required else None,
-            f"{ledger_size} task(s)" if ledger_required else f"{mode} run: no ledger by design",
+            f"{ledger_size} task(s)" if ledger_required else f"{shape} run: no ledger by design",
         ),
         _check("answer.md written", bool(answer.strip()), f"{len(answer)} chars"),
         _check(
