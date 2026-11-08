@@ -37,7 +37,6 @@ judge_answers = _load("judge_answers")
 freeze_manifest = _load("freeze_manifest")
 build_qrels_worksheet = _load("build_qrels_worksheet")
 run_campaign = _load("run_campaign")
-run_waves = _load("run_waves")
 
 
 def _good_polarity():
