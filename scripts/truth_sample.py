@@ -18,6 +18,7 @@ import math
 import random
 import sys
 from collections import defaultdict
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,43 @@ def wilson(successes: int, total: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - margin), min(1.0, centre + margin))
 
 
+def _claim_text(frame: Mapping[str, Any]) -> str:
+    """Return the specific assertion, not the whole bullet.
+
+    The ledger verifies one ``(subject, predicate, object)`` frame at a time; the
+    unit text is the bullet that contained it. Printing the bullet made several
+    different checks look like the same claim.
+    """
+    parts = [str(frame.get(key) or "").strip() for key in ("subject", "predicate", "object")]
+    claim = " ".join(part for part in parts if part)
+
+    return claim or str(frame.get("text") or "")
+
+
+def has_evidence(frame: Mapping[str, Any], texts: Mapping[str, str]) -> bool:
+    """Return whether the frame has a cited excerpt a human can judge.
+
+    A frame that cites no chunk is unverifiable by construction, but it cannot
+    answer "does the cited excerpt support the claim" - there is no excerpt. The
+    truth check reports those separately instead of spending a sample slot on a
+    question with no input.
+    """
+    chunk_id = str(frame.get("chunk_id") or "")
+
+    return bool(chunk_id and texts.get(chunk_id))
+
+
+def _frame_key(frame: Mapping[str, Any]) -> tuple[str, str, str]:
+    """One row per ``(unit, quote, chunk)``: the pair the verifier judged."""
+    quote = " ".join(str(frame.get("quote") or "").split())
+
+    return (
+        str(frame.get("unit_index")),
+        quote or _claim_text(frame),
+        str(frame.get("chunk_id") or ""),
+    )
+
+
 def build_rows(
     frames: list[dict[str, Any]],
     texts: dict[str, str],
@@ -45,10 +83,28 @@ def build_rows(
     per_status: int = 10,
     seed: int = 7,
 ) -> tuple[list[dict[str, str]], dict[str, dict[str, Any]]]:
-    """Return ``(rows, sidecar)`` sampled evenly from grounded and unverifiable frames."""
+    """Return ``(rows, sidecar)`` sampled evenly from grounded and unverifiable frames.
+
+    A bullet that quotes three sentences is three frames, each with its own
+    ``quote`` and one verdict. The worksheet must show that quote: flattening to
+    the bullet produced rows that looked duplicated and could even carry
+    different hidden statuses. Rows are de-duplicated on
+    ``(unit_index, quote, chunk_id)`` before sampling, so the same check cannot
+    be counted twice.
+    """
     by_status: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    seen: set[tuple[str, str, str]] = set()
 
     for frame in frames:
+        if not has_evidence(frame, texts):
+            continue
+
+        key = _frame_key(frame)
+
+        if key in seen:
+            continue
+
+        seen.add(key)
         verdict = frame.get("verdict") or {}
         status = str(verdict.get("status") or "")
         by_status[status].append(frame)
@@ -65,10 +121,13 @@ def build_rows(
             claim_id = f"{run_id}:{len(rows):03d}"
             chunk_id = str(frame.get("chunk_id") or "")
             excerpt = texts.get(chunk_id, "")
+            quote = " ".join(str(frame.get("quote") or "").split())
             rows.append(
                 {
                     "claim_id": claim_id,
-                    "claim_text": str(frame.get("text") or ""),
+                    "unit_index": str(frame.get("unit_index") or ""),
+                    "claim": _claim_text(frame),
+                    "quote": quote,
                     "cited_excerpt": " ".join(excerpt.split())[:1200],
                     "label": "",
                 }
@@ -78,6 +137,7 @@ def build_rows(
                 "status": status,
                 "unit_index": frame.get("unit_index"),
                 "chunk_id": chunk_id,
+                "quote": quote,
             }
 
     rng.shuffle(rows)
@@ -133,6 +193,7 @@ def _load_run(run_id: str) -> tuple[list[dict[str, Any]], dict[str, str]]:
 
 def build(args: argparse.Namespace) -> int:
     frames, texts = _load_run(args.run)
+    skipped = sum(1 for frame in frames if not has_evidence(frame, texts))
     rows, sidecar = build_rows(
         frames, texts, run_id=args.run, per_status=args.per_status, seed=args.seed
     )
@@ -154,6 +215,12 @@ def build(args: argparse.Namespace) -> int:
 
     print(f"wrote {len(rows)} claims to {out}")
     print(f"sidecar {scores}")
+
+    if skipped:
+        print(
+            f"skipped {skipped} frame(s) with no cited evidence (counted separately, not sampled)",
+            file=sys.stderr,
+        )
 
     return 0
 

@@ -43,20 +43,90 @@ class BuildRowsTests(unittest.TestCase):
         )
 
         self.assertEqual(len(rows), 2)
-        self.assertEqual(set(rows[0]), {"claim_id", "claim_text", "cited_excerpt", "label"})
+        self.assertEqual(
+            set(rows[0]),
+            {"claim_id", "unit_index", "claim", "quote", "cited_excerpt", "label"},
+        )
         self.assertEqual(
             sorted(entry["status"] for entry in sidecar.values()),
             ["grounded", "unverifiable"],
         )
         self.assertTrue(all(row["label"] == "" for row in rows))
 
+    def test_a_bullet_split_into_quotes_is_one_row_per_quote(self) -> None:
+        # One bullet quoting two sentences is two checks, not one claim printed
+        # twice. The quote is the field that distinguishes them, and the claim
+        # text is the assertion, not the bullet that contained it.
+        frames = [
+            {
+                "unit_index": 12,
+                "text": "the whole bullet",
+                "subject": "SRLM",
+                "predicate": "reports",
+                "object": "context is external",
+                "quote": "quote one",
+                "chunk_id": "c1",
+                "verdict": {"status": "grounded"},
+            },
+            {
+                "unit_index": 12,
+                "text": "the whole bullet",
+                "subject": "SRLM",
+                "predicate": "reports",
+                "object": "no explicit self-query",
+                "quote": "quote two",
+                "chunk_id": "c1",
+                "verdict": {"status": "unverifiable"},
+            },
+            {
+                "unit_index": 12,
+                "text": "the whole bullet",
+                "subject": "SRLM",
+                "predicate": "reports",
+                "object": "context is external",
+                "quote": "quote one",
+                "chunk_id": "c1",
+                "verdict": {"status": "grounded"},
+            },
+        ]
+
+        rows, _ = truth.build_rows(
+            frames, {"c1": "the cited excerpt"}, run_id="run-1", per_status=5, seed=3
+        )
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["quote"] for row in rows}, {"quote one", "quote two"})
+        self.assertIn("SRLM reports", rows[0]["claim"])
+        self.assertNotIn("whole bullet", rows[0]["claim"])
+
     def test_a_status_with_no_frames_is_skipped(self) -> None:
         rows, sidecar = truth.build_rows(
-            [_frame(1, "grounded")], {}, run_id="run-1", per_status=5, seed=3
+            [_frame(1, "grounded")],
+            {"c1": "the cited excerpt"},
+            run_id="run-1",
+            per_status=5,
+            seed=3,
         )
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(len(sidecar), 1)
+
+    def test_a_frame_with_no_cited_excerpt_is_not_sampled(self) -> None:
+        frames = [
+            _frame(1, "grounded"),
+            _frame(2, "unverifiable", chunk_id=""),
+        ]
+
+        rows, sidecar = truth.build_rows(
+            frames,
+            {"c1": "the cited excerpt"},
+            run_id="run-1",
+            per_status=5,
+            seed=3,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual([entry["status"] for entry in sidecar.values()], ["grounded"])
 
 
 class ScoreRowsTests(unittest.TestCase):
