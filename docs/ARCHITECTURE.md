@@ -360,9 +360,12 @@ classDiagram
 >
 > Three edges deserve a note. `runtime → arm` is the arm fingerprint
 > (`experiments/arm.py`). `polarity → models` is the probe's `Question`/`JevResult`
-> types, which is all it needs. And `run → {connect, embeddings, kg_extract,
+> types, which is all it needs. `run → {connect, embeddings, kg_extract,
 > reranking, sql}` is the CLI's wiring: `run.py` is the only module allowed to touch
-> every layer, because that is where the object graph is built.
+> every layer, because that is where the object graph is built. A fourth is worth
+> knowing: **`evaluate → claims`** is `strip_self_reported_gaps`, the one helper the
+> final gate and the claim ledger share, which is why a gap section is excluded from
+> both by one definition.
 >
 > **What this graph cannot show, and why six nodes are isolated.** It is imports
 > only, over `src/lens`: `scripts/` is outside it, so `campaign` and
