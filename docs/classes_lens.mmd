@@ -15,6 +15,7 @@ classDiagram
     tokens_in : int
     tokens_out : int
     can_continue() bool
+    can_measure() bool
     record_backtrack() None
     record_chat(result: CallResult) None
     record_exec(seconds: float) None
@@ -74,6 +75,7 @@ classDiagram
     answer_chars : int
     citations : list[Citation]
     counts : dict[str, int]
+    merged : list[tuple[str, str]]
     run_id : str
     unresolved : list[str]
     to_dict() dict[str, Any]
@@ -86,6 +88,7 @@ classDiagram
     object : str | None
     predicate : str
     quote : str
+    quote_source : str | None
     subject : str
     text : str
     unit : str | None
@@ -93,13 +96,26 @@ classDiagram
     value : str | None
     to_dict() dict[str, Any]
   }
+  class ClaimLedger {
+    cost_usd : float
+    counts : dict[str, int]
+    coverage : float
+    errors : list[str]
+    frames : list[dict[str, Any]]
+    run_id : str
+    tokens_out : int
+    units : int
+  }
   class ClaimReport {
+    cost_usd : float
     counts : dict[str, int]
     coverage : float
     covered_units : int
     errors : list[str]
     frames : list[ClaimFrame]
     run_id : str
+    self_reported_gaps_removed : bool
+    tokens_out : int
     units : int
     verdicts : list[FrameVerdict]
     rows() list[dict[str, Any]]
@@ -308,8 +324,10 @@ classDiagram
   }
   class RunView {
     answer : str
+    cached_series : list[int]
     cap_usd : float | None
     citations
+    claims : ClaimLedger | None
     cost_usd : float
     cost_with_fee : float
     evidence : dict[int, list[dict[str, Any]]]
@@ -318,6 +336,7 @@ classDiagram
     has_sources : bool
     manifest
     missing_refs : int
+    papers : dict[str, dict[str, Any]]
     run_id : str
     summary : dict[str, Any]
     tokens_in_series : list[int]
@@ -401,6 +420,20 @@ classDiagram
     source : str
     summary : str
     system : str
+  }
+  class SubTaskStep {
+    batch_index : int
+    batch_total : int
+    call_id : str | None
+    cost_usd : float | None
+    error : dict[str, Any] | None
+    items : int
+    latency_ms : int | None
+    name : str
+    result_ref : str | None
+    result_summary : str | None
+    tokens_in : int | None
+    tokens_out : int | None
   }
   class Target {
     arxiv_id : str
@@ -521,6 +554,7 @@ classDiagram
     reasoning_tokens : int | None
     stderr_full : str | None
     stdout_full : str | None
+    sub_tasks : list[SubTaskStep]
     tokens_in : int | None
     tokens_out : int | None
     tools : list[ToolStep]

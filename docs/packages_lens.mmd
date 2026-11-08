@@ -55,7 +55,13 @@ classDiagram
   }
   class campaign {
   }
+  class claim_score {
+  }
+  class coverage_score {
+  }
   class polarity {
+  }
+  class segmentation_score {
   }
   class kg_extract {
   }
@@ -186,6 +192,8 @@ classDiagram
   embeddings --> config
   arm --> lens
   arm --> config
+  coverage_score --> claim_score
+  coverage_score --> retrieval
   polarity --> models
   kg_extract --> lens
   kg_extract --> config
@@ -203,6 +211,8 @@ classDiagram
   citations --> config
   citations --> replay
   citations --> trajectory
+  claim_extract --> lens
+  claim_extract --> config
   claim_extract --> citations
   claim_extract --> claims
   claims --> citations
@@ -223,6 +233,7 @@ classDiagram
   run --> runstore
   run --> runtime
   run --> sandbox_session
+  run --> segmentation
   run --> tool_registry
   run --> tool_server
   run --> clients
@@ -244,6 +255,7 @@ classDiagram
   evaluate --> config
   evaluate --> models
   evaluate --> citations
+  evaluate --> claims
   evaluate --> trajectory
   kg --> lens
   kg --> config

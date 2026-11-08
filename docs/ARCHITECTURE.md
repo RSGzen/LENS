@@ -44,6 +44,7 @@ Two runtimes, **one-way imports**:
 | `src/lens/agent/runstore.py` | `manifest.json` (identity/index), `resume.json` (cache), `list_runs`, `sweep_interrupted`, `fork_run`, bundle export/import (with the export-time secret scan). | `config` (lazy) |
 | `src/lens/sandbox/{runner,rlm_api,relay,exec_client}.py` | Passive persistent executor, façade (`tool()` / `sub_extract()` / `sub_summarise()` / `sub_classify()` / `budget()` / `emit()` / `note()`), the single-destination relay, the in-container exec client. | sandbox only (**no** project imports) |
 | `src/lens/experiments/{arm,campaign,polarity}.py` | Arm fingerprint (written once, into `manifest.json`), campaign matrix (validated, expanded to subprocess jobs), the four polarity probes. | `config`, `models` |
+| `src/lens/experiments/{claim_score,segmentation_score,coverage_score}.py` | Post-hoc scorers: claim recall / citation precision, bucket and union recall, the coverage worksheet. No run imports them; `scripts/` does. | `config`, `citations`/`retrieval` |
 | `src/lens/ui/{data,app}.py` | Read-only data layer (no Streamlit) and the Streamlit pages: recorded playback, the answer with the text behind each cited chunk, live query via subprocess, and two corpus lookup tools. | `runstore`, `replay`, `citations` |
 | `src/lens/lookup.py` | Read-only paper/chunk lookup for the UI: validates the id, runs one parameterised query, prints one JSON object. Runs as a child process so the UI never opens a database. | `db.connect`, `run`-free |
 | `src/lens/run.py` | Entry point: `python -m lens.run "<query>"`, `--list/--show/--resume/--fork/--export/--import`; the only module that builds the object graph. | `agent.runtime`, `runstore`, `tools`, `embeddings`, `reranking`, `kg_extract`, `connect` |
@@ -60,8 +61,8 @@ from `lens`, because the image ships them without the package.
 ## 2. Module dependency graph (auto-generated)
 
 Source: `docs/packages_lens.mmd` (pyreverse, regenerated 7 Nov 2026). Edges are
-file-level imports. The graph **is** complete and correct: **59 analysed modules,
-154 imports**, covering `agent/`, `sandbox/`, `tools/`, `experiments/`, `ui/` and
+file-level imports. The graph **is** complete as a file-level import graph: **62 analysed modules,
+160 imports**, covering `agent/`, `sandbox/`, `tools/`, `experiments/`, `ui/` and
 `run.py`.
 
 ```mermaid
@@ -122,7 +123,13 @@ classDiagram
   }
   class campaign {
   }
+  class claim_score {
+  }
+  class coverage_score {
+  }
   class polarity {
+  }
+  class segmentation_score {
   }
   class kg_extract {
   }
@@ -141,6 +148,10 @@ classDiagram
   class observability {
   }
   class citations {
+  }
+  class claim_extract {
+  }
+  class claims {
   }
   class replay {
   }
@@ -202,8 +213,11 @@ classDiagram
   runtime --> config
   runtime --> arm
   runtime --> citations
+  runtime --> claim_extract
+  runtime --> claims
   runtime --> trajectory
   runtime --> evaluate
+  runtime --> kg
   runtime --> retrieval
   sandbox_session --> lens
   sandbox_session --> config
@@ -246,6 +260,8 @@ classDiagram
   embeddings --> config
   arm --> lens
   arm --> config
+  coverage_score --> claim_score
+  coverage_score --> retrieval
   polarity --> models
   kg_extract --> lens
   kg_extract --> config
@@ -263,6 +279,11 @@ classDiagram
   citations --> config
   citations --> replay
   citations --> trajectory
+  claim_extract --> lens
+  claim_extract --> config
+  claim_extract --> citations
+  claim_extract --> claims
+  claims --> citations
   replay --> lens
   replay --> context
   replay --> config
@@ -280,6 +301,7 @@ classDiagram
   run --> runstore
   run --> runtime
   run --> sandbox_session
+  run --> segmentation
   run --> tool_registry
   run --> tool_server
   run --> clients
@@ -301,6 +323,7 @@ classDiagram
   evaluate --> config
   evaluate --> models
   evaluate --> citations
+  evaluate --> claims
   evaluate --> trajectory
   kg --> lens
   kg --> config
@@ -340,6 +363,16 @@ classDiagram
 > types, which is all it needs. And `run → {connect, embeddings, kg_extract,
 > reranking, sql}` is the CLI's wiring: `run.py` is the only module allowed to touch
 > every layer, because that is where the object graph is built.
+>
+> **What this graph cannot show, and why six nodes are isolated.** It is imports
+> only, over `src/lens`: `scripts/` is outside it, so `campaign` and
+> `segmentation_score` look orphaned when in fact only the campaign and scoring
+> scripts import them. `relay` and `exec_client` are islands *by design* — the
+> image ships them without the package, and the sandbox's route to the host is a
+> **port number in an environment variable**, not an import. The `experiments` and
+> `sandbox` nodes are package `__init__` files nothing imports by name. Nothing here
+> shows the RPC path, the DB read path or the per-run data flow; §4 is the only
+> place those exist.
 
 ---
 
@@ -350,8 +383,8 @@ classDiagram
 > default (`Budget()`, `BudgetLimits()`, `Task()`) or an attribute-level annotation.
 > LENS injects its collaborators through **keyword-only** parameters
 > (`*, client: LensClient` … then `self.client = client`), which pyreverse ignores.
-> Measured on the real package: **6 relationships across 57 classes**, every one of
-> them real. An earlier run also produced two false positives
+> Measured on the real package: **6 relationships across 59 classes**, every one of
+> them real. Two more lines are false positives
 > (`JevResult --o DirectionVerifier`, `Trajectory --o LensClient`); neither
 > construction survives in the code any more, but **both lines are still in the raw
 > file**, because it is a dump and is not cleaned by hand. The raw output is kept as
@@ -568,8 +601,8 @@ endpoints only; their ownership is in 3.1.
 
 ### 3.4 Raw pyreverse output (reference only)
 
-`docs/classes_lens.mmd` — 57 classes, regenerated 7 Nov 2026. The complete
-relationship set it could infer:
+`docs/classes_lens.mmd` — 59 classes, regenerated 9 Nov 2026. The complete
+relationship set it could infer; the last two are the false positives:
 
 ```
 Runtime --> Budget : budget
@@ -578,6 +611,8 @@ TaskLedger --> Task : tasks
 Runtime --> TaskLedger : ledger
 RunView --> RunManifest : manifest
 RunView --> CitationReport : citations
+JevResult --o DirectionVerifier : jev_call   # false positive
+Trajectory --o LensClient : trajectory       # false positive
 ```
 
 The two `RunView` edges are real but trivial: the UI's view object is built from a
@@ -608,9 +643,17 @@ flowchart TD
     tools --> db[("PostgreSQL + pgvector")]
     runtime --> traj["observability/trajectory.py"]
     clients --> traj
-    runtime --> relay["lens-relay<br/>(one port, no egress)"]
-    relay --> sbx["sandbox runner.py<br/>passive executor"]
+    runtime -->|"docker compose exec -T<br/>block on stdin"| sbx["sandbox exec_client.py → runner.py<br/>passive executor"]
+    sbx -->|"rlm_api.tool / sub_extract / budget / emit / note"| relay["lens-relay<br/>forwards one hard-coded host:port"]
+    relay --> server["agent/tool_server.py<br/>per-run bearer token"]
+    server --> runtime
 ```
+
+Two channels, in opposite directions: the host **drives** (an `exec` of a client
+inside the container, with the block on stdin) and the sandbox **calls back**
+through the relay, which is the only peer it can reach. The relay is a port, not a
+proxy: it takes no target from the client, which is why no import graph can show
+this edge.
 
 The gate and the direction verifier both run **host-side** and both call the decision
 layer through `clients.jev`, so the sandbox never sees either.
@@ -625,16 +668,19 @@ driver.
 sequenceDiagram
     participant R as agent/runtime.py (host)
     participant S as sandbox runner.py
+    participant L as lens-relay
     participant API as OpenRouter (host)
     participant DB as tools → Postgres
     R->>API: chat(root context)
     API-->>R: generated code
-    R->>S: POST code
-    S->>R: rlm_api.tool("retrieval_funnel", …)
+    R->>S: docker compose exec, block on stdin
+    S->>L: rlm_api.tool("retrieval_funnel", …)
+    L->>R: tool_server → Runtime.handle_rpc (bearer token)
     R->>DB: query (lens_ro, read-only)
     DB-->>R: rows
-    R-->>S: compact result
-    S-->>R: stdout / return value
+    R-->>L: {"ok": true, "result": …}
+    L-->>S: the same envelope, forwarded
+    S-->>R: one JSON envelope on stdout (exec_client)
     R->>R: append observation, budget check, then loop or finish
 ```
 
@@ -693,6 +739,7 @@ probed after the relay exists. The contract that follows:
 | `sandbox/rlm_api.py` | Façade. | No key/DB; depth-1 only; no recursion. |
 | `kg_query.py` | Pure KG traversal (`kg_neighbors` / `kg_triples` / `kg_subgraph`). | Copied into the image; `tools/kg.py` re-exports it (one source of truth); bound as functions, first call noted. |
 | `tools/evaluate.py` | Three-tier stage gate + claim-level final gate. | Verdict + failing criterion; logged; fail-soft to `uncertain`. |
+| `observability/claims.py` · `claim_extract.py` | The mechanical claim ledger: a host-side sub-model proposes frames, the host verifies every id and verbatim span, and `strip_self_reported_gaps` is shared with the gate. | Runs at finalisation, host-only; `contradicted` rejects, `unverifiable` is recorded and never rejects; `claims.json` is written even when the gate is off. |
 | `tools/sql.py` | Gated T3. | Read-only; off by default; forced off in recorded runs **and** in any mode without a corpus. |
 | `agent/runstore.py` | `manifest.json` (identity/index), `resume.json` (cache), `list_runs`, `sweep_interrupted`, `fork_run`, bundle export/import. | Tolerant readers; atomic writes; artifacts in `run_dir`, never `work/`; an export refuses a bundle carrying a secret. |
 | `run.py` | CLI wiring. | `python -m lens.run "<query>"`; `--list` / `--show` / `--resume` / `--fork` / `--export` / `--import` / `--no-replay`. |
