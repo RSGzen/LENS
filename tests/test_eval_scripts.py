@@ -297,6 +297,39 @@ class FreezeTests(unittest.TestCase):
 
         self.assertTrue(any("40-character" in problem for problem in problems))
 
+    def test_a_scorers_commit_is_reported_not_failed(self) -> None:
+        record = self.record()
+        record.update(freeze_manifest.rig_fields())
+
+        reported = freeze_manifest.drift_report(
+            record, head="b" * 40, changed=["src/lens/experiments/claim_score.py", "README.md"]
+        )
+
+        self.assertEqual(freeze_manifest.config_drift(record), [])
+        self.assertEqual(len(reported), 1)
+        self.assertTrue(reported[0].startswith("commit "))
+
+    def test_a_cap_change_fails_the_check(self) -> None:
+        record = self.record()
+        record.update(freeze_manifest.rig_fields())
+        record["caps"] = {**record["caps"], "tokens": 1}
+
+        problems = freeze_manifest.config_drift(record)
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("caps", problems[0])
+
+    def test_a_record_built_from_today_passes_the_field_check(self) -> None:
+        record = self.record()
+        record.update(freeze_manifest.rig_fields())
+
+        self.assertEqual(freeze_manifest.config_drift(record), [])
+
+    def test_the_same_commit_is_not_reported(self) -> None:
+        record = self.record()
+
+        self.assertEqual(freeze_manifest.drift_report(record, head=record["commit"]), [])
+
     def test_instrument_hashes_cover_the_edge_cases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "cag.jsonl").write_text("{}\n", encoding="utf-8")

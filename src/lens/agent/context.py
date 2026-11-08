@@ -824,7 +824,7 @@ def truncate_observation(text: str, max_chars: int = config.TOOL_RESULT_SUMMARY_
 
     The marker is always emitted, so the result can exceed ``max_chars`` by the
     marker's length when ``max_chars`` is smaller than the marker itself (only
-    reachable with an absurdly small cap; production uses 3,000).
+    reachable with an absurdly small cap; production uses 4,000).
     """
     if len(text) <= max_chars:
         return text

@@ -17,6 +17,12 @@ which is why it is not the same as an empty string.
 ``git_dirty`` is reported and, by default, fails the check: a freeze on an
 uncommitted tree does not describe the code that ran.
 
+A commit that differs from the recorded one is reported. The check **fails** only
+when a field in :func:`rig_fields` differs from the record — a cap, a model, a
+prompt switch, a retrieval knob, the run-mode axes — because those are what decide
+what a run does; a commit that only touches comments, scorers, docs or campaign
+files cannot change a run, and failing on it would block a wave for a typo.
+
 Usage::
 
     python scripts/freeze_manifest.py                     # write freeze.json
@@ -133,13 +139,15 @@ def corpus_counts() -> dict[str, Any] | None:
         return None
 
 
-def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> dict[str, Any]:
-    """Collect the freeze record. Never raises on a missing optional input."""
+def rig_fields() -> dict[str, Any]:
+    """Return the record fields that decide what a run does, at today's defaults.
+
+    One definition, used by both the writer and the drift check, so the two cannot
+    disagree about which fields the rig is. ``sandbox_digest`` is deliberately
+    absent: reading it needs Docker, and `scripts/run_campaign.py` already refuses
+    a wave whose digest is missing.
+    """
     return {
-        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "commit": git_value("rev-parse", "HEAD"),
-        "branch": git_value("rev-parse", "--abbrev-ref", "HEAD"),
-        "git_dirty": bool(git_value("status", "--porcelain")),
         # A model id alone does not identify what served a run: the same id is
         # offered by providers whose price differs several times over, and the
         # reasoning setting changes both the cost and the latency. All three are
@@ -173,8 +181,6 @@ def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> d
             # The query path uses the per-query value, not the base constant.
             "ef_search": hnsw_ef_for(config.RETRIEVAL_K),
         },
-        "python": platform.python_version(),
-        "platform": platform.platform(),
         "prompt": config.PROMPT_VARIANT,
         "prompt_switches": {
             "context_files": config.CONTEXT_FILES,
@@ -193,6 +199,19 @@ def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> d
         "gate_enabled": config.GATE_ENABLED,
         "stage_thresholds": dict(config.STAGE_THRESHOLDS),
         "sandbox_image": config.SANDBOX_IMAGE,
+    }
+
+
+def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> dict[str, Any]:
+    """Collect the freeze record. Never raises on a missing optional input."""
+    return {
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "commit": git_value("rev-parse", "HEAD"),
+        "branch": git_value("rev-parse", "--abbrev-ref", "HEAD"),
+        "git_dirty": bool(git_value("status", "--porcelain")),
+        **rig_fields(),
+        "python": platform.python_version(),
+        "platform": platform.platform(),
         "sandbox_digest": image_digest(),
         "uv": _run(["uv", "--version"]),
         "certifi": package_version("certifi"),
@@ -212,6 +231,75 @@ def _dirty_paths() -> list[str]:
     untracked = (git_value("ls-files", "--others", "--exclude-standard") or "").splitlines()
 
     return [path.strip() for path in [*changed, *untracked] if path.strip()]
+
+
+def changed_since(commit: str) -> list[str]:
+    """Return the paths that differ between ``commit`` and ``HEAD``."""
+    diff = git_value("diff", "--name-only", f"{commit}..HEAD") or ""
+
+    return [path.strip() for path in diff.splitlines() if path.strip()]
+
+
+def config_drift(record: dict[str, Any]) -> list[str]:
+    """Return the rig fields whose current value differs from the record.
+
+    This is what fails the check, and the granularity is deliberate: a commit can
+    touch a comment, a scorer or a doc without changing what a run does, so a path
+    rule would block a wave over a typo. A field that moved -- a cap, a model, a
+    prompt switch, a retrieval knob -- is the rig moving.
+    """
+    problems: list[str] = []
+
+    for field, now in rig_fields().items():
+        recorded = record.get(field)
+
+        if recorded == now:
+            continue
+
+        if isinstance(recorded, dict) and isinstance(now, dict):
+            moved = [
+                f"{key} {recorded.get(key)!r} -> {now.get(key)!r}"
+                for key in sorted(set(recorded) | set(now))
+                if recorded.get(key) != now.get(key)
+            ]
+            problems.append(f"rig field {field!r} differs from the freeze: {', '.join(moved)}")
+            continue
+
+        problems.append(f"rig field {field!r} differs from the freeze: {recorded!r} now {now!r}")
+
+    return problems
+
+
+def drift_report(
+    record: dict[str, Any],
+    *,
+    head: str | None = None,
+    changed: list[str] | None = None,
+) -> list[str]:
+    """Return one information line when the record was made at another commit.
+
+    Reported, never failed: :func:`config_drift` is what decides whether the rig
+    moved, because a commit can contain a comment or a scorer and neither changes a
+    run. ``head`` and ``changed`` are injectable so the line is testable without a
+    repository.
+    """
+    recorded = str(record.get("commit") or "")
+    current = (head if head is not None else (git_value("rev-parse", "HEAD") or "")).strip()
+
+    if not recorded or not current or recorded == current:
+        return []
+
+    line = f"commit {recorded[:12]} differs from HEAD {current[:12]}"
+
+    if changed is None:
+        changed = changed_since(recorded)
+
+    if changed:
+        line += f" ({len(changed)} path(s) changed since the freeze)"
+    else:
+        line += " (the recorded commit is not in this history)"
+
+    return [line]
 
 
 def _ignore_own_output(record: dict[str, Any], out: Path) -> None:
@@ -269,6 +357,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         record = json.loads(path.read_text(encoding="utf-8"))
         problems = check_freeze(record, allow_dirty=args.allow_dirty)
+        problems.extend(config_drift(record))
+
+        for line in drift_report(record):
+            print(f"  {line}")
 
         for problem in problems:
             print(f"  - {problem}")
