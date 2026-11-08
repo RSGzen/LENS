@@ -21,6 +21,7 @@ from lens.agent.segmentation import (
     normalize_buckets,
     parse_segmentation_json,
     segment_query,
+    validate_buckets,
     write_query_json,
 )
 from lens.models import CallResult
@@ -194,6 +195,53 @@ class WriteQueryJsonTest(unittest.TestCase):
 
             self.assertEqual(returned, path)
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), buckets)
+
+
+class ValidateBucketsTests(unittest.TestCase):
+    """The tool boundary a root-segmented run has to pass."""
+
+    def test_the_four_keys_pass_and_are_normalised(self) -> None:
+        self.assertEqual(
+            validate_buckets(
+                {
+                    "objectives": ["  answer X "],
+                    "problems": [],
+                    "constraints": ["only 2024"],
+                    "requirements": ["cite every claim"],
+                }
+            ),
+            {
+                "objectives": ["answer X"],
+                "problems": [],
+                "constraints": ["only 2024"],
+                "requirements": ["cite every claim"],
+            },
+        )
+
+    def test_a_bare_query_is_rejected(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_buckets({"query": "the raw query"})
+        self.assertIn("missing", str(ctx.exception))
+
+    def test_a_string_bucket_is_rejected(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_buckets(
+                {"objectives": "answer X", "problems": [], "constraints": [], "requirements": []}
+            )
+        self.assertIn("list of strings", str(ctx.exception))
+
+    def test_an_extra_key_is_rejected(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_buckets(
+                {
+                    "objectives": [],
+                    "problems": [],
+                    "constraints": [],
+                    "requirements": [],
+                    "query": ["raw"],
+                }
+            )
+        self.assertIn("extra", str(ctx.exception))
 
 
 if __name__ == "__main__":

@@ -163,6 +163,41 @@ def normalize_buckets(raw: Mapping[str, Any]) -> dict[str, list[str]]:
     return query_buckets
 
 
+def validate_buckets(raw: Any) -> dict[str, list[str]]:
+    """Return the four buckets, or raise with the fix the caller must make.
+
+    The host segmenter always produces this shape; a root-segmented run writes it
+    itself, so the tool boundary rejects a bare string or ``{"query": ...}``
+    instead of letting it silently become the retrieval query. Matching is
+    case-insensitive on the key, and the returned dict is
+    :func:`normalize_buckets` (stripped, de-duplicated, in bucket order).
+    """
+    if not isinstance(raw, Mapping):
+        raise ValueError("buckets must be a dict with the keys " + ", ".join(BUCKET_ORDER))
+
+    by_key = {"".join(str(key).split()).lower(): value for key, value in raw.items()}
+    missing = [name for name in BUCKET_ORDER if name not in by_key]
+    extra = sorted(set(by_key) - set(BUCKET_ORDER))
+
+    if missing or extra:
+        raise ValueError(
+            "buckets must have exactly "
+            + ", ".join(BUCKET_ORDER)
+            + f"; missing={missing} extra={extra}"
+        )
+
+    for name in BUCKET_ORDER:
+        value = by_key[name]
+
+        if isinstance(value, str) or not isinstance(value, (list, tuple)):
+            raise ValueError(f"bucket {name!r} must be a list of strings")
+
+        if any(not isinstance(item, str) for item in value):
+            raise ValueError(f"bucket {name!r} must contain only strings")
+
+    return normalize_buckets(raw)
+
+
 # ------------------------------------------------------------------ segmentation
 def segment_query(
     client: LensClient,

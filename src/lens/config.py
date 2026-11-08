@@ -496,6 +496,21 @@ _DEFAULT_VARIANT = (
 PROMPT_VARIANT = os.environ.get("LENS_PROMPT_VARIANT", _DEFAULT_VARIANT).strip().lower()
 PROMPT_VARIANTS = ("full", "thin", "naive", "document")
 
+# Who splits the query into the four buckets, and whether the root also sees the
+# raw wording. ``host`` is the shipped path: one sub-model call writes
+# ``query.json`` and the root receives the buckets. ``root`` is the ablation:
+# the host does not segment, the raw query is in the prompt, and the root writes
+# the bucket dict itself. ``RAW_QUERY`` adds the raw wording beside the host
+# buckets, so a clause the segmenter dropped is still recoverable.
+SEGMENTATION = os.environ.get("LENS_SEGMENTATION", "host").strip().lower()
+SEGMENTATIONS = ("host", "root")
+RAW_QUERY = os.environ.get("LENS_RAW_QUERY", "0").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+
 # The prompt-experiment switches. Each is recorded in the arm, so a run that
 # changed one is not mistaken for the baseline. They default to the shipped
 # behaviour; a variant is one environment variable, not a code edit.
@@ -567,6 +582,14 @@ def _check_run_mode() -> None:
         )
 
     evidence, treatment = _resolved_modes(RUN_MODE, EVIDENCE_SOURCE)
+
+    if SEGMENTATION not in SEGMENTATIONS:
+        raise ValueError(
+            f"bad LENS_SEGMENTATION {SEGMENTATION!r} (expected one of {SEGMENTATIONS})"
+        )
+
+    if SEGMENTATION == "root" and (evidence != "corpus" or treatment != "rlm"):
+        raise ValueError("LENS_SEGMENTATION=root needs corpus evidence with the loop")
 
     if RUN_MODE == "document" and EVIDENCE_SOURCE != "document":
         raise ValueError("LENS_MODE=document is document evidence; drop LENS_EVIDENCE=corpus")

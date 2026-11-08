@@ -203,6 +203,36 @@ class EvidenceSourceTestCase(unittest.TestCase):
         self.assertEqual(config.FLAT_EVIDENCE_TOKEN_LIMIT, 40000)
         self.assertEqual(config.FLAT_DOCUMENT_TOKEN_LIMIT, 140000)
 
+    def test_root_segmentation_needs_corpus_and_loop(self) -> None:
+        with (
+            patch.object(config, "RUN_MODE", "naive"),
+            patch.object(config, "EVIDENCE_SOURCE", "corpus"),
+            patch.object(config, "PROMPT_VARIANT", "naive"),
+            patch.object(config, "SEGMENTATION", "root"),
+        ):
+            with self.assertRaises(ValueError):
+                config._check_run_mode()
+
+    def test_root_segmentation_is_valid_for_corpus_rlm(self) -> None:
+        with (
+            patch.object(config, "RUN_MODE", "rlm"),
+            patch.object(config, "EVIDENCE_SOURCE", "corpus"),
+            patch.object(config, "PROMPT_VARIANT", "full"),
+            patch.object(config, "DOCUMENTS_PATH", None),
+            patch.object(config, "SEGMENTATION", "root"),
+        ):
+            config._check_run_mode()
+
+    def test_an_unknown_segmentation_raises(self) -> None:
+        with (
+            patch.object(config, "RUN_MODE", "rlm"),
+            patch.object(config, "EVIDENCE_SOURCE", "corpus"),
+            patch.object(config, "PROMPT_VARIANT", "full"),
+            patch.object(config, "SEGMENTATION", "model"),
+        ):
+            with self.assertRaises(ValueError):
+                config._check_run_mode()
+
 
 if __name__ == "__main__":
     unittest.main()
