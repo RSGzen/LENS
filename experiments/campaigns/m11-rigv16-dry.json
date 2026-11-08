@@ -1,0 +1,88 @@
+{
+  "name": "m11-rigv16-dry",
+  "repeats": 1,
+  "note": "Dry-check cell for the segmentation arms: two existing queries x four arms. Measures the empty-answer / missing-ledger rate (Eval D-24) and live-smokes A2+Q and A2-R. Engineering evidence, not a campaign result.",
+  "arms": [
+    {
+      "name": "flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      }
+    },
+    {
+      "name": "host",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "0",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4"
+      }
+    },
+    {
+      "name": "host-raw",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4"
+      }
+    },
+    {
+      "name": "root",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SEGMENTATION": "root",
+        "LENS_RAW_QUERY": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?"
+    },
+    {
+      "id": "single-fact",
+      "expect": "answerable",
+      "text": "Which paper introduces the OOLONG long-context aggregation benchmark, and what task does its trec_coarse subset use?"
+    }
+  ]
+}
