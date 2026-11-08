@@ -215,6 +215,15 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertTrue(path.is_file())
         self.assertIn("entities", path.read_text(encoding="utf-8"))
 
+    def test_root_segmentation_skips_the_host_call(self) -> None:
+        with (
+            patch.object(config, "SEGMENTATION", "root"),
+            patch.object(self.runtime, "_segment_query") as segment,
+        ):
+            self.runtime.run()
+
+        segment.assert_not_called()
+
     def test_finalisation_closes_open_ledger_tasks(self) -> None:
         done = self.runtime.ledger.create("find the aggregation methods")
         failed = self.runtime.ledger.create("read every retrieved chunk")
@@ -1232,6 +1241,26 @@ class FlatBaselineTestCase(unittest.TestCase):
         notes = [event["extra"]["text"] for event in events if event.get("call_type") == "note"]
 
         self.assertTrue(any("dropped for size" in text for text in notes))
+
+    def test_the_first_funnel_writes_query_json_from_the_root_dict(self) -> None:
+        buckets = {
+            "objectives": ["compare A and B"],
+            "problems": [],
+            "constraints": ["only 2024"],
+            "requirements": ["cite every claim"],
+        }
+
+        with patch.object(config, "SEGMENTATION", "root"):
+            self.runtime._dispatch_tool(
+                "retrieval_funnel",
+                {"buckets": buckets},
+                trace_ctx=TraceCtx("flat-test", 0, "tool"),
+            )
+
+        path = self.runtime.workspace / "query.json"
+        self.assertTrue(path.is_file())
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), buckets)
+        self.assertEqual(self.runtime._query_buckets, buckets)
 
 
 class FlatDocumentTestCase(unittest.TestCase):

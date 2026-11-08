@@ -30,6 +30,7 @@ from typing import Any
 from lens import config
 from lens.agent.runtime import Runtime
 from lens.agent.sandbox_session import SandboxSession
+from lens.agent.segmentation import validate_buckets
 from lens.agent.tool_registry import ToolRegistry
 from lens.agent.tool_server import ToolServer
 from lens.clients import LensClient
@@ -205,6 +206,11 @@ def build_runtime(
 
     def retrieval_funnel_tool(buckets: dict[str, Any]) -> dict[str, Any]:
         """Run the whole retrieval funnel once; returns {chunks, papers} with chunk text."""
+        if config.SEGMENTATION == "root":
+            # A root-segmented run owns the dict; reject a shape the host path
+            # would have caught, or the arm silently becomes raw-string retrieval.
+            buckets = validate_buckets(buckets)
+
         warmup.join()
         return retrieval_funnel(conn, buckets, embedder, reranker)
 

@@ -81,7 +81,7 @@ from lens.agent.runstore import (
     write_resume_cache,
 )
 from lens.agent.sandbox_session import SandboxSession
-from lens.agent.segmentation import segment_query, write_query_json
+from lens.agent.segmentation import segment_query, validate_buckets, write_query_json
 from lens.agent.sub_tasks import (
     get_task,
     parse_result,
@@ -282,9 +282,10 @@ class Runtime:
             # The namespace is restored in ``_seed_workspace`` instead, because it
             # needs a running container.
             self._restore_state()
-        elif config.RUN_MODE != "document":
-            # A document run has no corpus to retrieve from, so segmentation has
-            # nothing to feed: the question is the whole input.
+        elif config.EVIDENCE_SOURCE != "document" and config.SEGMENTATION == "host":
+            # A document run has no corpus to retrieve from, and a root-segmented
+            # run writes its buckets in the first turn; neither has anything to
+            # feed here.
             self._segment_query()
 
         self._register_runtime_tools()
@@ -1010,6 +1011,8 @@ class Runtime:
             self._query_buckets,
             self.budget.snapshot()["limits"],
             question=self.query,
+            segmentation=config.SEGMENTATION,
+            raw_query=config.RAW_QUERY,
         )
         messages = build_messages(system_prompt=system_prompt, memory=self._messages)
 
@@ -1518,6 +1521,20 @@ class Runtime:
 
         result = self.registry.dispatch(name, args, trace_ctx=trace_ctx, trajectory=self.trajectory)
         envelope = result.to_dict()
+
+        if (
+            result.ok
+            and name == "retrieval_funnel"
+            and config.SEGMENTATION == "root"
+            and not (self.workspace / "query.json").is_file()
+        ):
+            # The root wrote the buckets; record them as the run's query artifact
+            # and use them for the gate. The tool wrapper validated the shape, so
+            # this cannot turn a bare string into a query.json.
+            buckets = validate_buckets(args.get("buckets"))
+            write_query_json(buckets, self.workspace / "query.json")
+            self._query_buckets = buckets
+            self._note("query.json written from the root's first retrieval_funnel call")
 
         if result.ok and result.result_ref and name in REPLAYABLE_TOOLS:
             # The in-run cache: the same call later in this run is served from
