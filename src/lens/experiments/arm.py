@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from lens import config
+from lens.tools.retrieval import hnsw_ef_for
 
 
 def _document_identity() -> dict[str, Any] | None:
@@ -59,7 +60,10 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
             "n": config.RETRIEVAL_N,
             "C": config.RETRIEVAL_C,
             "c": config.RETRIEVAL_C_TOP,
-            "ef_search": config.HNSW_EF_SEARCH,
+            # The query path uses ``hnsw_ef_for(k)``, not the base constant: a
+            # k swept above the 100-default raises ef_search with it, so recording
+            # the constant would describe a setting the run never used.
+            "ef_search": hnsw_ef_for(config.RETRIEVAL_K),
             "reranker": config.RERANKER_MODEL_ID,
         },
         "kg": {

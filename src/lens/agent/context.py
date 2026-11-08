@@ -577,7 +577,13 @@ def count_tokens(text: str) -> int:
         except Exception:  # tiktoken missing, or the encoding renamed upstream
             _ENCODING = False
 
-    return len(_ENCODING.encode(text)) if _ENCODING else max(1, len(text) // 4)
+    # ``disallowed_special=()`` because corpus text is not trusted to be free of
+    # tokenizer control strings: a chunk that quotes "<|endoftext|>" is a real
+    # paper excerpt, and raising on it kills the run that counts its tokens.
+    if _ENCODING:
+        return len(_ENCODING.encode(text, disallowed_special=()))
+
+    return max(1, len(text) // 4)
 
 
 # A chat format adds a few structural tokens per message (role markers,

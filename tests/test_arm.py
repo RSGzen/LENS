@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from lens import config
 from lens.experiments.arm import arm_fingerprint
+from lens.tools.retrieval import hnsw_ef_for
 
 
 class ArmFingerprintTestCase(unittest.TestCase):
@@ -29,6 +30,9 @@ class ArmFingerprintTestCase(unittest.TestCase):
         self.assertEqual(arm["prompt"]["context_files"], config.CONTEXT_FILES)
         self.assertEqual(arm["retrieval"]["k"], config.RETRIEVAL_K)
         self.assertEqual(arm["retrieval"]["c"], config.RETRIEVAL_C_TOP)
+        # The recorded ef_search must be the one the query path set, not the
+        # base constant: at the default k they differ.
+        self.assertEqual(arm["retrieval"]["ef_search"], hnsw_ef_for(config.RETRIEVAL_K))
         self.assertEqual(arm["mode"]["recorded"], True)
         self.assertEqual(arm["mode"]["replay"], False)
         self.assertEqual(

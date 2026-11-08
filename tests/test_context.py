@@ -166,6 +166,11 @@ class ContextTestCase(unittest.TestCase):
     def test_count_tokens_positive(self) -> None:
         self.assertGreater(context.count_tokens("hello world"), 0)
 
+    def test_count_tokens_survives_a_special_token_literal(self) -> None:
+        # A paper that quotes a chat-template token is corpus text, not an
+        # encoding instruction: the estimate must count it, not raise.
+        self.assertGreater(context.count_tokens("prefix <|endoftext|> suffix"), 0)
+
     def test_truncate_observation(self) -> None:
         out = context.truncate_observation("x" * 100, max_chars=10)
         self.assertLessEqual(len(out), 60)
