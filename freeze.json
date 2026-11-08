@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-11-07T11:41:23+00:00",
-  "commit": "fca8a92d1cde58864449e9f41defc93b921b7824",
+  "created_at": "2026-11-08T01:14:48+00:00",
+  "commit": "8995c8939217e4e4f9c5af4847e632e666d6713a",
   "branch": "main",
   "git_dirty": false,
   "models": {
@@ -40,6 +40,7 @@
     "cost_usd": 0.5,
     "context_tokens": 12000,
     "flat_evidence_tokens": 40000,
+    "flat_document_tokens": 140000,
     "exec_block_s": 120.0
   },
   "embedding": "nomic-embed-text-v1.5@512-halfvec",
@@ -55,12 +56,15 @@
   "platform": "Windows-11-10.0.26300-SP0",
   "prompt": "full",
   "prompt_switches": {
-    "context_files": "none",
+    "context_files": "full",
     "kg_prompt": true,
     "extract_hint": "claims",
     "retrieval_rule": "refine"
   },
   "run_mode": "rlm",
+  "evidence_source": "corpus",
+  "treatment": "rlm",
+  "document_evidence": false,
   "sub_calls": true,
   "kg_enabled": true,
   "gate_enabled": true,
