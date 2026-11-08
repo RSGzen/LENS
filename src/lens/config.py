@@ -399,6 +399,12 @@ RUN_HEARTBEAT_STALE_S = float(os.environ.get("LENS_RUN_HEARTBEAT_STALE_S", "300"
 # use it -- those keep evidence in a sandbox variable and print a digest.
 FLAT_EVIDENCE_TOKEN_LIMIT = int(os.environ.get("LENS_FLAT_EVIDENCE_TOKENS", "40000"))
 
+# Inline budget for the flat **document** arm. It is separate because the 40,000
+# corpus figure is a frozen baseline: raising it would change what the corpus
+# baseline sees. The document arm needs the whole file, so the default holds a
+# 128k-token evidence file plus output margin.
+FLAT_DOCUMENT_TOKEN_LIMIT = int(os.environ.get("LENS_FLAT_DOCUMENT_TOKENS", "140000"))
+
 # Compaction trigger, derived from the **budget that remains**, not from the model's
 # window. The window was never the binding constraint: with 10 iterations and about
 # 2,500 tokens added per turn the largest prompt a run can reach is ~40,000 tokens
@@ -456,22 +462,38 @@ LENS_RECORDED = os.environ.get("LENS_RECORDED", "0").strip().lower() not in {
 FINAL_ANSWER_MARKER = "FINAL_ANSWER:"
 
 # ------------------------------------------------------- experimental arms
-# Which harness the process runs. ``rlm`` is the system under test; ``naive`` is
-# the flat-prompt baseline (one chat call over the same retrieved chunks, no
-# loop, no tools); ``document`` runs the RLM over a supplied evidence file
-# instead of the corpus, so the retrieval funnel is not used at all.
+# Two independent choices decide a run: **where the evidence comes from** and
+# **how it is processed**. ``LENS_MODE`` keeps its three historical values for
+# existing arms; ``LENS_EVIDENCE`` names the source explicitly, which is what
+# makes the flat-document arm (``naive`` + ``document``) expressible.
+#
+#   corpus   + rlm   -> the system under test (retrieval funnel + loop)
+#   corpus   + naive -> the flat-prompt baseline (one call, same retrieved chunks)
+#   document + rlm   -> the RLM over a supplied evidence file (no retrieval)
+#   document + naive -> the flat-prompt baseline over that same file
 RUN_MODE = os.environ.get("LENS_MODE", "rlm").strip().lower()
 RUN_MODES = ("rlm", "naive", "document")
 
-# Which system prompt the root sees. ``full`` is the system under test. The
-# variants differ **only** in the instruction block: the task text stays
-# byte-identical, or the comparison would measure prompt crafting. A mode that is
-# not ``rlm`` implies its own prompt, so the two cannot disagree by accident.
-PROMPT_VARIANT = (
-    os.environ.get("LENS_PROMPT_VARIANT", RUN_MODE if RUN_MODE in ("naive", "document") else "full")
+EVIDENCE_SOURCE = (
+    (os.environ.get("LENS_EVIDENCE") or ("document" if RUN_MODE == "document" else "corpus"))
     .strip()
     .lower()
 )
+EVIDENCE_SOURCES = ("corpus", "document")
+
+# ``document`` is the historical spelling of "document evidence, RLM loop".
+TREATMENT = "naive" if RUN_MODE == "naive" else "rlm"
+TREATMENTS = ("rlm", "naive")
+
+# Which system prompt the root sees. ``full`` is the system under test. The
+# variants differ **only** in the instruction block: the task text stays
+# byte-identical, or the comparison would measure prompt crafting. The default
+# follows the treatment and the evidence source, so a mode cannot silently
+# advertise tools it was not given.
+_DEFAULT_VARIANT = (
+    "naive" if TREATMENT == "naive" else ("document" if EVIDENCE_SOURCE == "document" else "full")
+)
+PROMPT_VARIANT = os.environ.get("LENS_PROMPT_VARIANT", _DEFAULT_VARIANT).strip().lower()
 PROMPT_VARIANTS = ("full", "thin", "naive", "document")
 
 # The prompt-experiment switches. Each is recorded in the arm, so a run that
@@ -505,10 +527,33 @@ SUB_CALLS_ENABLED = os.environ.get("LENS_SUB_CALLS", "1").strip().lower() not in
     "off",
 }
 
-# Evidence file for ``document`` mode (JSONL: one object per record). Copied
+# Evidence file for document evidence (JSONL: one object per record). Copied
 # into the run workspace so the sandbox reads it as a file; the records never
-# pass through the prompt. No default: a document run without one is a mistake.
+# pass through the prompt in the RLM arm. No default: a document run without one
+# is a mistake.
 DOCUMENTS_PATH: str | None = os.environ.get("LENS_DOCUMENTS") or None
+
+# Run the claim pass and the final gate against the document records. Off by
+# default: the mechanism arm is measured on its answer, and a gate over record
+# ids buys it nothing. On for the needle guardrail, where the cited record can
+# be checked mechanically.
+DOCUMENT_EVIDENCE = os.environ.get("LENS_DOCUMENT_EVIDENCE", "0").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+
+
+def _resolved_modes(run_mode: str, evidence: str) -> tuple[str, str]:
+    """Return ``(evidence_source, treatment)`` for one run-mode spelling."""
+    if run_mode == "document":
+        return "document", "rlm"
+
+    if run_mode == "naive":
+        return evidence, "naive"
+
+    return evidence, "rlm"
 
 
 def _check_run_mode() -> None:
@@ -516,16 +561,38 @@ def _check_run_mode() -> None:
     if RUN_MODE not in RUN_MODES:
         raise ValueError(f"bad LENS_MODE {RUN_MODE!r} (expected one of {RUN_MODES})")
 
+    if EVIDENCE_SOURCE not in EVIDENCE_SOURCES:
+        raise ValueError(
+            f"bad LENS_EVIDENCE {EVIDENCE_SOURCE!r} (expected one of {EVIDENCE_SOURCES})"
+        )
+
+    evidence, treatment = _resolved_modes(RUN_MODE, EVIDENCE_SOURCE)
+
+    if RUN_MODE == "document" and EVIDENCE_SOURCE != "document":
+        raise ValueError("LENS_MODE=document is document evidence; drop LENS_EVIDENCE=corpus")
+
     if PROMPT_VARIANT not in PROMPT_VARIANTS:
         raise ValueError(f"bad LENS_PROMPT_VARIANT {PROMPT_VARIANT!r} (one of {PROMPT_VARIANTS})")
 
-    if RUN_MODE in ("naive", "document") and PROMPT_VARIANT != RUN_MODE:
+    if treatment == "naive" and PROMPT_VARIANT != "naive":
         raise ValueError(
-            f"LENS_MODE={RUN_MODE} needs LENS_PROMPT_VARIANT={RUN_MODE}, not {PROMPT_VARIANT!r}"
+            f"a naive treatment needs LENS_PROMPT_VARIANT=naive, not {PROMPT_VARIANT!r}"
         )
 
-    if RUN_MODE == "document" and not DOCUMENTS_PATH:
-        raise ValueError("LENS_MODE=document needs LENS_DOCUMENTS=<path.jsonl>")
+    if evidence == "document" and treatment == "rlm" and PROMPT_VARIANT != "document":
+        raise ValueError(
+            f"document evidence with the loop needs LENS_PROMPT_VARIANT=document, "
+            f"not {PROMPT_VARIANT!r}"
+        )
+
+    if evidence == "corpus" and treatment == "rlm" and PROMPT_VARIANT not in ("full", "thin"):
+        raise ValueError(
+            f"corpus evidence with the loop needs LENS_PROMPT_VARIANT=full or thin, "
+            f"not {PROMPT_VARIANT!r}"
+        )
+
+    if evidence == "document" and not DOCUMENTS_PATH:
+        raise ValueError("document evidence needs LENS_DOCUMENTS=<path.jsonl>")
 
 
 _check_run_mode()

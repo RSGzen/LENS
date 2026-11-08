@@ -142,5 +142,67 @@ class RequirePathTestCase(unittest.TestCase):
             self.assertEqual(config.require_path("X", tmp), Path(tmp))
 
 
+class EvidenceSourceTestCase(unittest.TestCase):
+    """The evidence source and the treatment are independent choices.
+
+    ``LENS_MODE`` keeps its historical spelling; ``LENS_EVIDENCE`` names the
+    source. The flat-document arm is the cell that did not exist before, so the
+    validation has to accept it and still reject a document run with no file.
+    """
+
+    def test_the_two_axes_resolve_independently(self) -> None:
+        self.assertEqual(config._resolved_modes("naive", "document"), ("document", "naive"))
+        self.assertEqual(config._resolved_modes("rlm", "document"), ("document", "rlm"))
+        self.assertEqual(config._resolved_modes("naive", "corpus"), ("corpus", "naive"))
+        self.assertEqual(config._resolved_modes("document", "document"), ("document", "rlm"))
+
+    def test_flat_document_requires_a_documents_path(self) -> None:
+        with (
+            patch.object(config, "RUN_MODE", "naive"),
+            patch.object(config, "EVIDENCE_SOURCE", "document"),
+            patch.object(config, "PROMPT_VARIANT", "naive"),
+            patch.object(config, "DOCUMENTS_PATH", None),
+        ):
+            with self.assertRaises(ValueError) as ctx:
+                config._check_run_mode()
+        self.assertIn("LENS_DOCUMENTS", str(ctx.exception))
+
+    def test_flat_document_with_a_path_is_valid(self) -> None:
+        with (
+            patch.object(config, "RUN_MODE", "naive"),
+            patch.object(config, "EVIDENCE_SOURCE", "document"),
+            patch.object(config, "PROMPT_VARIANT", "naive"),
+            patch.object(config, "DOCUMENTS_PATH", "evidence.jsonl"),
+        ):
+            config._check_run_mode()
+
+    def test_document_loop_needs_the_document_prompt(self) -> None:
+        with (
+            patch.object(config, "RUN_MODE", "rlm"),
+            patch.object(config, "EVIDENCE_SOURCE", "document"),
+            patch.object(config, "PROMPT_VARIANT", "full"),
+            patch.object(config, "DOCUMENTS_PATH", "evidence.jsonl"),
+        ):
+            with self.assertRaises(ValueError):
+                config._check_run_mode()
+
+    def test_document_mode_cannot_claim_the_corpus(self) -> None:
+        with (
+            patch.object(config, "RUN_MODE", "document"),
+            patch.object(config, "EVIDENCE_SOURCE", "corpus"),
+            patch.object(config, "PROMPT_VARIANT", "document"),
+            patch.object(config, "DOCUMENTS_PATH", "evidence.jsonl"),
+        ):
+            with self.assertRaises(ValueError):
+                config._check_run_mode()
+
+    def test_the_flat_document_budget_is_separate(self) -> None:
+        # The corpus figure is a frozen baseline; a document arm that reused it
+        # would truncate the evidence file and turn the comparison into a
+        # capacity test.
+        self.assertEqual(config.FLAT_EVIDENCE_TOKEN_LIMIT, 40000)
+        self.assertEqual(config.FLAT_DOCUMENT_TOKEN_LIMIT, 140000)
+
+
 if __name__ == "__main__":
     unittest.main()
