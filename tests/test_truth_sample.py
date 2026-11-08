@@ -128,6 +128,32 @@ class BuildRowsTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual([entry["status"] for entry in sidecar.values()], ["grounded"])
 
+    def test_quote_evidence_uses_the_verifier_span(self) -> None:
+        frames = [
+            {
+                "unit_index": 1,
+                "text": "the bullet",
+                "subject": "SRLM",
+                "predicate": "reports",
+                "object": "context is external",
+                "quote": "the quoted span",
+                "chunk_id": "c1",
+                "verdict": {"status": "grounded"},
+            }
+        ]
+
+        rows, sidecar = truth.build_rows(
+            frames,
+            {"c1": "the chunk text"},
+            run_id="run-1",
+            per_status=1,
+            seed=3,
+            evidence="quote",
+        )
+
+        self.assertEqual(rows[0]["cited_excerpt"], "the quoted span")
+        self.assertEqual(sidecar[rows[0]["claim_id"]]["evidence"], "quote")
+
 
 class ScoreRowsTests(unittest.TestCase):
     def test_rates_are_conditional_on_decided_labels(self) -> None:

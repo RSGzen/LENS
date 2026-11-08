@@ -82,6 +82,7 @@ def build_rows(
     run_id: str,
     per_status: int = 10,
     seed: int = 7,
+    evidence: str = "chunk",
 ) -> tuple[list[dict[str, str]], dict[str, dict[str, Any]]]:
     """Return ``(rows, sidecar)`` sampled evenly from grounded and unverifiable frames.
 
@@ -91,7 +92,15 @@ def build_rows(
     different hidden statuses. Rows are de-duplicated on
     ``(unit_index, quote, chunk_id)`` before sampling, so the same check cannot
     be counted twice.
+
+    ``evidence`` chooses what the human judges: ``chunk`` shows the cited chunk
+    (does the excerpt support the claim?) and ``quote`` shows the verifier's span
+    (does the quoted span state the claim?). The second is the ledger's own
+    question; the first is the reader's.
     """
+    if evidence not in ("chunk", "quote"):
+        raise ValueError(f"evidence must be chunk or quote, not {evidence!r}")
+
     by_status: dict[str, list[dict[str, Any]]] = defaultdict(list)
     seen: set[tuple[str, str, str]] = set()
 
@@ -122,13 +131,14 @@ def build_rows(
             chunk_id = str(frame.get("chunk_id") or "")
             excerpt = texts.get(chunk_id, "")
             quote = " ".join(str(frame.get("quote") or "").split())
+            body = quote if evidence == "quote" else " ".join(excerpt.split())
             rows.append(
                 {
                     "claim_id": claim_id,
                     "unit_index": str(frame.get("unit_index") or ""),
                     "claim": _claim_text(frame),
                     "quote": quote,
-                    "cited_excerpt": " ".join(excerpt.split())[:1200],
+                    "cited_excerpt": body[:1200],
                     "label": "",
                 }
             )
@@ -138,6 +148,7 @@ def build_rows(
                 "unit_index": frame.get("unit_index"),
                 "chunk_id": chunk_id,
                 "quote": quote,
+                "evidence": evidence,
             }
 
     rng.shuffle(rows)
@@ -195,7 +206,12 @@ def build(args: argparse.Namespace) -> int:
     frames, texts = _load_run(args.run)
     skipped = sum(1 for frame in frames if not has_evidence(frame, texts))
     rows, sidecar = build_rows(
-        frames, texts, run_id=args.run, per_status=args.per_status, seed=args.seed
+        frames,
+        texts,
+        run_id=args.run,
+        per_status=args.per_status,
+        seed=args.seed,
+        evidence=args.evidence,
     )
 
     if not rows:
@@ -259,6 +275,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     build_parser.add_argument("--scores", default=None)
     build_parser.add_argument("--per-status", type=int, default=10)
     build_parser.add_argument("--seed", type=int, default=7)
+    build_parser.add_argument(
+        "--evidence",
+        choices=("chunk", "quote"),
+        default="chunk",
+        help="what the labeler judges: the cited chunk or the verifier's quote",
+    )
     build_parser.set_defaults(func=build)
 
     score_parser = sub.add_parser("score")
