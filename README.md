@@ -1,4 +1,6 @@
-![LENS](docs/images/banner.svg)
+<div align="center">
+  <img src="docs/images/banner.svg" alt="LENS Banner" width="760" />
+</div>
 
 LENS answers systematic literature review questions over a GROBID-structured
 arXiv cs.AI corpus. A run segments the question, retrieves evidence in two
@@ -114,9 +116,11 @@ single retrieval tool, `retrieval_funnel`, which runs four stages:
 | `deep_match` | exact search over those papers' chunks | `C = 400` candidates |
 | `rerank_chunks` | cross-encoder over the chunk text | `c = 100` chunks |
 
-The chunk budget is global, not per paper, so one long paper cannot fill the
-answer context. A run can also call `fetch_papers`, `fetch_chunks`, `build_kg`
-and, in a development run, the gated `query(sql)`.
+The chunk budget `C` is global, not per paper: no paper is guaranteed a share of
+it. A long or strongly matching paper can take most of the candidates, and at
+larger `n` weaker papers can lose all of theirs — at `n = 50`, 24 of 25 measured
+queries lost at least one paper's chunks. A run can also call `fetch_papers`,
+`fetch_chunks`, `build_kg` and, in a development run, the gated `query(sql)`.
 
 The model writes Python and the sandbox executes it. A tool call inside that code
 travels over RPC to the host, where the tool runs against the corpus. Each turn
@@ -213,13 +217,14 @@ recording.
 
 Citation ids in the answer render as short paper-title chips. Hovering a chip
 shows the full title, authors, year and the exact id; the citation table below
-keeps the full id as the copy surface. The Paper lookup page lists a paper's
-chunks and reads the selected chunk's text. A run with a claim ledger shows its
-coverage, statuses and one row per claim above the answer. The run meters show
-cached prompt tokens and the cache-hit share, and each turn card repeats them
-beside `tokens in`. Host-mediated sub-task calls (`sub_extract`, `sub_summarise`,
-`sub_classify`) render as their own cards with the item count, latency, result
-summary and a full-payload download.
+keeps the full id as the copy surface. Two read-only lookup pages ask the corpus
+rather than a run: **Paper lookup** shows a paper's row and its chunks, **Chunk
+lookup** reads a chunk by id. A run with a claim ledger shows its coverage,
+statuses and one row per claim above the answer. The run meters show cached prompt
+tokens and the cache-hit share, and each turn card repeats them beside `tokens in`.
+Host-mediated sub-task calls (`sub_extract`, `sub_summarise`, `sub_classify`)
+render as their own cards with the item count, latency, result summary and a
+full-payload download.
 
 ![Recorded Runs page](docs/images/recorded-runs.png)
 
@@ -240,18 +245,20 @@ uv run ruff format --check .
 python -m unittest discover -s tests
 ```
 
-The suite is 837 tests and needs no API key, no database and no Docker. Tests that
-touch the database are excluded from discovery and live in
-`tests/DESTRUCTIVE_db_tests/`; they drop the `papers` and `chunks` tables, so run
-them only against a throwaway database.
+The suite is **1028 tests** (1027 pass, 1 skip; 9 Nov 2026) and needs no API key,
+no database and no Docker. Tests that touch the database are excluded from
+discovery and live in `tests/DESTRUCTIVE_db_tests/`; they drop the `papers` and
+`chunks` tables, so run them only against a throwaway database.
 
-Three checks need the stack running:
+Two checks need Docker, the database and a key, because they exercise a live run:
 
 ```powershell
 python scripts/verify_sandbox.py   # container boundary: health, egress, persistence, mount
 python scripts/check_run.py <run_id>
-python scripts/check_env.py        # secrets, database credentials, corpus location
 ```
+
+`python scripts/check_env.py` is the free one: it reads the configuration and the
+trust stores, opens no socket and needs no service running.
 
 ## Safety properties
 
@@ -279,6 +286,15 @@ These are enforced by tests rather than by convention:
   so a paraphrase-heavy answer will have low coverage.
 - The viewer is single-user and runs one live query at a time.
 - Entity resolution in the knowledge graph is exact-string only.
+
+## Documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the layer map, the generated
+  import graph, the class map and the two runtime flows
+- [`docs/REBUILD.md`](docs/REBUILD.md) — rebuilding the sandbox image, and the
+  per-layer trust-store reality behind the pinned pip
+- [`docs/ontology.md`](docs/ontology.md) — the knowledge-graph ontology and its
+  SciERC alignment
 
 ## Credits
 
