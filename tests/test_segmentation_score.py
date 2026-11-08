@@ -7,6 +7,7 @@ import unittest
 from lens.experiments.segmentation_score import (
     BUCKETS,
     bucket_scores,
+    bucket_union_scores,
     clause_matches,
     normalise_clause,
     score_buckets,
@@ -53,6 +54,43 @@ class BucketScoreTests(unittest.TestCase):
         self.assertEqual(tuple(scored), BUCKETS)
         self.assertEqual(scored["objectives"]["recall"], 0.0)
         self.assertIsNone(scored["problems"]["recall"])
+
+
+class UnionRecallTests(unittest.TestCase):
+    """A clause filed under another bucket is present, not lost (D-26)."""
+
+    def test_a_clause_filed_elsewhere_counts_under_the_union(self) -> None:
+        gold = {"problems": ["the threshold removes every detector in the set"]}
+        produced = {
+            "constraints": ["if that threshold removes every detector in the set"],
+            "problems": ["the exclusion is the problem I need explained"],
+        }
+
+        strict = score_buckets(gold, produced)
+        union = bucket_union_scores(gold, produced)
+
+        self.assertEqual(strict["problems"]["recall"], 0.0)
+        self.assertEqual(union["problems"]["recall_union"], 1.0)
+        self.assertEqual(union["problems"]["matched_union"], 1)
+
+    def test_a_clause_nowhere_scores_zero(self) -> None:
+        union = bucket_union_scores(
+            {"constraints": ["published between 2020 and 2023"]},
+            {"objectives": ["rank the five detectors"]},
+        )
+
+        self.assertEqual(union["constraints"]["matched_union"], 0)
+        self.assertEqual(union["constraints"]["recall_union"], 0.0)
+
+    def test_an_empty_bucket_is_none_not_zero(self) -> None:
+        union = bucket_union_scores({"problems": []}, {"objectives": ["anything"]})
+
+        self.assertIsNone(union["problems"]["recall_union"])
+
+    def test_all_buckets_are_returned(self) -> None:
+        union = bucket_union_scores({}, {})
+
+        self.assertEqual(tuple(union), BUCKETS)
 
 
 if __name__ == "__main__":

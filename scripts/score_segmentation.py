@@ -23,7 +23,11 @@ from typing import Any
 from lens import config
 from lens.agent import runstore
 from lens.agent.segmentation import segment_query
-from lens.experiments.segmentation_score import BUCKETS, score_buckets
+from lens.experiments.segmentation_score import (
+    BUCKETS,
+    bucket_union_scores,
+    score_buckets,
+)
 from lens.observability.trajectory import TraceCtx, Trajectory
 
 
@@ -82,6 +86,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", default=None, help="a recorded run id (one instance)")
     parser.add_argument("--instance", default=None, help="instance id for --run")
     parser.add_argument("--buckets-out", default=None, help="write the produced buckets here")
+    parser.add_argument(
+        "--buckets-in",
+        default=None,
+        help="re-score a saved buckets file, no model call",
+    )
     args = parser.parse_args(argv)
 
     instances = _instances(Path(args.instrument))
@@ -93,12 +102,14 @@ def main(argv: list[str] | None = None) -> int:
         print("no instances to score", file=sys.stderr)
         return 1
 
-    if args.live:
+    if args.buckets_in:
+        produced = json.loads(Path(args.buckets_in).read_text(encoding="utf-8"))
+    elif args.live:
         run_id = args.run or "segmentation-gold-" + datetime.now().strftime("%Y%m%d-%H%M%S")
         produced = _live(instances, run_id)
     else:
         if not args.run:
-            print("pass --live or --run <id>", file=sys.stderr)
+            print("pass --live, --run <id> or --buckets-in <file>", file=sys.stderr)
             return 1
 
         if not args.instance:
@@ -112,10 +123,21 @@ def main(argv: list[str] | None = None) -> int:
 
     for instance in instances:
         instance_id = str(instance["instance_id"])
-        scores = score_buckets(instance.get("gold_buckets") or {}, produced.get(instance_id) or {})
+        gold = instance.get("gold_buckets") or {}
+        got = produced.get(instance_id) or {}
+        scores = score_buckets(gold, got)
+        union = bucket_union_scores(gold, got)
 
         for bucket in BUCKETS:
-            rows.append({"instance_id": instance_id, "bucket": bucket, **scores[bucket]})
+            rows.append(
+                {
+                    "instance_id": instance_id,
+                    "bucket": bucket,
+                    **scores[bucket],
+                    "matched_union": union[bucket]["matched_union"],
+                    "recall_union": union[bucket]["recall_union"],
+                }
+            )
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -133,10 +155,12 @@ def main(argv: list[str] | None = None) -> int:
 
     recalls = [row["recall"] for row in rows if row["recall"] is not None]
     precisions = [row["precision"] for row in rows if row["precision"] is not None]
+    unions = [row["recall_union"] for row in rows if row["recall_union"] is not None]
     print(
         f"{len(instances)} instances · clause recall "
         f"{round(mean(recalls), 4) if recalls else 'n/a'} · bucket precision "
-        f"{round(mean(precisions), 4) if precisions else 'n/a'}"
+        f"{round(mean(precisions), 4) if precisions else 'n/a'} · union recall "
+        f"{round(mean(unions), 4) if unions else 'n/a'}"
     )
     print(f"wrote {len(rows)} rows to {out}")
 

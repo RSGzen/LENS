@@ -4,6 +4,13 @@ The comparison is deliberately **lexical**: the segmenter is instructed to copy
 the user's own wording, so a normalised containment rule is a fair test of
 whether a clause is present. It does not judge whether a paraphrase is
 semantically equivalent; near-matches are for a human to review.
+
+Two reads are reported, because two of the four bucket boundaries are
+conventions rather than facts. :func:`score_buckets` asks whether a gold clause
+is present **in its own bucket**; :func:`bucket_union_scores` asks whether it is
+present **anywhere**. The first measures assignment, the second measures
+presence, and a clause that is present but filed elsewhere is a formatting
+miss, not a lost constraint.
 """
 
 from __future__ import annotations
@@ -84,5 +91,40 @@ def score_buckets(
             gold if isinstance(gold, list) else [gold],
             got if isinstance(got, list) else [got],
         )
+
+    return result
+
+
+def bucket_union_scores(
+    gold_buckets: Mapping[str, Any], produced: Mapping[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Return per-bucket recall against the union of every produced clause.
+
+    ``problems`` and the objectives/requirements split are conventions, so a
+    clause can be present and still miss its bucket. This read drops the bucket
+    boundary and asks only whether the clause appears somewhere, which is why
+    it is reported beside the strict number rather than instead of it.
+    """
+    everything = [
+        str(item)
+        for bucket in BUCKETS
+        for item in (produced.get(bucket) or [])
+        if str(item).strip()
+    ]
+    result: dict[str, dict[str, Any]] = {}
+
+    for bucket in BUCKETS:
+        raw = gold_buckets.get(bucket) or []
+        gold = [
+            str(item) for item in (raw if isinstance(raw, list) else [raw]) if str(item).strip()
+        ]
+        matched = sum(
+            1 for expected in gold if any(clause_matches(expected, item) for item in everything)
+        )
+        result[bucket] = {
+            "gold": len(gold),
+            "matched_union": matched,
+            "recall_union": round(matched / len(gold), 4) if gold else None,
+        }
 
     return result
