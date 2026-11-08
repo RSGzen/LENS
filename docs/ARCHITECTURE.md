@@ -350,10 +350,11 @@ classDiagram
 > default (`Budget()`, `BudgetLimits()`, `Task()`) or an attribute-level annotation.
 > LENS injects its collaborators through **keyword-only** parameters
 > (`*, client: LensClient` … then `self.client = client`), which pyreverse ignores.
-> Measured on the real package: **6 relationships across 54 classes**, every one of
-> them real. The two false positives an earlier run produced
-> (`JevResult --o DirectionVerifier`, `Trajectory --o LensClient`) are gone, because
-> neither construction survives in the code any more. The raw output is kept as
+> Measured on the real package: **6 relationships across 57 classes**, every one of
+> them real. An earlier run also produced two false positives
+> (`JevResult --o DirectionVerifier`, `Trajectory --o LensClient`); neither
+> construction survives in the code any more, but **both lines are still in the raw
+> file**, because it is a dump and is not cleaned by hand. The raw output is kept as
 > `docs/classes_lens.mmd`; the diagrams below are the ones to read.
 
 ### 3.1 Harness core — who owns whom
@@ -567,7 +568,7 @@ endpoints only; their ownership is in 3.1.
 
 ### 3.4 Raw pyreverse output (reference only)
 
-`docs/classes_lens.mmd` — 54 classes, regenerated 2 Nov 2026. The complete
+`docs/classes_lens.mmd` — 57 classes, regenerated 7 Nov 2026. The complete
 relationship set it could infer:
 
 ```
@@ -643,18 +644,20 @@ sequenceDiagram
 ### 4.3 The harness, as built
 
 The harness is **built and live**: every module is filled and reviewed, and the loop
-has executed end-to-end against the real corpus. Suite: **692 tests — 691 pass,
-1 skip** (no key, zero cost); `ruff check` and `ruff format --check` clean.
+has executed end-to-end against the real corpus. Suite: **1028 tests — 1027 pass,
+1 skip** at HEAD (1015 at the `m11-rigv17` freeze; 9 Nov 2026), no key and zero
+cost; `ruff check` and `ruff format --check` clean.
 
 Invariants fixed in the rework: the sandbox mounts **`<run_dir>/work`** only (run
 artifacts live one level up and cannot be rewritten by generated code); caps are
-**derived and ordered** (8 iterations · 40k context · 300k tokens derived from them ·
-**$1.00** per query, raised from $0.50 on 26 Oct 2026 after the anchor spent 87 % of
-it · 3 backtracks · 80 % wrap-up nudge · root output 8k · 120 s per exec block); a
-reported `$/query` comes from `Trajectory.totals()`, not `Budget`; `emit()` returns a
-container path; the KG traversal helpers ship in the image as `kg_query` **and** are
-bound as plain functions in the namespace, so a model does not need an import to walk
-the graph.
+**derived and ordered** (10 iterations · a compaction trigger fixed at the first
+turn · **325,000** tokens = 175k root + 150k sub-task allowance · **$0.50** per
+query, which was $1.00 from 26 Oct to 6 Nov 2026 · 3 backtracks · 80 % wrap-up nudge
+· root output 8k · 120 s per exec block); a reported `$/query` comes from
+`Trajectory.totals()`, not `Budget`; `emit()` returns a container path; the KG
+traversal helpers ship in the image as `kg_query` **and** are bound as plain
+functions in the namespace, so a model does not need an import to walk the graph.
+`Tech Stack.md` S8.4/S13.5/S16.3 own these numbers; this paragraph is a pointer.
 
 #### 4.3.1 — first live runs (25 Oct 2026)
 
