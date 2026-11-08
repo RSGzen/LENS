@@ -1,0 +1,33 @@
+{
+  "name": "m11-rigv16-check",
+  "repeats": 3,
+  "note": "Three runs on the tree that adds the host/root segmentation arms, to inspect the claim pass before the v16 freeze. Same query and arm as the v13 check so the ledgers are comparable.",
+  "arms": [
+    {
+      "name": "rlm-full-kg-nofiles-sub-low",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SEGMENTATION": "host",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "aggregation",
+      "expect": "answerable",
+      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?"
+    }
+  ]
+}
