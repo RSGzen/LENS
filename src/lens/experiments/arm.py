@@ -20,9 +20,30 @@ Contract tests: ``tests/test_arm.py`` (no key, no DB, no Docker).
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import Any
 
 from lens import config
+
+
+def _document_identity() -> dict[str, Any] | None:
+    """Return the evidence file's path and content hash, or ``None``.
+
+    A boolean cannot tell two document instances apart in the manifest, and the
+    file *is* the evidence: the hash is what makes the instance reproducible.
+    """
+    if not config.DOCUMENTS_PATH:
+        return None
+
+    source = Path(config.DOCUMENTS_PATH).expanduser()
+
+    try:
+        digest: str | None = hashlib.sha256(source.read_bytes()).hexdigest()
+    except OSError:
+        digest = None
+
+    return {"path": str(source), "sha256": digest}
 
 
 def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
@@ -62,9 +83,12 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
             # The arm *is* the environment: a run that changed its harness must
             # record which harness it changed to, or two arms look identical.
             "run": config.RUN_MODE,
+            "evidence": config.EVIDENCE_SOURCE,
+            "treatment": config.TREATMENT,
             "prompt": config.PROMPT_VARIANT,
             "sub_calls": config.SUB_CALLS_ENABLED,
-            "documents": bool(config.DOCUMENTS_PATH),
+            "documents": _document_identity(),
+            "document_evidence": config.DOCUMENT_EVIDENCE,
         },
         # The prompt-audit switches. A variant that changes one of these must be
         # distinguishable from the baseline in the manifest, not only in the operator's

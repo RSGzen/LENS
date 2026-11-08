@@ -9,7 +9,10 @@ Run:  .\.venv\Scripts\python.exe -m unittest tests.test_arms -v
 
 from __future__ import annotations
 
+import hashlib
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from lens import config
@@ -104,9 +107,31 @@ class ArmFingerprintTests(unittest.TestCase):
         arm = arm_fingerprint(recorded=True, replay=True)
 
         self.assertEqual(arm["mode"]["run"], config.RUN_MODE)
+        self.assertEqual(arm["mode"]["evidence"], config.EVIDENCE_SOURCE)
+        self.assertEqual(arm["mode"]["treatment"], config.TREATMENT)
         self.assertEqual(arm["mode"]["prompt"], config.PROMPT_VARIANT)
         self.assertEqual(arm["mode"]["sub_calls"], config.SUB_CALLS_ENABLED)
+        self.assertEqual(arm["mode"]["document_evidence"], config.DOCUMENT_EVIDENCE)
         self.assertIn("documents", arm["mode"])
+
+    def test_a_document_run_records_the_file_and_its_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "evidence.jsonl"
+            source.write_text('{"id": "a", "text": "alpha"}\n', encoding="utf-8")
+            expected = hashlib.sha256(source.read_bytes()).hexdigest()
+
+            with patch.object(config, "DOCUMENTS_PATH", str(source)):
+                arm = arm_fingerprint(recorded=True, replay=True)
+
+            documents = arm["mode"]["documents"]
+            self.assertEqual(documents["path"], str(source))
+            self.assertEqual(documents["sha256"], expected)
+
+    def test_a_corpus_run_records_no_document(self) -> None:
+        with patch.object(config, "DOCUMENTS_PATH", None):
+            arm = arm_fingerprint(recorded=True, replay=True)
+
+        self.assertIsNone(arm["mode"]["documents"])
 
 
 class ModeValidationTests(unittest.TestCase):
