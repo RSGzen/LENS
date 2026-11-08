@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-11-08T04:55:06+00:00",
-  "commit": "bef05f85347711807a9c86fe632a6388cbe911fd",
+  "created_at": "2026-11-08T15:27:47+00:00",
+  "commit": "3590d30f082e5154c89c1b04a929ceb2eb9c8151",
   "branch": "main",
   "git_dirty": false,
   "models": {
@@ -80,6 +80,7 @@
     "chunks": 4681955
   },
   "instruments": {
+    "compound-v1.jsonl": "6b7438f8693f4d61c9ab7b71e3810c1fb98050e4e7402b3c2bd3a5ac9558b6a8",
     "pilot-qrels-aggregation.json": "3b5a1c87f304ba21be611916b805486b04bdc043fc01dc9c4fd0be116f1e73a7",
     "qrels-rubric-v1.md": "fc58c924ef399ce727ff160f6540b72054b4bde511711d80c91767e857ebff34",
     "qrels-v1.csv": "59fa0ac3d7f8cc6b8a65c3064e971c91880a97ac2bc2e21fd3ff0089a6afdce9",
