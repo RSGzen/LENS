@@ -87,6 +87,8 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
             "treatment": config.TREATMENT,
             "prompt": config.PROMPT_VARIANT,
             "sub_calls": config.SUB_CALLS_ENABLED,
+            "segmentation": config.SEGMENTATION,
+            "raw_query": config.RAW_QUERY,
             "documents": _document_identity(),
             "document_evidence": config.DOCUMENT_EVIDENCE,
         },

@@ -44,8 +44,21 @@ Calling tools
   ``retrieval_funnel(buckets=buckets)`` works. ``rlm_api.tool("retrieval_funnel", ...)``
   is the generic form and behaves identically — both go through one dispatch path.
   Keyword arguments bind by name; an omitted argument uses the tool's default.
+<<BEGIN:hostbuckets>>
 - ``buckets`` (the segmented query) is already defined in the namespace. Pass it
   as-is; do not redefine it.
+<<END:hostbuckets>>
+<<BEGIN:rootbuckets>>
+- The host did not segment this query. On your first turn, write ``buckets`` as a
+  dict with exactly these four keys, each a list of short clauses copied from the
+  user's wording, and call ``retrieval_funnel(buckets)``:
+  ``objectives`` (what the user wants to answer), ``problems`` (the phenomenon or
+  pain point), ``constraints`` (scope, budget, method, time) and ``requirements``
+  (must-haves, formats, evidence types). A bucket with no matching clause is ``[]``.
+- Do not pass ``{"query": ...}`` or a bare string: the funnel needs the four keys.
+  The dict is written to ``query.json`` from that first call; after that, refine a
+  ``copy.deepcopy`` of it, never the dict itself.
+<<END:rootbuckets>>
 
 Sandbox modules
 <<BEGIN:kg>>
@@ -89,8 +102,8 @@ Search the variable, not the digest you printed
   that is a wasted turn rather than a new retrieval.
 
 Coverage is a duty, not advice
-- The query arrives split into objectives, problems, constraints and requirements in
-  ``query.json`` (also in the namespace as ``buckets``). Before you answer, name the
+- The query is split into objectives, problems, constraints and requirements (the
+  host's ``query.json``, or the dict you write in root mode). Before you answer, name the
   chunk ids that evidence **each** objective. An objective with no id is a gap: either
   narrow the claim to what you have, or refine a copy of the buckets with the terms you
   learned from the chunks, run the funnel once more, and read the new chunks the same
@@ -113,8 +126,15 @@ Work incrementally
 - Read the chunks before you classify them: print or sub-task the ``chunk_text`` of
   the chunks you intend to cite. A keyword match is a lead, not a finding.
 
+<<BEGIN:rawquery>>
+User query
+<<QUESTION>>
+<<END:rawquery>>
+
+<<BEGIN:hostbuckets>>
 Query buckets (query.json)
 <<QUERY_JSON>>
+<<END:hostbuckets>>
 
 Budget (read-only)
 <<BUDGET_LIMITS>>
@@ -249,8 +269,28 @@ Output
 - On a budget nudge, answer from what you have and list what you could not support.
 - On the last permitted turn, answer only: a code block written then does not run.
 
+<<BEGIN:rawquery>>
+User query
+<<QUESTION>>
+<<END:rawquery>>
+
+<<BEGIN:hostbuckets>>
 Query buckets
 <<QUERY_JSON>>
+<<END:hostbuckets>>
+
+<<BEGIN:rootbuckets>>
+Query buckets — you write them
+- The host did not segment this query. On your first turn, write ``buckets`` as a
+  dict with exactly these four keys, each a list of short clauses copied from the
+  user's wording, and call ``retrieval_funnel(buckets)``:
+  ``objectives`` (what the user wants to answer), ``problems`` (the phenomenon or
+  pain point), ``constraints`` (scope, budget, method, time) and ``requirements``
+  (must-haves, formats, evidence types). A bucket with no matching clause is ``[]``.
+- Do not pass ``{"query": ...}`` or a bare string: the funnel needs the four keys.
+  The dict is written to ``query.json`` from that first call; after that, refine a
+  ``copy.deepcopy`` of it, never the dict itself.
+<<END:rootbuckets>>
 
 Budget
 <<BUDGET_LIMITS>>
@@ -369,6 +409,8 @@ def build_system_prompt(
     kg: bool | None = None,
     sub_calls: bool | None = None,
     question: str = "",
+    segmentation: str | None = None,
+    raw_query: bool | None = None,
 ) -> str:
     """Fill the template for ``variant`` (default: the configured one).
 
@@ -377,20 +419,30 @@ def build_system_prompt(
     field that changes per turn would invalidate the provider's prefix cache.
     Live usage travels in the per-turn tail (:func:`budget_usage_line`).
 
-    ``kg`` and ``sub_calls`` default to the configured flags, so the instruction
-    block describes the harness that exists. Replacement is ``str.replace``, not
-    ``str.format``: the payloads contain JSON braces.
+    ``kg``, ``sub_calls``, ``segmentation`` and ``raw_query`` default to the
+    configured flags, so the instruction block describes the harness that exists.
+    A root-segmented run gets the bucket definitions and the write-it-yourself
+    instruction; a host-segmented run keeps the `query.json` block. Replacement is
+    ``str.replace``, not ``str.format``: the payloads contain JSON braces.
     """
     chosen = (variant or config.PROMPT_VARIANT).strip().lower()
 
     if chosen not in _TEMPLATES:
         raise ValueError(f"unknown prompt variant {chosen!r} (one of {sorted(_TEMPLATES)})")
 
+    segmentation_on = (
+        (config.SEGMENTATION if segmentation is None else segmentation).strip().lower()
+    )
+    raw_on = config.RAW_QUERY if raw_query is None else raw_query
+
     text = _render_blocks(
         _TEMPLATES[chosen],
         {
             "kg": (config.KG_ENABLED and config.KG_PROMPT) if kg is None else kg,
             "gate": config.GATE_ENABLED,
+            "hostbuckets": segmentation_on != "root",
+            "rootbuckets": segmentation_on == "root",
+            "rawquery": bool(raw_on) or segmentation_on == "root",
         },
     )
 

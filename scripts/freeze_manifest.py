@@ -185,6 +185,8 @@ def build_freeze(instruments: Path | None = None, *, with_db: bool = False) -> d
         "run_mode": config.RUN_MODE,
         "evidence_source": config.EVIDENCE_SOURCE,
         "treatment": config.TREATMENT,
+        "segmentation": config.SEGMENTATION,
+        "raw_query": config.RAW_QUERY,
         "document_evidence": config.DOCUMENT_EVIDENCE,
         "sub_calls": config.SUB_CALLS_ENABLED,
         "kg_enabled": config.KG_ENABLED,

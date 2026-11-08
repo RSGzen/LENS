@@ -62,6 +62,28 @@ class PromptVariantTests(unittest.TestCase):
             self.assertIn("Search the variable", text)
             self.assertIn("negative finding", text)
 
+    def test_host_segmentation_shows_the_bucket_block(self) -> None:
+        text = prompt(variant="full", segmentation="host", raw_query=False)
+
+        self.assertIn("Query buckets (query.json)", text)
+        self.assertNotIn("The host did not segment", text)
+
+    def test_root_segmentation_asks_the_root_to_write_the_dict(self) -> None:
+        text = prompt(variant="full", segmentation="root", question="the raw question")
+
+        self.assertNotIn("Query buckets (query.json)", text)
+        self.assertIn("The host did not segment", text)
+        self.assertIn("write ``buckets``", text)
+        self.assertIn("the raw question", text)
+
+    def test_raw_query_adds_the_wording_without_removing_the_buckets(self) -> None:
+        text = prompt(
+            variant="full", segmentation="host", raw_query=True, question="the raw wording"
+        )
+
+        self.assertIn("Query buckets (query.json)", text)
+        self.assertIn("the raw wording", text)
+
     def test_no_marker_leaks(self) -> None:
         for variant in config.PROMPT_VARIANTS:
             self.assertNotIn("<<", prompt(variant=variant))
@@ -109,6 +131,8 @@ class ArmFingerprintTests(unittest.TestCase):
         self.assertEqual(arm["mode"]["run"], config.RUN_MODE)
         self.assertEqual(arm["mode"]["evidence"], config.EVIDENCE_SOURCE)
         self.assertEqual(arm["mode"]["treatment"], config.TREATMENT)
+        self.assertEqual(arm["mode"]["segmentation"], config.SEGMENTATION)
+        self.assertEqual(arm["mode"]["raw_query"], config.RAW_QUERY)
         self.assertEqual(arm["mode"]["prompt"], config.PROMPT_VARIANT)
         self.assertEqual(arm["mode"]["sub_calls"], config.SUB_CALLS_ENABLED)
         self.assertEqual(arm["mode"]["document_evidence"], config.DOCUMENT_EVIDENCE)
