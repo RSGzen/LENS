@@ -474,6 +474,53 @@ class CitationTestCase(unittest.TestCase):
         self.assertNotIn("## Unresolved", (self.traj.run_dir / "answer.md").read_text())
 
 
+class DocumentCitationTestCase(unittest.TestCase):
+    """A document record plays the role a chunk payload plays in a corpus run."""
+
+    RECORD = "11111111-1111-1111-1111-111111111111"
+    GHOST = "99999999-9999-9999-9999-999999999999"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig = trajectory_module.LENS_RUNS_ROOT_PATH
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._tmp.name
+        self.traj = Trajectory("run-doc-cite")
+        work = self.traj.run_dir / "work"
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "documents.jsonl").write_text(
+            json.dumps({"id": self.RECORD, "text": "alpha", "label": ""}) + "\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self) -> None:
+        trajectory_module.LENS_RUNS_ROOT_PATH = self._orig
+        self._tmp.cleanup()
+
+    def _answer(self, text: str) -> None:
+        (self.traj.run_dir / "answer.md").write_text(text, encoding="utf-8")
+
+    def test_a_document_record_resolves_like_a_chunk(self) -> None:
+        self._answer(f"A claim [{self.RECORD}].")
+
+        report = resolve_citations("run-doc-cite")
+
+        self.assertEqual(report.counts["resolved"], 1)
+        self.assertEqual(report.unresolved, [])
+
+    def test_an_unknown_record_stays_unresolved(self) -> None:
+        self._answer(f"A claim [{self.GHOST}].")
+
+        report = resolve_citations("run-doc-cite")
+
+        self.assertEqual(report.counts["resolved"], 0)
+        self.assertEqual(report.unresolved, [self.GHOST])
+
+    def test_recorded_chunk_texts_falls_back_to_the_evidence_file(self) -> None:
+        texts = recorded_chunk_texts(self.traj)
+
+        self.assertEqual(texts[self.RECORD], "alpha")
+
+
 class ClaimUnitTests(unittest.TestCase):
     def test_a_sentence_with_words_and_an_id_is_a_claim(self) -> None:
         unit = (

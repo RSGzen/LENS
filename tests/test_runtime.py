@@ -1307,6 +1307,17 @@ class FlatDocumentTestCase(unittest.TestCase):
         self.assertTrue(any("flat document evidence" in text for text in notes))
         self.assertTrue(any("dropped for size" in text for text in notes))
 
+    def test_the_document_file_is_the_evidence_source(self) -> None:
+        record = "11111111-1111-1111-1111-111111111111"
+
+        with patch.object(config, "EVIDENCE_SOURCE", "document"):
+            texts = self.runtime._evidence_texts()
+            evidence, truncated = self.runtime._citation_evidence([record])
+
+        self.assertEqual(texts[record], "alpha")
+        self.assertEqual(evidence[record], "alpha")
+        self.assertFalse(truncated)
+
     def test_a_record_without_an_id_ends_the_run_with_a_named_error(self) -> None:
         self._write_records([{"text": "no id here"}])
 

@@ -450,11 +450,49 @@ def verify_quoted_spans(
     return in_cited, elsewhere, total
 
 
+def document_texts(trajectory: Trajectory) -> dict[str, str]:
+    """Return ``record_id -> text`` from a document run's evidence file.
+
+    A document record is the evidence for that run, so it plays the role a
+    chunk payload plays in a corpus run: the claim pass and the gate need the
+    text behind a cited id, and the run's own file is where it lives. A missing
+    or malformed file returns nothing rather than raising, because a damaged
+    bundle must still open and report what is missing.
+
+    Record ids must be uuid-shaped for the citation scanner to see them; the
+    instrument builders generate them that way.
+    """
+    path = trajectory.run_dir / "work" / "documents.jsonl"
+
+    if not path.is_file():
+        return {}
+
+    texts: dict[str, str] = {}
+
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                record = json.loads(line)
+
+                if isinstance(record, dict) and record.get("id") is not None:
+                    texts[str(record["id"])] = str(record.get("text") or "")
+    except (OSError, ValueError):
+        return {}
+
+    return texts
+
+
 def recorded_chunk_texts(trajectory: Trajectory) -> dict[str, str]:
     """Return ``chunk_uuid -> chunk text`` from the run's recorded tool payloads.
 
     The same payloads :func:`resolve_citations` reads, for the fidelity check: a
-    quote can only be verified against text the run actually held.
+    quote can only be verified against text the run actually held. A document
+    run holds no tool payloads, so its evidence file is the fallback.
     """
     texts: dict[str, str] = {}
 
@@ -478,6 +516,9 @@ def recorded_chunk_texts(trajectory: Trajectory) -> dict[str, str]:
             for row in rows:
                 if isinstance(row, dict) and row.get("chunk_uuid") and row.get("chunk_text"):
                     texts.setdefault(str(row["chunk_uuid"]), str(row["chunk_text"]))
+
+    if not texts:
+        texts.update(document_texts(trajectory))
 
     return texts
 
@@ -633,6 +674,14 @@ def resolve_citations(run_id: str) -> CitationReport:
 
     turns = replay_turns(trajectory)
     chunks, papers, provenance = _evidence_index(turns, trajectory)
+
+    # A document run has no tool payloads: its evidence file is the record set.
+    if not chunks:
+        chunks = {
+            record_id: {"chunk_text": text}
+            for record_id, text in document_texts(trajectory).items()
+        }
+
     answer = expand_short_ids(answer, chunks)
     answer, report.merged = resolve_merged_ids(answer, chunks)
 

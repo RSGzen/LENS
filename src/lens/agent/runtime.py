@@ -96,6 +96,7 @@ from lens.clients import LensClient
 from lens.experiments.arm import arm_fingerprint
 from lens.observability.citations import (
     cited_ids,
+    document_texts,
     expand_short_ids,
     recorded_chunk_ids,
     recorded_chunk_texts,
@@ -216,6 +217,9 @@ class Runtime:
         # ``None`` = "not built yet": the index is folded from the log on first
         # use, and reused afterwards (``_restore_state`` seeds it on resume).
         self._replayed: dict[str, str] | None = None
+        # A document run's evidence file is parsed once and reused: the claim
+        # pass and every gate call read the same records.
+        self._document_texts_cache: dict[str, str] | None = None
         self.run_dir: Path = trajectory.run_dir
         # The mounted, RLM-writable directory. Never ``run_dir`` itself: the
         # artifacts there are the audit trail (see the module invariants).
@@ -1160,21 +1164,26 @@ class Runtime:
 
             # The gate reads the answer with abbreviated chunk ids expanded to the
             # uuids this run retrieved; ``answer.md`` keeps the model's own text.
-            gate_answer = (
-                final
-                if config.RUN_MODE == "document"
-                else expand_short_ids(final, recorded_chunk_ids(self.trajectory))
-            )
+            # A document run expands against its record ids, and only when the
+            # verifier is on.
+            plain_document = config.EVIDENCE_SOURCE == "document" and not config.DOCUMENT_EVIDENCE
+
+            if config.EVIDENCE_SOURCE == "document":
+                gate_answer = final
+
+                if config.DOCUMENT_EVIDENCE:
+                    gate_answer = expand_short_ids(final, self._document_texts().keys())
+            else:
+                gate_answer = expand_short_ids(final, recorded_chunk_ids(self.trajectory))
+
             citations = cited_ids(gate_answer)
 
-            if config.RUN_MODE == "document":
-                # Document mode has no corpus behind it: the cited ids are record
-                # ids in a supplied file, so there is no chunk text to verify and
-                # the gate can only answer "unsupported". Skipping is logged, not
-                # silent — a correct aggregate must not be rejected eight times
-                # because the evidence source does not exist in this mode.
+            if plain_document:
+                # The mechanism arm is measured on its answer. A gate over record
+                # ids buys it nothing, and an unverified "unsupported" would only
+                # spend a turn. Skipping is logged, not silent.
                 self._note(
-                    "final gate skipped: document mode has no corpus evidence to verify citations"
+                    "final gate skipped: LENS_DOCUMENT_EVIDENCE is off for this document run"
                 )
                 verdict = None
             else:
@@ -1208,7 +1217,7 @@ class Runtime:
             answer = final
             claim_report = None
 
-            if config.RUN_MODE != "document":
+            if not plain_document:
                 if self.budget.can_measure():
                     claim_report = self._claim_pass(gate_answer, trace_ctx)
                 else:
@@ -1398,6 +1407,20 @@ class Runtime:
             query=self.query,
         )
 
+    def _document_texts(self) -> dict[str, str]:
+        """Return ``record_id -> text`` for a document run, parsed once."""
+        if self._document_texts_cache is None:
+            self._document_texts_cache = document_texts(self.trajectory)
+
+        return self._document_texts_cache
+
+    def _evidence_texts(self) -> dict[str, str]:
+        """Return the text behind a cited id, from whichever source this run has."""
+        if config.EVIDENCE_SOURCE == "document":
+            return self._document_texts()
+
+        return recorded_chunk_texts(self.trajectory)
+
     def _claim_pass(self, answer: str, trace_ctx: TraceCtx) -> ClaimReport:
         """Extract and verify claim frames for one final answer.
 
@@ -1408,7 +1431,7 @@ class Runtime:
         """
         report = verify_answer(
             answer,
-            recorded_chunk_texts(self.trajectory),
+            self._evidence_texts(),
             self.client,
             trace_ctx,
             run_id=self.run_id,
@@ -1790,8 +1813,8 @@ class Runtime:
         """
         ids = [citation for citation in citations if "-" in citation][:MAX_EVIDENCE_CHUNKS]
 
-        if not ids or self.conn is None:
-            return {}, bool(ids)
+        if not ids:
+            return {}, False
 
         # Most-cited first, first appearance as the tie-break.
         position = {chunk_id: index for index, chunk_id in enumerate(ids)}
@@ -1799,18 +1822,24 @@ class Runtime:
             ids, key=lambda chunk_id: (-(answer or "").count(chunk_id), position[chunk_id])
         )
 
-        from lens.tools.retrieval import fetch_chunks
+        if config.EVIDENCE_SOURCE == "document":
+            by_id = self._document_texts()
+        else:
+            if self.conn is None:
+                return {}, True
 
-        try:
-            rows = fetch_chunks(self.conn, ranked)
-        except Exception:  # noqa: BLE001 - a gate with no evidence still runs
-            return {}, True
+            from lens.tools.retrieval import fetch_chunks
 
-        by_id = {
-            str(row["chunk_uuid"]): str(row.get("chunk_text") or "")
-            for row in rows
-            if isinstance(row, dict) and row.get("chunk_uuid")
-        }
+            try:
+                rows = fetch_chunks(self.conn, ranked)
+            except Exception:  # noqa: BLE001 - a gate with no evidence still runs
+                return {}, True
+
+            by_id = {
+                str(row["chunk_uuid"]): str(row.get("chunk_text") or "")
+                for row in rows
+                if isinstance(row, dict) and row.get("chunk_uuid")
+            }
 
         evidence: dict[str, str] = {}
         used = 0
