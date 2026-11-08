@@ -188,3 +188,20 @@ def ledger_is_stale(answer: str, payload: Mapping[str, Any] | None) -> bool:
             return False
 
     return True
+
+
+def ledger_status(answer: str, payload: Mapping[str, Any] | None) -> str:
+    """Return ``ok`` / ``missing`` / ``empty`` / ``stale`` for one claim ledger.
+
+    The order is deliberate. Absence is checked before staleness, because
+    :func:`ledger_is_stale` cannot tell a missing file from an empty one and
+    reports both as not-stale. A skipped claim pass and a ledger from an earlier
+    draft are different facts and must not be pooled.
+    """
+    if payload is None:
+        return "missing"
+
+    if int(payload.get("units") or 0) < 1:
+        return "empty"
+
+    return "stale" if ledger_is_stale(answer, payload) else "ok"

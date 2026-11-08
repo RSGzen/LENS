@@ -2,8 +2,17 @@
 
 The instrument line carries ``gold.claims``; see ``Evaluation.md`` §6.5. The
 answer is read from ``answer.md`` and the cited text from the run's recorded
-payloads. The claim ledger is reported separately and flagged when it is stale:
-a partial run can keep the previous draft's ``claims.json``.
+payloads. The claim ledger is reported separately, with an explicit
+``ledger_status``:
+
+- ``ok``      the ledger describes this answer;
+- ``missing`` no ``claims.json`` at all;
+- ``empty``   a ledger with no units - the claim pass was skipped;
+- ``stale``   a ledger whose units are not in the final answer.
+
+``ledger_coverage`` is written **only** for ``ok``. A skipped or stale pass is
+reported as absent, never as 0 %: a zero would enter an arm mean as a
+measurement and drag it down, which is the failure `Eval D-24` and `D-25` name.
 
 Run:
     python scripts/score_claims.py --instrument <file.jsonl> \
@@ -27,7 +36,7 @@ from lens.experiments.claim_score import (
     citation_recall,
     claim_recall,
     gold_chunk_recall,
-    ledger_is_stale,
+    ledger_status,
 )
 from lens.observability.citations import (
     expand_short_ids,
@@ -108,6 +117,7 @@ def score(instrument: Path, campaign: Path) -> list[dict[str, Any]]:
             cited_gold, _ = citation_recall(gold_claims, expanded)
             units = int((claims or {}).get("units") or 0)
             coverage = float((claims or {}).get("coverage") or 0.0)
+            status = ledger_status(answer, claims)
 
             rows.append(
                 {
@@ -125,9 +135,10 @@ def score(instrument: Path, campaign: Path) -> list[dict[str, Any]]:
                     "gold_chunk_recall": _rate(present, gold_chunks),
                     "cited_gold": cited_gold,
                     "citation_recall": _rate(cited_gold, gold_chunks),
+                    "ledger_status": status,
                     "ledger_units": units,
-                    "ledger_coverage": round(coverage, 4),
-                    "ledger_stale": ledger_is_stale(answer, claims),
+                    "ledger_coverage": round(coverage, 4) if status == "ok" else "",
+                    "ledger_stale": status == "stale",
                     "answer_chars": len(answer),
                     "missing": not answer.strip(),
                 }
@@ -149,14 +160,20 @@ def summarise(rows: list[dict[str, Any]]) -> str:
         gold_recall = [
             cell["gold_chunk_recall"] for cell in usable if cell["gold_chunk_recall"] is not None
         ]
-        stale = sum(1 for cell in cells if cell["ledger_stale"])
+        stale = sum(1 for cell in cells if cell["ledger_status"] == "stale")
+        missing_ledger = sum(1 for cell in cells if cell["ledger_status"] == "missing")
+        empty_ledger = sum(1 for cell in cells if cell["ledger_status"] == "empty")
+        measured = [cell["ledger_coverage"] for cell in cells if cell["ledger_coverage"] != ""]
 
         lines.append(
             f"{arm}: runs {len(cells)} · usable {len(usable)} · missing {len(cells) - len(usable)}"
             f" · claim recall {round(mean(claims), 4) if claims else 'n/a'}"
             f" · citation precision {round(mean(precision), 4) if precision else 'n/a'}"
             f" · gold-chunk recall {round(mean(gold_recall), 4) if gold_recall else 'n/a'}"
-            f" · stale ledgers {stale}"
+            f" · ledger ok {len(measured)}/{len(cells)}"
+            f" (stale {stale}, empty {empty_ledger}, missing {missing_ledger})"
+            f" · mean ledger coverage "
+            f"{round(mean(measured), 4) if measured else 'n/a'} over the ok rows"
         )
 
     return "\n".join(lines)

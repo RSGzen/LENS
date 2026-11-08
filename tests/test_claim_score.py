@@ -10,6 +10,7 @@ from lens.experiments.claim_score import (
     claim_recall,
     gold_chunk_recall,
     ledger_is_stale,
+    ledger_status,
     normalise_value,
     value_matches,
 )
@@ -111,6 +112,31 @@ class StaleLedgerTests(unittest.TestCase):
 
     def test_an_empty_ledger_is_not_stale(self) -> None:
         self.assertFalse(ledger_is_stale("ok", {"units": 0, "frames": []}))
+
+
+class LedgerStatusTests(unittest.TestCase):
+    """Absence, a skip and staleness are three different facts (D-24, D-25)."""
+
+    def test_no_payload_is_missing(self) -> None:
+        self.assertEqual(ledger_status("an answer", None), "missing")
+
+    def test_a_ledger_with_no_units_is_empty(self) -> None:
+        self.assertEqual(ledger_status("an answer", {"units": 0, "frames": []}), "empty")
+
+    def test_an_earlier_draft_is_stale(self) -> None:
+        payload = {"units": 1, "frames": [{"text": "a bullet from the earlier draft"}]}
+
+        self.assertEqual(ledger_status("a different answer", payload), "stale")
+
+    def test_a_matching_ledger_is_ok(self) -> None:
+        payload = {"units": 1, "frames": [{"text": "the final answer's bullet"}]}
+
+        self.assertEqual(ledger_status("The final answer's bullet says X.", payload), "ok")
+
+    def test_an_empty_answer_with_frames_is_stale_not_ok(self) -> None:
+        payload = {"units": 1, "frames": [{"text": "a bullet"}]}
+
+        self.assertEqual(ledger_status("  ", payload), "stale")
 
 
 if __name__ == "__main__":
