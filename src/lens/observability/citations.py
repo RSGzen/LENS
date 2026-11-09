@@ -43,9 +43,14 @@ _ARXIV_RE = re.compile(r"\b(\d{4}\.\d{4,5})(?:v\d+)?\b")
 # characters in brackets, which a hyphenated uuid cannot match.
 _SHORT_ID_RE = re.compile(r"\[([0-9a-fA-F]{6,12})\]")
 # The same prefix written anywhere: ``chunk_uuid=bc4e8dcb``, ``[92287ee9, 2603.15653]``,
-# ``a861854f…``. A neighbouring letter, digit or hyphen means it is part of a longer
-# token (a full uuid, a word), so it is not a prefix.
-_LOOSE_SHORT_ID_RE = re.compile(r"(?<![0-9A-Za-z-])([0-9a-fA-F]{6,12})(?![0-9A-Za-z-])")
+# ``a861854f…``, ``6385ebc4-…``. A neighbouring letter or digit means it is part of a
+# longer token (a full uuid, a word), so it is not a prefix — but a **hyphen** is
+# allowed when no hex digit follows it, because ``6385ebc4-…`` is how the prompt's
+# 8-character form is often written and the old rule skipped it, so those sentences
+# reached the claim scorer with an arXiv id and no chunk text (`D-32`).
+_LOOSE_SHORT_ID_RE = re.compile(
+    r"(?<![0-9A-Za-z-])([0-9a-fA-F]{6,12})(?![0-9A-Za-z])(?!-[0-9a-fA-F])"
+)
 
 # Tools whose payload hydrates chunks / papers. Only these carry the evidence map.
 # ``rerank_chunks`` / ``rerank_papers`` stay listed so runs recorded before the
@@ -391,6 +396,24 @@ def normalize_span(text: str) -> str:
 _words = normalize_span
 
 
+def _number_is_truncated(segment: str, raw: str) -> bool:
+    """Return whether ``segment`` ends on a number that the chunk spells longer.
+
+    ``normalize_span`` turns ``10.6`` into ``10 6``, so containment alone accepts the
+    quote ``"…an SHD of 10"`` against a chunk that says ``10.6`` — and the ledger then
+    certifies a changed value as grounded (`D-54`). The check runs on the **raw** text
+    because the decimal point is exactly what normalisation removes.
+    """
+    tail = segment.rsplit(" ", 1)[-1]
+
+    if not tail.isdigit() or not raw:
+        return False
+
+    whole = re.compile(rf"(?<![\d.,]){re.escape(tail)}(?!\d|[.,]\d)")
+
+    return bool(re.search(rf"(?<![\d.,]){re.escape(tail)}", raw)) and not whole.search(raw)
+
+
 def _span_segments(span: str) -> list[str]:
     """Return the parts of a quoted span, split on an elision.
 
@@ -442,7 +465,12 @@ def verify_quoted_spans(
             continue
 
         total += 1
-        holders = {key for key, body in normalized.items() if all(s in body for s in segments)}
+        holders = {
+            key
+            for key, body in normalized.items()
+            if all(s in body for s in segments)
+            and not any(_number_is_truncated(s, texts[key]) for s in segments)
+        }
 
         if holders & nearby:
             in_cited += 1

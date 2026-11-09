@@ -133,6 +133,24 @@ class QuotedSpanTests(unittest.TestCase):
 
         self.assertEqual(verify_quoted_spans(answer, self.TEXTS), (0, 0, 1))
 
+    def test_a_quote_truncated_inside_a_number_does_not_verify(self) -> None:
+        # `D-54`: normalize_span turns "10.6" into "10 6", so containment accepted
+        # "an SHD of 10" and claims.json certified a changed value as grounded.
+        texts = {self.A: "It performs the best overall on Sachs yielding an SHD of 10.6 overall."}
+        answer = (
+            f"\u201cIt performs the best overall on Sachs yielding an SHD of 10\u201d [{self.A}]"
+        )
+
+        self.assertEqual(verify_quoted_spans(answer, texts), (0, 0, 1))
+
+    def test_the_same_quote_with_the_full_number_verifies(self) -> None:
+        texts = {self.A: "It performs the best overall on Sachs yielding an SHD of 10.6 overall."}
+        answer = (
+            f"\u201cIt performs the best overall on Sachs yielding an SHD of 10.6\u201d [{self.A}]"
+        )
+
+        self.assertEqual(verify_quoted_spans(answer, texts), (1, 0, 1))
+
     def test_a_real_quote_under_the_wrong_id_is_a_mis_citation(self) -> None:
         # The words exist but the reader who follows the id finds different text.
         answer = f"\u201cdesigned to retrieve answers from long contexts\u201d [{self.A}]"
@@ -216,6 +234,21 @@ class ExpandShortIdsTestCase(unittest.TestCase):
 
         # 92287ee prefixes two ids; deadbeef matches none; "decade" has no digit;
         # a full uuid is never rewritten.
+        self.assertEqual(expand_short_ids(text, self.KNOWN), text)
+
+    def test_a_dash_ellipsis_prefix_expands(self) -> None:
+        # `6385ebc4-…` is the commonest written form and the old rule skipped it,
+        # so the sentence reached the claim scorer with an arXiv id and no chunk
+        # text and was judged unsupported (`D-32`).
+        out = expand_short_ids("as bc4e8dcb-… shows", self.KNOWN)
+
+        self.assertIn(self.KNOWN[0], out)
+
+    def test_six_characters_before_a_hyphen_are_not_a_prefix(self) -> None:
+        # Inside a full uuid the prefix is followed by a hyphen and more hex, so it
+        # must not be rewritten. `bc4e8d` is six characters of KNOWN[0].
+        text = "bc4e8dcb-1111-5111-8111-111111111111"
+
         self.assertEqual(expand_short_ids(text, self.KNOWN), text)
 
 
