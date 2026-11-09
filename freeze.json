@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-11-09T00:10:14+00:00",
-  "commit": "6128679b2bf3424f6ef13ac05b53152576f1a3b4",
+  "created_at": "2026-11-09T09:00:25+00:00",
+  "commit": "134c0e8d1e07fde5a3b70d8a747379b6b35c84e4",
   "branch": "main",
   "git_dirty": false,
   "models": {
@@ -36,7 +36,7 @@
   "jev": "typesafe/jev-1.13",
   "caps": {
     "iterations": 10,
-    "tokens": 325000,
+    "tokens": 382025,
     "cost_usd": 0.5,
     "context_tokens": 12000,
     "flat_evidence_tokens": 40000,
