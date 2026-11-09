@@ -1,0 +1,113 @@
+{
+  "name": "m11-w5b3-compound",
+  "repeats": 1,
+  "note": "I6 compound set on rig v19: the same 7 non-subset instances x 4 arms as W5b and W5b2, re-run after the token cap was re-derived (382,025) and after a failed or empty run stopped entering the arm mean (D-31) and an empty completion gained one retry. Do not pool with m11-w5b (rig v17, pre-tool) or m11-w5b2 (rig v18, token cap 325,000).",
+  "arms": [
+    {
+      "name": "flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      }
+    },
+    {
+      "name": "host",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "0"
+      }
+    },
+    {
+      "name": "host-raw",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "1"
+      }
+    },
+    {
+      "name": "root",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "root",
+        "LENS_RAW_QUERY": "1"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "cmp-01-filter-count-constraint-conflict",
+      "expect": "refusal",
+      "text": "Among the papers published between 2020 and 2023 that evaluate offline reinforcement learning on the D4RL locomotion suite (HalfCheetah, Hopper, Walker2d), how many explicitly claim to avoid out-of-distribution (OOD) action queries entirely during Bellman backups while still reporting results for a 2024 benchmark extension? Exclude any paper that relies on behavioral cloning regularization, and explicitly flag any chronological or methodological impossibility in my constraints."
+    },
+    {
+      "id": "cmp-02-camera-only-nds-threshold",
+      "expect": "answerable",
+      "text": "Rank these five camera-only 3D detectors by the nuScenes Detection Score (NDS) each reports: FCOS3D (arXiv:2104.10956), structured knowledge distillation for multi-view 3D detection (arXiv:2211.08398), GeoMIM (arXiv:2303.11325), Sparse4D v3 (arXiv:2311.11722) and PolarBEVDet (arXiv:2408.16200). Keep only detectors whose reported NDS is strictly greater than 0.72. For every value, state whether it is on the nuScenes val split or the test split. If that threshold removes every detector in the set, then the exclusion is the problem I need explained: say so, name the highest NDS in the set, state the gap to the threshold, and cite the chunk for every value."
+    },
+    {
+      "id": "cmp-03-lossless-attention-impossibility",
+      "expect": "answerable",
+      "text": "Rank these five sequence models by their reported inference behaviour on long sequences: Mamba (arXiv:2312.00752), RWKV (arXiv:2305.13048), LSSL (arXiv:2110.13985), Eagle, also called RWKV-5 (arXiv:2404.05892), and MoE-Mamba (arXiv:2401.04081). Keep only models that achieve O(N) time during autoregressive decoding and also preserve exact, lossless token-to-token attention weights over a 32k-token context without a KV cache. State the memory each model keeps per decoding step. If no model in the set can satisfy both requirements together, name the requirement that is impossible, explain why it is impossible, and cite the chunk that states what each model actually keeps per step."
+    },
+    {
+      "id": "cmp-04-parameter-cap-missing-telemetry",
+      "expect": "answerable",
+      "text": "Compare three retrieval model families on BEIR: nomic-embed-text-v1 (arXiv:2402.01613), Arctic-Embed (arXiv:2405.05374) and the English BGE models released with C-Pack (arXiv:2309.07597). Keep only models whose encoder has fewer than 500 million parameters. For each family, state the parameter count the paper itself gives; if a paper gives no count, say so and treat that family as unverified rather than admitted. Rank the verified survivors and cite the chunk for every count. For the top-ranked survivor, state what evidence is missing to verify a claim of production-ready efficiency, and state the weaker side of the ranking itself."
+    },
+    {
+      "id": "cmp-06-agent-cost-denominator",
+      "expect": "answerable",
+      "text": "Among these four software-engineering agent papers: SWE-bench (arXiv:2310.06770), SWE-agent (arXiv:2405.15793), AutoCodeRover (arXiv:2404.05427) and Agentless (arXiv:2407.01489), rank the three systems by the share of SWE-bench issues they resolve, and keep only results reported on SWE-bench Lite. For each cost figure, state the denominator it is averaged over. If any cost figure cannot be compared with the others, say why, name the paper whose protocol is weaker for that comparison, and state which paper's headline number is measured on a different instance subset."
+    },
+    {
+      "id": "cmp-08-nash-guarantee-conflict",
+      "expect": "answerable",
+      "text": "Partition these four multi-agent papers by solution approach: QTRAN (arXiv:1905.05408), QPLEX (arXiv:2008.01062), a Nash-equilibrium agent for a three-player imperfect-information game (arXiv:1804.04789) and a parallel Nash-equilibrium algorithm for multiplayer stochastic games (arXiv:1910.00193). Say which use centralized training with decentralized execution and value factorization, and which use a game-theoretic equilibrium concept. Then check the equilibrium claim: does any paper in the set claim guaranteed polynomial-time convergence to an exact Nash equilibrium in general-sum, n-player (n >= 3) games without structural assumptions? If none does, say so, name the paper whose own text concedes that the guarantee does not hold while still reporting a Nash result, and state whether the reported equilibria are exact or approximate. Cite the chunk for every concession."
+    },
+    {
+      "id": "cmp-09-rlm-srlm-cost-premise",
+      "expect": "answerable",
+      "text": "Compare RLM (arXiv:2512.24601) and SRLM (arXiv:2603.15653) on where aggregation happens and how each handles recursion, and restrict citations to these two papers, published 2025-2026. I believe the cost comparison between them is unclear. Check that premise against what each paper actually reports: say which paper states a cost and which does not, state what the silent paper would need to report for a like-for-like comparison, and name the metric that is reported in place of cost. Cite every claim."
+    }
+  ]
+}
