@@ -1,7 +1,7 @@
 {
   "name": "m11-remaining",
   "spend_estimate_usd": 22,
-  "note": "The remaining campaign in run order (Evaluation.md 9, revision 3). W0, W1 and W2 (including W2b) are complete and are deliberately not cells here. One cell is one campaign file plus the run count it must expand to. Every cell states the **real** wave size, so a campaign file that is still a placeholder (w3, w4, w5, w6) expands to fewer runs than expected and the runner refuses to start it: replacing a list without updating expect, or running a placeholder, fails loudly instead of spending. Reach a later cell with --from, because --through alone still starts at the first cell and pauses at its stop_after. A stop_after cell is a staged-spend decision point, not a batch boundary: the run stops there unless --through names that cell. checkpoint_usd is the cumulative M11 ceiling from Evaluation.md 10.3.",
+  "note": "The remaining campaign in run order (Evaluation.md 9, revision 3). W0, W1 and W2 (including W2b) are complete and are deliberately not cells here. One cell is one campaign file plus the run count it must expand to. Every cell states the **real** wave size, so a campaign file that is still a placeholder (w3, w4, w6) expands to fewer runs than expected and the runner refuses to start it: replacing a list without updating expect, or running a placeholder, fails loudly instead of spending. Reach a later cell with --from, because --through alone still starts at the first cell and pauses at its stop_after. A stop_after cell is a staged-spend decision point, not a batch boundary: the run stops there unless --through names that cell. checkpoint_usd is the cumulative M11 ceiling from Evaluation.md 10.3.",
   "waves": [
     {
       "id": "w3",
@@ -22,10 +22,18 @@
     {
       "id": "w5",
       "campaign": "experiments/campaigns/m11-w5.json",
-      "expect": 44,
+      "expect": 28,
       "checkpoint_usd": 42,
       "stop_after": true,
-      "note": "W5 I5 corpus gold, the in-domain H1 reading. 22 instances x 2 arms. The gold set does not exist yet, so the file is a 3-query placeholder and this cell refuses to start. The 4-instance subset is its own campaign; final-gate calibration runs after the cells."
+      "note": "W5 I5 corpus gold, the in-domain H1 reading. The 14 non-subset instances x A0, A2 = 28, on the rig-v20 freeze where i5-gold-v1.jsonl is hashed. The pre-registered four-instance subset at n=3 is its own cell; final-gate calibration runs after the cells."
+    },
+    {
+      "id": "w5-subset",
+      "campaign": "experiments/campaigns/m11-w5-subset.json",
+      "expect": 24,
+      "checkpoint_usd": 42,
+      "stop_after": true,
+      "note": "W5 pre-registered subset (i5-f1-beir, i5-f2-01, i5-f3-instrument, i5-f4-01), 4 instances x A0, A2 x 3 = 24. The rule is fixed in the campaign file before any I5 answer existed."
     },
     {
       "id": "w5b3-compound",
