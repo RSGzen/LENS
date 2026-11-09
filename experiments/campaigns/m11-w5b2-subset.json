@@ -1,0 +1,88 @@
+{
+  "name": "m11-w5b2-subset",
+  "repeats": 3,
+  "note": "I6 pre-registered subset (cmp-05, cmp-07) at n=3 on rig v18, re-run with fetch_paper_chunks. Separate file because a campaign carries one repeats value. Do not pool with m11-w5b-subset (rig v17, pre-tool).",
+  "arms": [
+    {
+      "name": "flat",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0"
+      }
+    },
+    {
+      "name": "host",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "0"
+      }
+    },
+    {
+      "name": "host-raw",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "1"
+      }
+    },
+    {
+      "name": "root",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "root",
+        "LENS_RAW_QUERY": "1"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "cmp-05-sachs-shd-reversal",
+      "expect": "answerable",
+      "text": "Compare these five causal-structure papers on the Sachs protein-signalling data: NOTEARS (arXiv:1803.01422), GFlowCausal (arXiv:2210.08185), the NoTears and Golem comparison study (arXiv:2301.11898), CD-UCT (arXiv:2310.13576) and the causal-evaluation challenges study (arXiv:2406.03209). Which paper reports the lowest Structural Hamming Distance (SHD) on Sachs, and which second metric reverses that ranking? State the evaluation flaw that a Sachs comparison of this kind must control for, name the paper in this set that names it, and say whether the reported SHD numbers are comparable across papers. Cite the chunk for every number."
+    },
+    {
+      "id": "cmp-07-connector-anachronism",
+      "expect": "answerable",
+      "text": "Trace how these five vision-language models connect a vision encoder to a language model: Flamingo (arXiv:2204.14198), Visual Instruction Tuning, also called LLaVA (arXiv:2304.08485), OpenFlamingo (arXiv:2308.01390), PG-Video-LLaVA (arXiv:2311.13435) and mPLUG-Owl3 (arXiv:2408.04840). First say which connector each uses. Then take the papers whose arXiv identifier places them in 2022-2023 and say which of them report object hallucination results on the POPE benchmark and which report results on MMMU-Pro. If a benchmark cannot have been evaluated by a paper in that window, name it, state the earliest year it appears in this corpus, and explain the conflict. Finally state the weaker side of the connector used by the earliest model in the set."
+    }
+  ]
+}

@@ -28,19 +28,19 @@
       "note": "W5 I5 corpus gold, the in-domain H1 reading. 22 instances x 2 arms. The gold set does not exist yet, so the file is a 3-query placeholder and this cell refuses to start. The 4-instance subset is its own campaign; final-gate calibration runs after the cells."
     },
     {
-      "id": "w5b-compound",
-      "campaign": "experiments/campaigns/m11-w5b-compound.json",
+      "id": "w5b2-compound",
+      "campaign": "experiments/campaigns/m11-w5b2-compound.json",
       "expect": 28,
       "checkpoint_usd": 46,
-      "note": "W5b I6 compound, 7 non-subset instances x 4 arms (A0, A2, A2+Q, A2-R) on rig v17. ~$2.7-4.3 at measured rates."
+      "note": "W5b2 I6 compound on rig v18: the same 7 non-subset instances x 4 arms (A0, A2, A2+Q, A2-R) as the v17 wave, re-run with fetch_paper_chunks so a named paper the funnel misses is reachable. ~$2.3-3.5 at measured rates. Do not pool with w5b-compound (rig v17, pre-tool)."
     },
     {
-      "id": "w5b-subset",
-      "campaign": "experiments/campaigns/m11-w5b-subset.json",
+      "id": "w5b2-subset",
+      "campaign": "experiments/campaigns/m11-w5b2-subset.json",
       "expect": 24,
       "checkpoint_usd": 46,
       "stop_after": true,
-      "note": "W5b subset (cmp-05, cmp-07) at n=3 x 4 arms. Kill switch: run spread versus arm difference, and the decision on whether A2-R is worth carrying."
+      "note": "W5b2 subset (cmp-05, cmp-07) at n=3 x 4 arms on rig v18. Run spread versus arm difference, now with the named-paper fetch available; the two instances that were near-unreachable on v17 become the test of the tool."
     },
     {
       "id": "w6",
