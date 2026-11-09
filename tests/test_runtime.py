@@ -207,6 +207,19 @@ class RuntimeTestCase(unittest.TestCase):
         self.assertIn("The grounded answer", result.answer)
         self.assertTrue(result.answer_path.is_file())
 
+    def test_an_empty_completion_is_retried_once(self) -> None:
+        # A provider hiccup that returns nothing used to spend the turn on nothing
+        # and, on the last turn, leave an empty `answer.md` that scored as a zero.
+        self.runtime.client = FakeClient(  # type: ignore[assignment]
+            ["", "FINAL_ANSWER: recovered after one retry"], self.trajectory
+        )
+
+        result = self.runtime.run()
+
+        self.assertIn("recovered after one retry", result.answer)
+        root_calls = [call for call in self.runtime.client.chat_calls if call["role"] == "root"]  # type: ignore[attr-defined]
+        self.assertEqual(len(root_calls), 2)
+
     @unittest.skipUnless(config.KG_ENABLED, "KG is disabled in this environment")
     def test_kg_ontology_is_seeded_in_the_workspace(self) -> None:
         self.runtime.run()

@@ -1088,13 +1088,29 @@ class Runtime:
             # turn left to ask again after it, so a code block written there cannot
             # inform the answer.
             last_turn = self.budget.iterations + 1 >= self.budget.limits.max_iterations
+            context = self._build_context(last_turn=last_turn)
             result = self.client.chat(
                 "root",
-                self._build_context(last_turn=last_turn),
+                context,
                 trace_ctx=trace_ctx,
                 max_tokens=config.ROOT_MAX_OUTPUT_TOKENS,
             )
             self.budget.record_chat(result)
+
+            # An empty completion is a provider hiccup, not an answer: the turn
+            # would be spent on nothing and, on the last turn, leave an empty
+            # `answer.md` that then scores as a zero (`D-31`). One retry recovers
+            # the turn; both calls are billed because both really happened.
+            if not (result.text or "").strip():
+                self._note("empty completion from the root; retried once")
+                result = self.client.chat(
+                    "root",
+                    context,
+                    trace_ctx=trace_ctx,
+                    max_tokens=config.ROOT_MAX_OUTPUT_TOKENS,
+                )
+                self.budget.record_chat(result)
+
             self.budget.record_iteration()
 
             completion = result.text or ""

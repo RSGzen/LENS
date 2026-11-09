@@ -439,14 +439,21 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.environ.get("LENS_TOOL_SUMMARY_CHARS", "4000"
 
 # Cumulative token cap, DERIVED from a **measurement** rather than from a chosen
 # context ceiling: iterations x measured tokens per turn x 1.25 overhead.
-#   tokens per turn = 14,000 (p90 of 432 recorded root calls; median 7,756)
-#   10 x 14,000 x 1.25 = 175,000 for the root's own turns
+#   tokens per turn = 18,562 (p90 of 576 recorded root calls on rig v18, W5b2)
+#   10 x 18,562 x 1.25 = 232,025 for the root's own turns
 # plus an allowance for sub-task calls, which spend this same budget. The measured
 # 16k-cap replies averaged about 9,000 output tokens; 15 calls x 10,000 = 150,000
 # leaves margin for the extracts a comparison actually makes. A 75,000 allowance
 # bound on a real 10-turn run at 275,192 tokens, so the stop reason was an
 # artefact of the allowance rather than of the work.
-CONTEXT_TURN_TOKENS_ESTIMATE = int(os.environ.get("LENS_CONTEXT_TURN_TOKENS", "14000"))
+#
+# The 14,000 that stood here was measured before `fetch_paper_chunks` existed. On
+# rig v18 a run reads whole papers, so the per-turn figure rose 33 % (14,000 ->
+# 18,562) and sub-task output rose 39 % (43k -> 60k median), which pushed the
+# median run to 89 % of the old 325,000 and left one run with no answer at all.
+# Re-deriving with the same formula gives 382,025; the value is a backstop, not a
+# budget - a run at the cap bills about $0.08 against a $0.50 cost cap.
+CONTEXT_TURN_TOKENS_ESTIMATE = int(os.environ.get("LENS_CONTEXT_TURN_TOKENS", "18562"))
 SUB_TASK_TOKENS_ESTIMATE = int(os.environ.get("LENS_SUB_TASK_ALLOWANCE", "150000"))
 MAX_TOKENS_PER_QUERY = int(
     os.environ.get(

@@ -14,6 +14,12 @@ payloads. The claim ledger is reported separately, with an explicit
 reported as absent, never as 0 %: a zero would enter an arm mean as a
 measurement and drag it down, which is the failure `Eval D-24` and `D-25` name.
 
+**A broken or empty run is excluded, never scored as zero** (`Eval D-31`). A run
+that failed keeps its exception text in ``answer.md``, so "has an answer" is not
+the test; the campaign row's ``status`` and ``stop_reason`` are. The raw counts
+stay (they are facts about the run) and every **rate** is blanked, so no reader
+can average one by accident.
+
 Run:
     python scripts/score_claims.py --instrument <file.jsonl> \
         --campaign <campaign.csv> --out <scores.csv>
@@ -119,28 +125,41 @@ def score(instrument: Path, campaign: Path) -> list[dict[str, Any]]:
             coverage = float((claims or {}).get("coverage") or 0.0)
             status = ledger_status(answer, claims)
 
+            # `D-31`: a run that broke, or whose answer is empty, must not enter an
+            # arm mean as a zero. A failed run keeps its exception text in
+            # `answer.md`, so "has an answer" is not the test - the campaign row's
+            # own status is. The raw counts stay (they are facts); every **rate** is
+            # blanked, so no reader can average one by accident.
+            run_status = (row.get("status") or "").strip()
+            run_stop = (row.get("stop_reason") or "").strip()
+            broke = run_status == "failed" or run_stop == "error"
+            empty = not answer.strip()
+            usable = not broke and not empty
+
             rows.append(
                 {
                     "instance_id": instance_id,
                     "arm": arm,
                     "run_id": run_id,
+                    "run_status": run_status,
+                    "stop_reason": run_stop,
                     "gold_claims": len(gold_claims),
                     "matched": matched,
-                    "claim_recall": _rate(matched, len(gold_claims)),
+                    "claim_recall": _rate(matched, len(gold_claims)) if usable else None,
                     "supported": supported,
                     "judged": judged,
-                    "citation_precision": _rate(supported, judged),
+                    "citation_precision": _rate(supported, judged) if usable else None,
                     "gold_chunks": gold_chunks,
                     "present": present,
-                    "gold_chunk_recall": _rate(present, gold_chunks),
+                    "gold_chunk_recall": _rate(present, gold_chunks) if usable else None,
                     "cited_gold": cited_gold,
-                    "citation_recall": _rate(cited_gold, gold_chunks),
+                    "citation_recall": _rate(cited_gold, gold_chunks) if usable else None,
                     "ledger_status": status,
                     "ledger_units": units,
                     "ledger_coverage": round(coverage, 4) if status == "ok" else "",
                     "ledger_stale": status == "stale",
                     "answer_chars": len(answer),
-                    "missing": not answer.strip(),
+                    "missing": empty or broke,
                 }
             )
 
@@ -166,7 +185,7 @@ def summarise(rows: list[dict[str, Any]]) -> str:
         measured = [cell["ledger_coverage"] for cell in cells if cell["ledger_coverage"] != ""]
 
         lines.append(
-            f"{arm}: runs {len(cells)} · usable {len(usable)} · missing {len(cells) - len(usable)}"
+            f"{arm}: runs {len(cells)} · usable {len(usable)} · excluded {len(cells) - len(usable)}"
             f" · claim recall {round(mean(claims), 4) if claims else 'n/a'}"
             f" · citation precision {round(mean(precision), 4) if precision else 'n/a'}"
             f" · gold-chunk recall {round(mean(gold_recall), 4) if gold_recall else 'n/a'}"

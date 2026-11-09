@@ -37,6 +37,7 @@ judge_answers = _load("judge_answers")
 freeze_manifest = _load("freeze_manifest")
 build_qrels_worksheet = _load("build_qrels_worksheet")
 run_campaign = _load("run_campaign")
+score_claims = _load("score_claims")
 
 
 def _good_polarity():
@@ -49,6 +50,83 @@ def _good_polarity():
 
 def _bad_polarity():
     return PolarityResult(probes=[Probe("true-claim", True, 0.03)], cost_usd=0.00002, tokens_in=10)
+
+
+class ClaimScoringExclusionTests(unittest.TestCase):
+    """`D-31`: a failed or empty run is excluded, never scored as zero."""
+
+    CHUNK = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        self._roots = (
+            patch("lens.config.LENS_RUNS_ROOT_PATH", root),
+            patch("lens.observability.trajectory.LENS_RUNS_ROOT_PATH", root),
+        )
+        for patcher in self._roots:
+            patcher.start()
+        self.root = root
+
+        instrument = root / "instrument.jsonl"
+        instrument.write_text(
+            json.dumps(
+                {
+                    "instance_id": "i-1",
+                    "gold": {
+                        "claims": [
+                            {"arxiv_id": "2511.02817", "chunk_uuid": self.CHUNK, "value": "7"}
+                        ]
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        self.instrument = instrument
+
+        self.campaign = root / "campaign.csv"
+        self.campaign.write_text(
+            "campaign_arm,query_id,run_id,status,stop_reason\n"
+            "host,i-1,run-good,completed,\n"
+            "host,i-1,run-failed,failed,error\n"
+            "host,i-1,run-empty,partial,iterations\n",
+            encoding="utf-8",
+        )
+        self._run("run-good", "The count is 7.")
+        self._run("run-failed", "Run failed before an answer was produced: boom")
+        self._run("run-empty", "")
+
+    def _run(self, run_id: str, answer: str) -> None:
+        run_dir = self.root / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "answer.md").write_text(answer, encoding="utf-8")
+
+    def tearDown(self) -> None:
+        for patcher in self._roots:
+            patcher.stop()
+        self._tmp.cleanup()
+
+    def test_a_failed_run_is_not_usable_and_keeps_no_rate(self) -> None:
+        rows = {row["run_id"]: row for row in score_claims.score(self.instrument, self.campaign)}
+
+        self.assertFalse(rows["run-good"]["missing"])
+        self.assertEqual(rows["run-good"]["claim_recall"], 1.0)
+
+        self.assertTrue(rows["run-failed"]["missing"])
+        self.assertEqual(rows["run-failed"]["run_status"], "failed")
+        self.assertEqual(rows["run-empty"]["run_status"], "partial")
+
+        for run_id in ("run-failed", "run-empty"):
+            self.assertIsNone(rows[run_id]["claim_recall"])
+            self.assertIsNone(rows[run_id]["gold_chunk_recall"])
+
+    def test_the_summary_counts_them_as_excluded(self) -> None:
+        text = score_claims.summarise(score_claims.score(self.instrument, self.campaign))
+
+        self.assertIn("usable 1", text)
+        self.assertIn("excluded 2", text)
+        self.assertIn("claim recall 1.0", text)
 
 
 class RetrievalMetricTests(unittest.TestCase):
