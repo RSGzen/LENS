@@ -191,6 +191,19 @@ class ContextTestCase(unittest.TestCase):
         self.assertNotIn("<<", prompt)
         self.assertNotIn(">>", prompt)
 
+    def test_prompt_teaches_the_named_paper_fetch(self) -> None:
+        # The tool is only useful if the model learns it exists: the payload-shapes
+        # block gives its shape, and the funnel paragraph gives the trigger (a paper
+        # the query names by id). A prompt that names neither leaves the capability
+        # unreachable in practice.
+        prompt = context.build_system_prompt(
+            tool_manifest="- fetch_paper_chunks(arxiv_ids)",
+            query_buckets={"problems": ["x"]},
+            budget_limits={"iterations": 8, "tokens": 300000, "cost_usd": 1.0},
+        )
+        self.assertIn("fetch_paper_chunks(arxiv_ids)", prompt)
+        self.assertIn("not a bucket problem", prompt)
+
     def test_the_system_prompt_is_identical_across_turns(self) -> None:
         # The whole point of moving live usage out of the instruction block: the
         # first bytes of every request must not change, or the provider cannot

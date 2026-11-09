@@ -180,6 +180,8 @@ def rig_fields() -> dict[str, Any]:
             "c": config.RETRIEVAL_C_TOP,
             # The query path uses the per-query value, not the base constant.
             "ef_search": hnsw_ef_for(config.RETRIEVAL_K),
+            # A tool budget: it decides how much of a named paper a run can read.
+            "fetch_paper_chunk_limit": config.FETCH_PAPER_CHUNK_LIMIT,
         },
         "prompt": config.PROMPT_VARIANT,
         "prompt_switches": {

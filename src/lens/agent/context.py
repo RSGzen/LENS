@@ -102,6 +102,10 @@ Search the variable, not the digest you printed
   the query as segmented, it is what the run records, and every later turn refers to
   it. Calling the funnel again with unchanged buckets returns the same chunks, so
   that is a wasted turn rather than a new retrieval.
+- **A paper the query names by arXiv id is not a bucket problem.** Call
+  ``fetch_paper_chunks(["2311.11722", ...])`` for it: that returns the paper's own
+  chunks whatever the funnel did, which a re-run of the funnel does not guarantee.
+  Use it when the query lists papers or when a named paper came back with no chunks.
 
 Coverage is a duty, not advice
 - The query is split into objectives, problems, constraints and requirements (the
@@ -375,7 +379,9 @@ _RETRIEVAL_RULES: dict[str, str] = {
     ),
     "refine": (
         "Retrieve once. If a named objective has no chunk, copy the buckets "
-        "(`mine = copy.deepcopy(buckets)`), edit the copy, and retrieve again."
+        "(`mine = copy.deepcopy(buckets)`), edit the copy, and retrieve again. "
+        "For a paper the query names by arXiv id, `fetch_paper_chunks([...])` "
+        "returns that paper's text directly - do not re-run the funnel to reach it."
     ),
 }
 

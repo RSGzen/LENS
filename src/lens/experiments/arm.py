@@ -64,6 +64,7 @@ def arm_fingerprint(*, recorded: bool, replay: bool) -> dict[str, Any]:
             # k swept above the 100-default raises ef_search with it, so recording
             # the constant would describe a setting the run never used.
             "ef_search": hnsw_ef_for(config.RETRIEVAL_K),
+            "fetch_paper_chunk_limit": config.FETCH_PAPER_CHUNK_LIMIT,
             "reranker": config.RERANKER_MODEL_ID,
         },
         "kg": {
