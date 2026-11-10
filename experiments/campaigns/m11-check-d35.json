@@ -1,0 +1,44 @@
+{
+  "name": "m11-check-d35",
+  "repeats": 3,
+  "note": "Verification for the identifier-retention rule: one instance that names a single paper, both host-segmented arms, three repeats. Before the rule, two of three repeats lost the arXiv id and both refused; the question is whether all three now keep it.",
+  "arms": [
+    {
+      "name": "a0",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
+      }
+    },
+    {
+      "name": "a2",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "0"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "i5-f4-01",
+      "expect": "answerable",
+      "text": "In arXiv 2310.13576, what structural Hamming distance (SHD) does the method report on the Sachs dataset? Answer with the number and cite the chunk."
+    }
+  ]
+}
