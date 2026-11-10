@@ -44,6 +44,11 @@ from lens.observability.trajectory import TraceCtx, Trajectory
 
 SENTINEL = "FINAL_ANSWER:"
 MAX_ANSWER_CHARS = 6000
+# The output budget covers the model's reasoning as well as its text. At 4,000 the
+# first full run lost 7 of 36 verdicts to ``finish_reason=length`` with no visible
+# text, so the cap is sized to let a long deliberation finish. Only generated
+# tokens are billed.
+MAX_JUDGE_TOKENS = 16000
 
 SYSTEM_PROMPT = """\
 You grade one literature-evidence answer against a fixed rubric.
@@ -206,8 +211,8 @@ def judge_rows(
             trace_ctx=trace_ctx,
             # The output budget covers the model's reasoning as well as its text, so
             # a cap sized for the verdict alone returns an empty reply with
-            # finish_reason=length. Only generated tokens are billed.
-            max_tokens=4000,
+            # finish_reason=length.
+            max_tokens=MAX_JUDGE_TOKENS,
         )
         verdicts = parse_verdicts(completion.text, facets)
 
