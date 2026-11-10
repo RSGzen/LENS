@@ -11,11 +11,13 @@ Buckets (``objectives`` / ``problems`` / ``constraints`` / ``requirements``)
 ---------------------------------------------------------------------------
 Each bucket is a **list** of clause texts : a multi-clause prompt keeps its
 structure, and a bucket with no match is an empty list. The mapping is emitted in
-:data:`BUCKET_ORDER` -- owns the dict build order (``config.QUERY_BUCKET_ORDER``
-was dropped). :func:`lens.tools.retrieval.format_query` consumes the mapping
-directly: it flattens every bucket's clauses, in insertion order, into the single
-query string, so the clause text
-must stay the user's own wording.
+:data:`BUCKET_ORDER` -- owns the dict build order
+(``config.QUERY_BUCKET_ORDER`` was dropped). :func:`lens.tools.retrieval.format_query`
+consumes the mapping directly: it flattens every bucket's clauses, in insertion
+order, into the single query string, so the clause text must stay the user's own
+wording -- with one exception, :func:`retain_identifiers`, which copies an arXiv
+identifier the segmenter dropped into ``constraints`` because losing it silently
+removes the only way to reach a named paper.
 
 Cost / identity
 ----------------------
@@ -41,6 +43,11 @@ from lens.observability.trajectory import TraceCtx
 # this order; ``retrieval.format_query`` joins in insertion order, so it is also
 # the clause order of the embedded query.
 BUCKET_ORDER = ("objectives", "problems", "constraints", "requirements")
+
+# An arXiv identifier: four digits, a dot, four or five digits. The shape is what
+# the corpus and every tool key on, so an identifier that survives segmentation is
+# the one thing a retrieval arm needs in order to fetch a named paper.
+IDENTIFIER = re.compile(r"\b\d{4}\.\d{4,5}\b")
 
 # System prompt: fixes the 4 buckets, forbids rewriting (so the embedded query
 # stays the user's own wording -- : plain clause join, no LLM rewriting),
@@ -115,6 +122,38 @@ def parse_segmentation_json(text: str) -> dict[str, Any]:
 
     except Exception as e:
         raise ValueError(f"Unparseable text from segmentation LLM response. Error code: {e}")
+
+
+def retain_identifiers(query: str, buckets: Mapping[str, Any]) -> dict[str, list[str]]:
+    """Return ``buckets`` with every arXiv identifier from ``query`` present.
+
+    A segmenter that drops an identifier deletes the only way to ask for that
+    paper: the retrieval query loses it, the model never sees it, and no tool can
+    fetch it. The rule is deterministic and additive — an identifier the buckets
+    already contain anywhere is left alone, and a missing one is copied verbatim
+    into ``constraints`` (the bucket for scope and method limits).
+
+    The clause is *not* user wording, which the segmentation contract otherwise
+    preserves: it is an identifier lifted from the query, chosen because losing it
+    is a silent capability loss rather than a phrasing choice.
+    """
+    named = sorted(set(IDENTIFIER.findall(query or "")))
+
+    if not named:
+        return {name: list(buckets.get(name) or []) for name in BUCKET_ORDER}
+
+    present = set(IDENTIFIER.findall(json.dumps(dict(buckets))))
+
+    missing = [identifier for identifier in named if identifier not in present]
+
+    if not missing:
+        return {name: list(buckets.get(name) or []) for name in BUCKET_ORDER}
+
+    kept = {name: list(buckets.get(name) or []) for name in BUCKET_ORDER}
+
+    kept["constraints"].append("arXiv " + ", ".join(missing))
+
+    return kept
 
 
 def normalize_buckets(raw: Mapping[str, Any]) -> dict[str, list[str]]:
@@ -215,7 +254,8 @@ def segment_query(
          The transport logs ``usage.cost`` + the dated ``model`` snapshot, tagged
          ``extra["source"] = "segmentation"`` so the event is not mistaken for a
          loop turn at ``step_idx = 0``.
-      4. Return ``normalize_buckets(parse_segmentation_json(result.text))``.
+      4. Return ``retain_identifiers(query, normalize_buckets(...))``, so an
+         identifier the model dropped is still in the buckets the root sees.
 
     Returns the bucket mapping ready for ``retrieval.format_query`` / ``query.json``.
     """
@@ -238,7 +278,7 @@ def segment_query(
 
     query_buckets = normalize_buckets(result_json)
 
-    return query_buckets
+    return retain_identifiers(query, query_buckets)
 
 
 # ------------------------------------------------------------------ output

@@ -184,6 +184,55 @@ class SegmentQueryTest(unittest.TestCase):
             "bounded token budget citation-traceable",
         )
 
+    def test_an_identifier_the_model_dropped_is_kept(self) -> None:
+        # A dropped identifier is not a phrasing choice: it removes the only way to
+        # fetch the paper the question names, and nothing downstream can recover it.
+        client = FakeClient(
+            json.dumps(
+                {
+                    "objectives": ["report the SHD"],
+                    "problems": [],
+                    "constraints": ["on the Sachs dataset"],
+                    "requirements": ["answer with the number"],
+                }
+            )
+        )
+
+        buckets = segment_query(
+            client, "In arXiv 2310.13576, what SHD does it report on Sachs?", trace_ctx=self.ctx
+        )
+
+        self.assertIn("arXiv 2310.13576", buckets["constraints"])
+        self.assertIn("2310.13576", format_query(buckets))
+
+    def test_an_identifier_already_present_is_not_duplicated(self) -> None:
+        client = FakeClient(
+            json.dumps(
+                {
+                    "objectives": ["compare arXiv 2310.13576 with 2104.08663"],
+                    "problems": [],
+                    "constraints": [],
+                    "requirements": [],
+                }
+            )
+        )
+
+        buckets = segment_query(
+            client, "compare arXiv 2310.13576 with 2104.08663 on Sachs", trace_ctx=self.ctx
+        )
+
+        self.assertEqual(buckets["constraints"], [])
+        self.assertEqual(format_query(buckets).count("2310.13576"), 1)
+
+    def test_no_identifier_leaves_the_buckets_alone(self) -> None:
+        client = FakeClient(good_json())
+
+        buckets = segment_query(
+            client, "why is X slow? 3.1 percent of the time", trace_ctx=self.ctx
+        )
+
+        self.assertEqual(buckets["constraints"], ["bounded token budget"])
+
 
 class WriteQueryJsonTest(unittest.TestCase):
     def test_writes_utf8_json_round_trip(self) -> None:

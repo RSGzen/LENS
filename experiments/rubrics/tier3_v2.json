@@ -1,0 +1,13 @@
+{
+  "version": "tier3_v2",
+  "frozen": "2026-11-10",
+  "supersedes": "tier3_v1",
+  "verdicts": ["pass", "fail", "unknown"],
+  "note": "v2 judges coverage against the gold items supplied in the prompt. v1 judged it against the question alone, so a judge and a human reading the gold were not answering the same question and their agreement on that facet was not interpretable.",
+  "facets": {
+    "coverage": "pass if the answer states every gold item listed above, in substance; fail if it omits any of them, or answers a narrower or different question; unknown if the answer contains no factual claim to check",
+    "grounding": "pass if every factual claim carries a citation that the answer presents as a resolvable id or paper reference; fail if any factual claim has no citation, or cites something that does not support it; unknown if the answer contains no factual claims",
+    "scope_honesty": "pass if the answer states what it inspected and, where evidence was missing, describes that absence as limited to what was inspected; fail if it asserts a global absence, or implies it read material it did not; unknown if the answer makes no claim about scope",
+    "usability": "pass if the answer reads as a synthesis a reviewer could act on, in prose with per-claim citations; fail if it is a raw dump, tool narration, or a list of ids without claims; unknown if the answer is empty"
+  }
+}

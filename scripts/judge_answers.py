@@ -7,7 +7,7 @@ directory so its spend cannot be confused with a query's spend.
 Facets are binary and come from a frozen rubric file, because a 1-5 scale agrees
 poorly between raters and cannot be checked against a human sample:
 
-    coverage        names what a domain reader expects for this query
+    coverage        names the gold items the instance lists
     grounding       every factual claim carries a citation that resolves
     scope_honesty   states what was inspected; no global negative from a local look
     usability       reads as a synthesis a reviewer could act on
@@ -15,11 +15,16 @@ poorly between raters and cannot be checked against a human sample:
 An unparseable reply is recorded as ``unknown`` with the raw text as the reason —
 never converted to ``fail``, which would turn a schema drift into a quality drop.
 
+The campaign CSV carries a ``query_id`` but **no question text**, so the instrument
+file is what supplies both the question and the gold. Without it the judge would
+grade an answer against the string ``i5-f1-pope``.
+
 Usage::
 
-    python scripts/judge_answers.py --campaign campaign.csv --rubric rubric.json
-    python scripts/judge_answers.py --campaign campaign.csv --rubric rubric.json \
-        --arms rlm-full naive-flat --seed 7
+    python scripts/judge_answers.py --campaign campaign.csv \
+        --instrument experiments/instruments/i5-gold-v1.jsonl \
+        --rubric experiments/rubrics/tier3_v2.json
+    python scripts/judge_answers.py ... --arms a0 a2 --seed 7
 """
 
 from __future__ import annotations
@@ -44,7 +49,8 @@ SYSTEM_PROMPT = """\
 You grade one literature-evidence answer against a fixed rubric.
 
 Rules
-- Judge only what the answer says, against the question.
+- Judge the answer against the question and, where gold items are supplied, against
+  those items. Do not judge the search that produced it.
 - A claim without a resolvable citation fails grounding, even when it is true.
 - An answer that says it could not support something, and says what it inspected,
   passes scope honesty. An answer that states a global absence from a partial look
@@ -67,6 +73,35 @@ def load_rubric(path: str | Path) -> dict[str, Any]:
     return rubric
 
 
+def load_instrument(path: str | Path) -> dict[str, dict[str, Any]]:
+    """Return ``{instance_id: {"query": text, "gold": [claim values]}}``.
+
+    One JSON object per line; a blank line is skipped. The gold values are what the
+    coverage facet is judged against, so a missing one is a hole in the prompt, not
+    a missing answer.
+    """
+    instances: dict[str, dict[str, Any]] = {}
+
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+
+        row = json.loads(line)
+        instance_id = str(row.get("instance_id") or "")
+
+        if not instance_id:
+            continue
+
+        claims = (row.get("gold") or {}).get("claims") or []
+
+        instances[instance_id] = {
+            "query": str(row.get("query") or ""),
+            "gold": [str(claim.get("value") or "") for claim in claims if claim.get("value")],
+        }
+
+    return instances
+
+
 def read_answer(run_id: str) -> str | None:
     """Return the answer text for a run, or ``None`` when it is missing."""
     path = runstore.runs_root() / run_id / "answer.md"
@@ -82,12 +117,24 @@ def read_answer(run_id: str) -> str | None:
     return text.strip()[:MAX_ANSWER_CHARS]
 
 
-def user_prompt(question: str, answer: str, rubric: Mapping[str, Any]) -> str:
-    """Build the grading request: question, answer, then the facet definitions."""
+def user_prompt(
+    question: str,
+    answer: str,
+    rubric: Mapping[str, Any],
+    gold: Sequence[str] = (),
+) -> str:
+    """Build the grading request: question, gold, answer, then the facet definitions."""
     facets = "\n".join(f"- {name}: {text}" for name, text in rubric["facets"].items())
+    gold_block = ""
+
+    if gold:
+        gold_block = (
+            "Gold items (for coverage)\n" + "\n".join(f"- {item}" for item in gold) + "\n\n"
+        )
 
     return (
         f"Question\n{question}\n\n"
+        f"{gold_block}"
         f"Answer\n{answer}\n\n"
         f"Facets\n{facets}\n\n"
         "Return the JSON object described in the instructions."
@@ -122,6 +169,7 @@ def judge_rows(
     *,
     client: LensClient,
     answers: Any = read_answer,
+    instances: Mapping[str, Mapping[str, Any]] | None = None,
     seed: int = 7,
 ) -> list[dict[str, Any]]:
     """Grade every campaign row that has an answer; order is shuffled by ``seed``.
@@ -141,6 +189,10 @@ def judge_rows(
         if answer is None:
             continue
 
+        query_id = row.get("query_id", "")
+        instance = (instances or {}).get(query_id) or {}
+        question = instance.get("query") or row.get("query") or query_id
+
         trace_ctx = TraceCtx(trace_id="judge", step_idx=len(results), actor="root")
         completion = client.chat(
             "root",
@@ -148,9 +200,7 @@ def judge_rows(
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": user_prompt(
-                        row.get("query") or row.get("query_id") or "", answer, rubric
-                    ),
+                    "content": user_prompt(question, answer, rubric, instance.get("gold") or ()),
                 },
             ],
             trace_ctx=trace_ctx,
@@ -165,7 +215,7 @@ def judge_rows(
             results.append(
                 {
                     "run_id": run_id,
-                    "query_id": row.get("query_id", ""),
+                    "query_id": query_id,
                     "facet": facet,
                     "verdict": verdicts[facet],
                     "raw": completion.text[:400] if verdicts[facet] == "unknown" else "",
@@ -201,6 +251,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Blind LLM judge for one campaign.")
     parser.add_argument("--campaign", required=True, help="campaign.csv from the runner")
     parser.add_argument("--rubric", required=True, help="rubric JSON")
+    parser.add_argument(
+        "--instrument",
+        default=None,
+        help="instrument JSONL: supplies the question text and the gold items",
+    )
     parser.add_argument("--arms", nargs="*", default=None, help="only these campaign arms")
     parser.add_argument("--seed", type=int, default=7, help="shuffle seed (blinding)")
     parser.add_argument("--out", default=None, help="write judge.csv here")
@@ -208,6 +263,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     rubric = load_rubric(args.rubric)
+    instances = load_instrument(args.instrument) if args.instrument else {}
 
     with Path(args.campaign).open(encoding="utf-8", newline="") as handle:
         rows = [row for row in csv.DictReader(handle)]
@@ -215,6 +271,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.arms:
         wanted = set(args.arms)
         rows = [row for row in rows if (row.get("campaign_arm") or "") in wanted]
+
+    if not instances:
+        print(
+            "warning: no --instrument, so each answer is graded against its query_id",
+            file=sys.stderr,
+        )
 
     if args.dry_run:
         print(f"would judge {len(rows)} answers; facets {sorted(rubric['facets'])}")
@@ -224,7 +286,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     trajectory = Trajectory(run_id=f"judge-{stamp}")
     client = LensClient(trajectory=trajectory)
 
-    judgements = judge_rows(rows, rubric, client=client, seed=args.seed)
+    judgements = judge_rows(rows, rubric, client=client, instances=instances, seed=args.seed)
     sys.stdout.write(write_rows(judgements, args.out))
     print(f"judge calls logged in {trajectory.run_dir}", file=sys.stderr)
 
