@@ -430,7 +430,14 @@ class Runtime:
         return records, dropped
 
     def _flat_answer(self, chunks: list[dict[str, Any]]) -> str:
-        """One root call over the inline evidence; return the completion text."""
+        """One root call over the inline evidence; return the completion text.
+
+        Each item carries its paper's arXiv identifier as well as its chunk id.
+        A question that names papers by identifier is otherwise unanswerable from
+        the text alone, and the RLM arm sees the identifier in the tool payload -
+        so leaving it out would make the baseline weaker than an ordinary RAG
+        prompt, which carries its source metadata.
+        """
         system_prompt = build_system_prompt(
             self.registry.manifest(),
             {},
@@ -438,7 +445,9 @@ class Runtime:
             variant="naive",
         )
         evidence = "\n\n".join(
-            f"[{row.get('chunk_uuid')}] {row.get('chunk_text') or ''}" for row in chunks
+            f"[{row.get('chunk_uuid')}] (arXiv:{row.get('arxiv_id') or '?'}) "
+            f"{row.get('chunk_text') or ''}"
+            for row in chunks
         )
         messages = [
             {"role": "system", "content": system_prompt},

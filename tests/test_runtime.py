@@ -1188,8 +1188,8 @@ class FlatBaselineTestCase(unittest.TestCase):
             """The whole funnel."""
             return {
                 "chunks": [
-                    {"chunk_uuid": "c1", "chunk_text": "alpha"},
-                    {"chunk_uuid": "c2", "chunk_text": "beta"},
+                    {"chunk_uuid": "c1", "arxiv_id": "2104.08663", "chunk_text": "alpha"},
+                    {"chunk_uuid": "c2", "arxiv_id": "2310.13576", "chunk_text": "beta"},
                 ],
                 "papers": {},
             }
@@ -1242,6 +1242,17 @@ class FlatBaselineTestCase(unittest.TestCase):
         self.assertNotIn("retrieval_funnel", messages[0]["content"])
         self.assertIn("alpha", messages[1]["content"])
         self.assertIn("beta", messages[1]["content"])
+
+    def test_each_evidence_item_carries_its_paper_identifier(self) -> None:
+        # A question that names papers by arXiv id is unanswerable from chunk text
+        # alone: the ids are the only handle on which paper is which, and the RLM
+        # arm sees them in the tool payload. Without this the baseline is weaker
+        # than an ordinary RAG prompt, which carries its source metadata.
+        self.runtime.run_flat()
+
+        evidence = self.client.chat_calls[-1]["messages"][1]["content"]
+        self.assertIn("[c1] (arXiv:2104.08663) alpha", evidence)
+        self.assertIn("[c2] (arXiv:2310.13576) beta", evidence)
 
     def test_an_over_size_chunk_is_dropped_and_counted(self) -> None:
         with patch.object(config, "FLAT_EVIDENCE_TOKEN_LIMIT", 1):
