@@ -1,0 +1,111 @@
+{
+  "name": "m11-w5-v22",
+  "repeats": 1,
+  "note": "I5, the corpus gold set: the in-domain H1 reading, both arms in corpus mode over the same funnel. The 18 instances are frozen in experiments/instruments/i5-gold-v1.jsonl (39 hand-verified claims); this cell carries the 14 non-subset instances, and m11-w5-subset.json carries the pre-registered four at n=3. The floor and direction are pre-registered in Eval D-22 before any answer is read (Evaluation.md 6.2, 9 W5). The arms mirror the W5b host arm so the A2 rows are the same environment, and W6 joins its ablations to these rows on query_id. Re-run on rig v22 because the flat evidence line now carries each item's arXiv identifier: a question that names papers by id was unanswerable from chunk text alone, which made the baseline weaker than an ordinary RAG prompt. New campaign name so no run id collides with the v20 wave, which stays as recorded history.",
+  "arms": [
+    {
+      "name": "a0",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
+      },
+      "note": "A0: flat RAG. The same segmentation and the same funnel, one chat call with the chunks inline, stop_reason=flat. No gate and no claim pass, so its grounding is scored offline through the same path as A2."
+    },
+    {
+      "name": "a2",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "0"
+      },
+      "note": "A2: the frozen treatment arm (F2+KG, sub reasoning low)."
+    }
+  ],
+  "queries": [
+    {
+      "id": "i5-f1-notes",
+      "expect": "answerable",
+      "text": "Of these eight causal-discovery papers - arXiv 2602.16435, 2602.09207, 2602.08629, 2602.04907, 2604.28087, 2604.27495, 2604.27167, 2604.27011 - how many compare against NOTEARS with a numeric result? Answer with one integer and cite the chunk that carries each number."
+    },
+    {
+      "id": "i5-f1-pope",
+      "expect": "answerable",
+      "text": "Of these eight vision-language hallucination papers - arXiv 2512.05546, 2511.16229, 2511.11182, 2510.10285, 2602.00559, 2601.22451, 2603.13251, 2602.01769 - how many report an absolute POPE score (F1 or accuracy, on any split)? Answer with one integer and cite the chunk that carries each score you counted."
+    },
+    {
+      "id": "i5-f1-sachs",
+      "expect": "answerable",
+      "text": "Of these eight causal-discovery papers - arXiv 2602.03353, 2512.24478, 2510.22031, 2508.12650, 2604.28087, 2604.27495, 2604.27167, 2604.27011 - how many report a numeric result on the Sachs dataset? Answer with one integer and cite the chunk that carries each number."
+    },
+    {
+      "id": "i5-f1-swebench",
+      "expect": "answerable",
+      "text": "Of these eight software-engineering agent papers - arXiv 2604.13120, 2604.11716, 2511.16004, 2509.25242, 2604.27264, 2604.27209, 2604.27006, 2604.25711 - how many report a resolve rate on SWE-bench Lite specifically? Answer with one integer and cite the chunk that carries each number."
+    },
+    {
+      "id": "i5-f2-03",
+      "expect": "answerable",
+      "text": "Among these three software-engineering agents, each reporting its own best single-attempt result on SWE-bench Verified - arXiv 2504.21798, 2506.19290, 2411.00622 - which reports the highest resolve rate, and what is it? Answer with the arXiv id and the percentage, and cite the chunk carrying the rate."
+    },
+    {
+      "id": "i5-f3-kvcache",
+      "expect": "answerable",
+      "text": "Which of these eight long-context papers - arXiv 2604.19769, 2603.25730, 2603.20586, 2603.08727, 2604.26375, 2604.24806, 2604.17535, 2604.17428 - discuss KV-cache compression or eviction in their own method? Answer with the sorted arXiv ids, comma-separated, and cite one chunk per paper you include."
+    },
+    {
+      "id": "i5-f3-mmmu",
+      "expect": "answerable",
+      "text": "Which of these eight vision-language papers - arXiv 2604.08539, 2510.11978, 2507.18576, 2510.02677, 2604.27953, 2604.28039, 2604.27928, 2604.27128 - report a numeric result on MMMU (any split, but not MMMU-Pro and not a list of benchmarks to be evaluated)? Answer with the sorted arXiv ids, comma-separated, and cite one chunk per paper you include."
+    },
+    {
+      "id": "i5-f3-rerank",
+      "expect": "answerable",
+      "text": "Which of these eight retrieval papers - arXiv 2604.25924, 2604.24594, 2604.24219, 2604.22722, 2604.27934, 2604.27591, 2604.27283, 2604.26841 - describe a reranking stage in their own pipeline? Answer with the sorted arXiv ids, comma-separated, and cite one chunk per paper you include."
+    },
+    {
+      "id": "i5-f4-02",
+      "expect": "answerable",
+      "text": "In arXiv 2405.15793, how many task instances does the full SWE-bench test set contain? Answer with the number and cite the chunk."
+    },
+    {
+      "id": "i5-f4-03",
+      "expect": "answerable",
+      "text": "In arXiv 2603.01048, what average monetary cost per fix does the paper report on SWE-bench Lite? Answer with the amount and cite the chunk."
+    },
+    {
+      "id": "i5-f4-04",
+      "expect": "answerable",
+      "text": "In arXiv 2505.12260, what nDCG@10 does LightRetriever-Qwen2.5-7b achieve on BEIR? Answer with the number and cite the chunk."
+    },
+    {
+      "id": "i5-f4-05",
+      "expect": "answerable",
+      "text": "In arXiv 2604.08539, what percentage does OpenVLThinkerV2 achieve on MMMU? Answer with the number and cite the chunk."
+    },
+    {
+      "id": "i5-f5-01",
+      "expect": "not-answerable",
+      "text": "In arXiv 2501.99999, what retrieval latency does the reported system achieve? Answer with the number and cite the chunk. If the paper is not in this corpus, say so and state the scope you checked."
+    },
+    {
+      "id": "i5-f5-02",
+      "expect": "not-answerable",
+      "text": "In arXiv 2505.12260, what learning rate does the paper report for training? Answer with the number and cite the chunk. If the paper does not state one, say so and name the sections you read."
+    }
+  ]
+}

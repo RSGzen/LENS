@@ -1,0 +1,61 @@
+{
+  "name": "m11-w5-v22-subset",
+  "repeats": 3,
+  "note": "I5 repeat subset at n=3: i5-f1-beir, i5-f2-01, i5-f3-instrument, i5-f4-01. pre-registered 9 Nov 2026 before any I5 answer existed: one instance per aggregation family (F1, F2, F3, F4), the first in sorted order; F5 is excluded because a negative control's gold holds no claims. Separate file because a campaign carries one repeats value; its purpose is the within-query run spread against the arm difference. Re-run on rig v22 because the flat evidence line now carries each item's arXiv identifier: a question that names papers by id was unanswerable from chunk text alone, which made the baseline weaker than an ordinary RAG prompt. New campaign name so no run id collides with the v20 wave, which stays as recorded history.",
+  "arms": [
+    {
+      "name": "a0",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
+      },
+      "note": "A0: flat RAG. The same segmentation and the same funnel, one chat call with the chunks inline, stop_reason=flat. No gate and no claim pass, so its grounding is scored offline through the same path as A2."
+    },
+    {
+      "name": "a2",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "full",
+        "LENS_SUB_CALLS": "1",
+        "LENS_SUB_EFFORT": "low",
+        "LENS_KG_ENABLED": "1",
+        "LENS_KG_PROMPT": "1",
+        "LENS_CONTEXT_FILES": "none",
+        "LENS_EXTRACT_HINT": "claims",
+        "LENS_RETRIEVAL_RULE": "refine",
+        "LENS_GATE": "1",
+        "LENS_SUB_TASK_WORKERS": "8",
+        "LENS_CLAIM_WORKERS": "4",
+        "LENS_SEGMENTATION": "host",
+        "LENS_RAW_QUERY": "0"
+      },
+      "note": "A2: the frozen treatment arm (F2+KG, sub reasoning low)."
+    }
+  ],
+  "queries": [
+    {
+      "id": "i5-f1-beir",
+      "expect": "answerable",
+      "text": "Of these eight retrieval papers - arXiv 2603.22587, 2603.20513, 2603.13301, 2602.16932, 2604.27934, 2604.27724, 2604.27591, 2604.27283 - how many report a numeric result on the BEIR benchmark? Answer with one integer and cite the chunk that carries each number."
+    },
+    {
+      "id": "i5-f2-01",
+      "expect": "answerable",
+      "text": "Among these three software-engineering agent papers - arXiv 2407.01489, 2404.05427, 2405.15793 - which reports the highest resolve rate on SWE-bench Lite, and what is the rate? Answer with the arXiv id and the percentage, and cite the chunk carrying the rate."
+    },
+    {
+      "id": "i5-f3-instrument",
+      "expect": "answerable",
+      "text": "Which of these eight papers - arXiv 2506.15758, 2509.20634, 2012.10141, 2510.20129, 2604.28087, 2604.27495, 2604.27007, 2604.26919 - use an instrumental-variable argument in their own method? Answer with the sorted arXiv ids, comma-separated, and cite one chunk per paper you include."
+    },
+    {
+      "id": "i5-f4-01",
+      "expect": "answerable",
+      "text": "In arXiv 2310.13576, what structural Hamming distance (SHD) does the method report on the Sachs dataset? Answer with the number and cite the chunk."
+    }
+  ]
+}
