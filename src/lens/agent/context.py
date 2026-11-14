@@ -319,6 +319,23 @@ Rules
 - Reply with the answer only: no preamble, no description of method.
 """
 
+#: Rules that only make sense when the evidence is a fixed record set: the records
+#: carry no class of their own, and the question may dictate the answer's form.
+#: Both document arms receive this block **verbatim**, so the bridge compares
+#: orchestration and not prompt wording.
+DOCUMENT_TASK_RULES = """\
+Fixed-evidence rules
+- The records do not carry their category. When the question asks about a class, a
+  count, or a comparison of classes, derive each record's class from its own text
+  first, and count what you derived. Do not answer from general knowledge about the
+  dataset.
+- The **last line** of your reply is the answer, in the form the question asks for,
+  and nothing follows it. Anything you want to say about scope, method or support
+  goes above that line. A parser reads the text after the final colon, so a sentence
+  after the answer destroys it.
+"""
+
+
 DOCUMENT_SYSTEM_PROMPT = """\
 You are the root RLM in a literature-evidence harness, working on a fixed document.
 
@@ -350,6 +367,8 @@ Query buckets (query.json)
 
 Budget (read-only)
 <<BUDGET_LIMITS>>
+
+<<DOC_TASK_RULES>>
 
 Output contract
 1. Reply with exactly one fenced ```python block per turn, or with a final answer.
@@ -464,7 +483,14 @@ def build_system_prompt(
         .replace("<<WORKSPACE>>", config.SANDBOX_WORKSPACE_PATH.rstrip("/"))
         .replace("<<QUESTION>>", question or "(not provided)")
         .replace("<<RETRIEVAL_RULE>>", _RETRIEVAL_RULES[config.RETRIEVAL_RULE])
+        .replace("<<DOC_TASK_RULES>>", DOCUMENT_TASK_RULES)
     )
+
+    # The flat arm's template is shared with the corpus baseline, so the block is
+    # appended here rather than written into the template: only a document run
+    # needs it, and a corpus run must not see it.
+    if config.EVIDENCE_SOURCE == "document" and chosen == "naive":
+        prompt = f"{prompt}\n\n{DOCUMENT_TASK_RULES}"
 
     if "<<" in prompt or ">>" in prompt:
         raise ValueError("unfilled placeholder in the system prompt")

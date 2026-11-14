@@ -432,3 +432,50 @@ class ThinPromptTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DocumentTaskRulesTest(unittest.TestCase):
+    """The bridge's two task rules must reach both arms and only in document mode."""
+
+    LIMITS = {"iterations": 10, "tokens": 382025, "cost_usd": 0.5}
+
+    def test_the_document_prompt_carries_the_rules(self) -> None:
+        prompt = context.build_system_prompt(
+            "1. (no retrieval)", {"objectives": ["x"]}, self.LIMITS, variant="document"
+        )
+
+        self.assertIn("Fixed-evidence rules", prompt)
+        self.assertIn("derive each record's class", prompt)
+        self.assertIn("nothing follows it", prompt)
+
+    def test_a_corpus_naive_prompt_does_not_carry_them(self) -> None:
+        # The naive template is shared by the corpus baseline; adding the block
+        # there would change what the I5 arm was measured with.
+        with patch.object(config, "EVIDENCE_SOURCE", "corpus"):
+            prompt = context.build_system_prompt(
+                "1. shallow_match", {}, self.LIMITS, variant="naive"
+            )
+
+        self.assertNotIn("Fixed-evidence rules", prompt)
+
+    def test_the_flat_document_arm_gets_them_appended(self) -> None:
+        with patch.object(config, "EVIDENCE_SOURCE", "document"):
+            prompt = context.build_system_prompt(
+                "1. (no retrieval)", {}, self.LIMITS, variant="naive"
+            )
+
+        self.assertIn("Fixed-evidence rules", prompt)
+        self.assertIn("derive each record's class", prompt)
+
+    def test_both_arms_see_the_same_block(self) -> None:
+        with patch.object(config, "EVIDENCE_SOURCE", "document"):
+            flat = context.build_system_prompt("1. (none)", {}, self.LIMITS, variant="naive")
+
+        document = context.build_system_prompt("1. (none)", {}, self.LIMITS, variant="document")
+
+        self.assertIn(context.DOCUMENT_TASK_RULES, flat)
+        self.assertIn(context.DOCUMENT_TASK_RULES, document)
+
+
+if __name__ == "__main__":
+    unittest.main()

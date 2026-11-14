@@ -1,0 +1,67 @@
+{
+  "name": "m11-w3-dry2",
+  "repeats": 1,
+  "note": "Dry check 2 after the fixed-evidence rules were added to both document prompts. Four instances spanning LABEL, COMPARISON, NUMERIC and USER, both arms, **unrecorded**. Its job is to see whether the rules move the arms off zero, and whether the answer form is now obeyed. Two of the four are the same instances as dry check 1, so the comparison is pairwise.",
+  "arms": [
+    {
+      "name": "a0-doc",
+      "env": {
+        "LENS_RECORDED": "0",
+        "LENS_EVIDENCE": "document",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
+      },
+      "note": "A0-doc: the whole document in one prompt, one call. No loop, no tools."
+    },
+    {
+      "name": "a2-doc",
+      "env": {
+        "LENS_RECORDED": "0",
+        "LENS_EVIDENCE": "document",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "document",
+        "LENS_SUB_CALLS": "0",
+        "LENS_KG_ENABLED": "0",
+        "LENS_KG_PROMPT": "0",
+        "LENS_GATE": "1"
+      },
+      "note": "A2-doc: REPL over the same file. Sub-calls are 0 because the document prompt advertises no sub-task and sub_extract hydrates ids from the database, so the route would be a capability the run cannot use. The final gate and the claim pass are skipped in document mode and the skip is logged."
+    }
+  ],
+  "queries": [
+    {
+      "id": "oolong-tc-17000206",
+      "expect": "answerable",
+      "text": "In the above data, which of the labels is the least common? Give your final answer in the form 'Label: answer' where answer is one of the labels: numeric value, entity, human being, location, abbreviation, description and abstract concept.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000207",
+      "expect": "answerable",
+      "text": "In the above data, is label 'numeric value' more common, less common, or the same frequency as label 'entity'? Give your final answer in the form 'Answer: numeric value is [X] entity', where [X] is 'more common than', 'less common than', or 'same frequency as'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000222",
+      "expect": "answerable",
+      "text": "In the above data, how many data points should be classified as label 'description and abstract concept'? Give your final answer in the form 'Answer: number'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-8.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000228",
+      "expect": "answerable",
+      "text": "In the above data, which user is represented most often? Give your final answer in the form 'User: [X]', where [X] is the user ID.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-8.jsonl"
+      }
+    }
+  ]
+}
