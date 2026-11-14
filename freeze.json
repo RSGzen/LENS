@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-11-13T15:24:51+00:00",
-  "commit": "8b666b6e80c559188d6fb736b9c8447fbd83b1a0",
+  "created_at": "2026-11-14T13:41:01+00:00",
+  "commit": "d0d3be04bafcec728195abd60b1787ea6c78c9bc",
   "branch": "main",
   "git_dirty": false,
   "models": {
@@ -83,6 +83,9 @@
   "instruments": {
     "compound-v1.jsonl": "6b7438f8693f4d61c9ab7b71e3810c1fb98050e4e7402b3c2bd3a5ac9558b6a8",
     "i5-gold-v1.jsonl": "a4f6276e25f4bd2c0246aa7524cf5b37a1c103ca18722ee38c93736920853259",
+    "oolong-bridge-50.jsonl": "998e95d5b7f6e270d7a0ce53915929e366b5fd58acdbf203c98647786c06fc71",
+    "oolong-ctx-6.jsonl": "9b916ac59a6120b71d9959ed7469189ed00c8adbc2d3cfae24602969d4c10ff5",
+    "oolong-ctx-8.jsonl": "8a54015595a89268a061eb72a64c348702f3e701e22a39aceafdd389c4fb04fd",
     "pilot-qrels-aggregation.json": "3b5a1c87f304ba21be611916b805486b04bdc043fc01dc9c4fd0be116f1e73a7",
     "qrels-rubric-v1.md": "fc58c924ef399ce727ff160f6540b72054b4bde511711d80c91767e857ebff34",
     "qrels-v1.csv": "59fa0ac3d7f8cc6b8a65c3064e971c91880a97ac2bc2e21fd3ff0089a6afdce9",
