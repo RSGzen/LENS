@@ -1,0 +1,115 @@
+{
+  "name": "m11-w3-subset",
+  "repeats": 3,
+  "note": "I1 repeat subset at n=3: every fifth instance in sorted id order, 10 of 50, both arms. Its purpose is the run-to-run spread of exact match on a task with a short answer, which the single-run bridge cannot estimate.",
+  "arms": [
+    {
+      "name": "a0-doc",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_EVIDENCE": "document",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
+      },
+      "note": "A0-doc: the whole document in one prompt, one call. No loop, no tools."
+    },
+    {
+      "name": "a2-doc",
+      "env": {
+        "LENS_RECORDED": "1",
+        "LENS_EVIDENCE": "document",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "document",
+        "LENS_SUB_CALLS": "0",
+        "LENS_KG_ENABLED": "0",
+        "LENS_KG_PROMPT": "0",
+        "LENS_GATE": "1"
+      },
+      "note": "A2-doc: REPL over the same file. Sub-calls are 0 because the document prompt advertises no sub-task and sub_extract hydrates ids from the database, so the route would be a capability the run cannot use. The final gate and the claim pass are skipped in document mode and the skip is logged."
+    }
+  ],
+  "queries": [
+    {
+      "id": "oolong-tc-17000210",
+      "expect": "answerable",
+      "text": "In the above data, is label 'description and abstract concept' more common, less common, or the same frequency as label 'entity'? Give your final answer in the form 'Answer: description and abstract concept is [X] entity', where [X] is 'more common than', 'less common than', or 'same frequency as'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-8.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000215",
+      "expect": "answerable",
+      "text": "In the above data, is label 'entity' more common, less common, or the same frequency as label 'location'? Give your final answer in the form 'Answer: entity is [X] location', where [X] is 'more common than', 'less common than', or 'same frequency as'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-8.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000220",
+      "expect": "answerable",
+      "text": "In the above data, is label 'numeric value' more common, less common, or the same frequency as label 'location'? Give your final answer in the form 'Answer: numeric value is [X] location', where [X] is 'more common than', 'less common than', or 'same frequency as'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-8.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000225",
+      "expect": "answerable",
+      "text": "In the above data, how many data points should be classified as label 'numeric value'? Give your final answer in the form 'Answer: number'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-8.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000230",
+      "expect": "answerable",
+      "text": "For the following question, only consider the subset of instances that are associated with user IDs 88370. Among instances associated with these users, which of the labels is the least common? Give your final answer in the form 'Label: answer' where answer is one of the labels: entity, human being, location, numeric value, abbreviation, description and abstract concept.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-8.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000235",
+      "expect": "answerable",
+      "text": "In the above data, is label 'numeric value' more common, less common, or the same frequency as label 'abbreviation'? Give your final answer in the form 'Answer: numeric value is [X] abbreviation', where [X] is 'more common than', 'less common than', or 'same frequency as'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000240",
+      "expect": "answerable",
+      "text": "In the above data, how many data points should be classified as label 'human being'? Give your final answer in the form 'Answer: number'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000245",
+      "expect": "answerable",
+      "text": "For the following question, only consider the subset of instances that are associated with user IDs 77083. Among instances associated with these users, which of the labels is the most common? Give your final answer in the form 'Label: answer' where answer is one of the labels: entity, numeric value, abbreviation, description and abstract concept, human being, location.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000250",
+      "expect": "answerable",
+      "text": "For the following question, only consider the subset of instances that are associated with user IDs 77083. Among instances associated with these users, is label 'entity' more common, less common, or the same frequency as label 'human being'? Give your final answer in the form 'Answer: entity is [X] human being', where [X] is 'more common than', 'less common than', or 'same frequency as'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000255",
+      "expect": "answerable",
+      "text": "For the following question, only consider the subset of instances that are associated with user IDs 77083. Among instances associated with these users, is label 'numeric value' more common, less common, or the same frequency as label 'location'? Give your final answer in the form 'Answer: numeric value is [X] location', where [X] is 'more common than', 'less common than', or 'same frequency as'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    }
+  ]
+}

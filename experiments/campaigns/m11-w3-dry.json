@@ -1,0 +1,51 @@
+{
+  "name": "m11-w3-dry",
+  "repeats": 1,
+  "note": "Dry check for the OOLONG bridge: two instances, both arms, **unrecorded**. Its job is to prove the document loads in both prompts, that the flat arm drops no record, and that the answer reaches the release's parser - not to measure anything.",
+  "arms": [
+    {
+      "name": "a0-doc",
+      "env": {
+        "LENS_RECORDED": "0",
+        "LENS_EVIDENCE": "document",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0"
+      },
+      "note": "A0-doc: the whole document in one prompt, one call. No loop, no tools."
+    },
+    {
+      "name": "a2-doc",
+      "env": {
+        "LENS_RECORDED": "0",
+        "LENS_EVIDENCE": "document",
+        "LENS_MODE": "rlm",
+        "LENS_PROMPT_VARIANT": "document",
+        "LENS_SUB_CALLS": "0",
+        "LENS_KG_ENABLED": "0",
+        "LENS_KG_PROMPT": "0",
+        "LENS_GATE": "1"
+      },
+      "note": "A2-doc: REPL over the same file. Sub-calls are 0 because the document prompt advertises no sub-task and sub_extract hydrates ids from the database, so the route would be a capability the run cannot use. The final gate and the claim pass are skipped in document mode and the skip is logged."
+    }
+  ],
+  "queries": [
+    {
+      "id": "oolong-tc-17000206",
+      "expect": "answerable",
+      "text": "In the above data, which of the labels is the least common? Give your final answer in the form 'Label: answer' where answer is one of the labels: numeric value, entity, human being, location, abbreviation, description and abstract concept.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    },
+    {
+      "id": "oolong-tc-17000207",
+      "expect": "answerable",
+      "text": "In the above data, is label 'numeric value' more common, less common, or the same frequency as label 'entity'? Give your final answer in the form 'Answer: numeric value is [X] entity', where [X] is 'more common than', 'less common than', or 'same frequency as'.",
+      "env": {
+        "LENS_DOCUMENTS": "D:\\lens\\experiments\\instruments\\oolong-ctx-6.jsonl"
+      }
+    }
+  ]
+}

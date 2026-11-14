@@ -6,10 +6,18 @@
     {
       "id": "w3",
       "campaign": "experiments/campaigns/m11-w3.json",
-      "expect": 100,
+      "expect": 80,
       "checkpoint_usd": 30,
       "stop_after": true,
-      "note": "W3 bridge (I1), document mode, mechanism only. 50 instances x 2 arms. The campaign file is still a one-instance placeholder, so this cell expands to 2 and refuses to start: the converter must write the instance file and the per-instance LENS_DOCUMENTS before the count matches. The 10-instance subset at n=3 is its own campaign, not this cell."
+      "note": "W3 bridge (I1), document mode, mechanism only. **40 non-subset instances x 2 arms = 80** on the release's validation split, which is the only split carrying trec_coarse; the 10-instance subset at n=3 is its own cell. Two documents are shared by the 50 instances. May not support a claim about retrieval, citations, the gate or the corpus."
+    },
+    {
+      "id": "w3-subset",
+      "campaign": "experiments/campaigns/m11-w3-subset.json",
+      "expect": 60,
+      "checkpoint_usd": 30,
+      "stop_after": true,
+      "note": "W3 pre-registered subset: every fifth instance in sorted id order, 10 of 50, both arms at n=3 = 60 runs. Its purpose is the run-to-run spread of exact match on a task with a short answer."
     },
     {
       "id": "w4",
