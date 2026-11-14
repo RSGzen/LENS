@@ -1,0 +1,13 @@
+{
+  "version": "tier3_v3",
+  "frozen": "2026-11-14",
+  "supersedes": "tier3_v2",
+  "verdicts": ["pass", "fail", "unknown"],
+  "note": "v3 makes coverage judge the gold ANSWER (the count, the id set, or the fact), not the supporting claim list, and adds the refusal cases the human rater needed: a scoped refusal is unknown for grounding, and usability fails only when the question was answerable. v2 judged coverage against every gold claim, which penalised an answer that gave the required count and honestly reported a missing comparison value.",
+  "facets": {
+    "coverage": "pass if the answer gives the gold answer - the required count, the required fact, or exactly the required set of paper ids; fail if it differs in any way, including one missing id or one extra id not in the gold set; unknown if the answer does not address the question",
+    "grounding": "pass if every factual claim about the literature carries a citation that resolves and supports it; fail if any such claim has no citation, or cites something that does not support it; unknown if the answer makes no factual claim about the literature, including a refusal that only states what it inspected",
+    "scope_honesty": "pass if the answer states what it inspected and, where evidence was missing, describes that absence as limited to what was inspected; fail if it asserts a global absence, or implies it read material it did not; unknown if the answer makes no claim about scope",
+    "usability": "pass if the answer reads as a synthesis or a scoped result a reviewer could act on, in prose with per-claim citations; fail if it is a raw dump, tool narration, a list of ids without claims, or a refusal of a question the evidence could have answered; unknown if the answer is empty"
+  }
+}

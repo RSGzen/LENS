@@ -79,11 +79,12 @@ def load_rubric(path: str | Path) -> dict[str, Any]:
 
 
 def load_instrument(path: str | Path) -> dict[str, dict[str, Any]]:
-    """Return ``{instance_id: {"query": text, "gold": [claim values]}}``.
+    """Return ``{instance_id: {"query", "answer", "gold"}}`` for the judge.
 
-    One JSON object per line; a blank line is skipped. The gold values are what the
-    coverage facet is judged against, so a missing one is a hole in the prompt, not
-    a missing answer.
+    ``answer`` is what coverage is judged against (a count, a fact, or the id set),
+    and ``gold`` is the supporting claim list. They are different on purpose: an
+    instance can require the count while also listing comparison values that a
+    correct answer may legitimately not contain.
     """
     instances: dict[str, dict[str, Any]] = {}
 
@@ -97,10 +98,12 @@ def load_instrument(path: str | Path) -> dict[str, dict[str, Any]]:
         if not instance_id:
             continue
 
-        claims = (row.get("gold") or {}).get("claims") or []
+        gold_block = row.get("gold") or {}
+        claims = gold_block.get("claims") or []
 
         instances[instance_id] = {
             "query": str(row.get("query") or ""),
+            "answer": str(gold_block.get("answer") or ""),
             "gold": [str(claim.get("value") or "") for claim in claims if claim.get("value")],
         }
 
@@ -127,14 +130,19 @@ def user_prompt(
     answer: str,
     rubric: Mapping[str, Any],
     gold: Sequence[str] = (),
+    required: str = "",
 ) -> str:
-    """Build the grading request: question, gold, answer, then the facet definitions."""
+    """Build the grading request: question, gold answer, supporting items, answer, facets."""
     facets = "\n".join(f"- {name}: {text}" for name, text in rubric["facets"].items())
     gold_block = ""
 
+    if required:
+        gold_block += f"Gold answer (what coverage must see)\n{required}\n\n"
+
     if gold:
-        gold_block = (
-            "Gold items (for coverage)\n" + "\n".join(f"- {item}" for item in gold) + "\n\n"
+        gold_block += (
+            "Supporting items (the gold claims behind that answer; an answer is not "
+            "required to repeat all of them)\n" + "\n".join(f"- {item}" for item in gold) + "\n\n"
         )
 
     return (
@@ -205,7 +213,13 @@ def judge_rows(
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": user_prompt(question, answer, rubric, instance.get("gold") or ()),
+                    "content": user_prompt(
+                        question,
+                        answer,
+                        rubric,
+                        instance.get("gold") or (),
+                        instance.get("answer") or "",
+                    ),
                 },
             ],
             trace_ctx=trace_ctx,

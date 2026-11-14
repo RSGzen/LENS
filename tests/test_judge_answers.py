@@ -78,16 +78,25 @@ class LoadInstrumentTest(unittest.TestCase):
 
 
 class UserPromptTest(unittest.TestCase):
-    def test_gold_items_appear_under_their_own_heading(self) -> None:
-        prompt = judge_answers.user_prompt("Q?", "A.", RUBRIC, ["10.6"])
+    def test_gold_answer_heads_the_block(self) -> None:
+        prompt = judge_answers.user_prompt("Q?", "A.", RUBRIC, ["10.6"], "10.6")
 
-        self.assertIn("Gold items (for coverage)\n- 10.6", prompt)
-        self.assertIn("Question\nQ?", prompt)
+        self.assertIn("Gold answer (what coverage must see)\n10.6", prompt)
+        self.assertIn("Supporting items", prompt)
+
+    def test_supporting_items_are_not_the_required_answer(self) -> None:
+        # Coverage is judged against the answer; an instance may also list comparison
+        # values that a correct answer does not have to repeat.
+        prompt = judge_answers.user_prompt("Q?", "A.", RUBRIC, ["10.6", "8.2"], "10.6")
+
+        self.assertIn("- 8.2", prompt)
+        self.assertIn("not required to repeat all of them", prompt)
 
     def test_no_gold_leaves_no_heading(self) -> None:
         prompt = judge_answers.user_prompt("Q?", "A.", RUBRIC)
 
-        self.assertNotIn("Gold items", prompt)
+        self.assertNotIn("Gold answer", prompt)
+        self.assertNotIn("Supporting items", prompt)
 
 
 class JudgeRowsTest(unittest.TestCase):
