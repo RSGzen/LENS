@@ -1,4 +1,12 @@
-"""Score a W3 campaign with the release's own scorer and write `scores.csv`."""
+"""Score a W3 campaign with the release's own scorer and write `scores.csv`.
+
+An empty answer or a failed run is **excluded, never scored zero** (`Eval D-31`):
+a 93k-token prompt can push the flat arm to `finish_reason=length` with no visible
+text, and counting that as a wrong answer would report a harness property as a
+capability result. The per-task-type summary is what the bridge reports, because
+the numeric instances ask for an exact count among ~3,182 records and a flat arm
+that forfeits them cannot be read as a single blended mean.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +14,7 @@ import argparse
 import csv
 import json
 from pathlib import Path
+from typing import Any, Mapping, Sequence
 
 from lens.agent import runstore
 
@@ -22,6 +31,36 @@ def read_answer(run_id: str) -> str:
     text = path.read_text(encoding="utf-8")
 
     return text.rsplit(SENTINEL, 1)[1].strip() if SENTINEL in text else text.strip()
+
+
+def usable(status: str, stop_reason: str, answer: str) -> bool:
+    """Return whether a run may enter an arm mean at all."""
+    return bool(answer.strip()) and status != "failed" and stop_reason != "error"
+
+
+def summarise(
+    rows: Sequence[Mapping[str, Any]], answer_type_by_id: Mapping[str, str]
+) -> dict[str, Any]:
+    """Return per-arm and per-type means over the usable rows only."""
+    by_arm: dict[str, list[float]] = {}
+    by_type: dict[str, list[float]] = {}
+    excluded = 0
+
+    for row in rows:
+        if not row["usable"]:
+            excluded += 1
+            continue
+        by_arm.setdefault(row["arm"], []).append(float(row["score"]))
+        answer_type = answer_type_by_id.get(row["instance_id"], "?")
+        by_type.setdefault(answer_type, []).append(float(row["score"]))
+
+    return {
+        "arms": {arm: (len(scores), sum(scores) / len(scores)) for arm, scores in by_arm.items()},
+        "types": {
+            kind: (len(scores), sum(scores) / len(scores)) for kind, scores in by_type.items()
+        },
+        "excluded": excluded,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,10 +81,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     }
 
-    rows = list(csv.DictReader(open(args.campaign, encoding="utf-8")))
-    out_rows: list[dict] = []
+    out_rows: list[dict[str, Any]] = []
 
-    for row in rows:
+    for row in csv.DictReader(open(args.campaign, encoding="utf-8")):
         instance = instances.get(row["query_id"])
 
         if instance is None:
@@ -67,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
                 "run_id": row["run_id"],
                 "arm": row["campaign_arm"],
                 "instance_id": instance["instance_id"],
+                "answer_type": instance.get("answer_type", ""),
                 "score": scored["score"],
                 "attempted_parse": scored["attempted_parse"],
                 "parse_confidence": scored["parse_confidence"],
@@ -74,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
                 "status": row["status"],
                 "run_status": row["stop_reason"] or "answer",
                 "answer_chars": len(answer),
+                "usable": usable(row["status"], row["stop_reason"], answer),
             }
         )
 
@@ -82,11 +122,14 @@ def main(argv: list[str] | None = None) -> int:
         writer.writeheader()
         writer.writerows(out_rows)
 
-    by_arm: dict[str, list[float]] = {}
-    for row in out_rows:
-        by_arm.setdefault(row["arm"], []).append(float(row["score"]))
-    for arm, scores in sorted(by_arm.items()):
-        print(f"{arm}: {len(scores)} runs, mean score {sum(scores) / len(scores):.3f}")
+    summary = summarise(
+        out_rows, {key: value.get("answer_type", "") for key, value in instances.items()}
+    )
+    print(f"excluded (empty or broken): {summary['excluded']}")
+    for arm, (count, mean) in sorted(summary["arms"].items()):
+        print(f"  {arm}: {count} usable, mean score {mean:.3f}")
+    for kind, (count, mean) in sorted(summary["types"].items()):
+        print(f"  {kind}: {count} usable, mean {mean:.3f}")
 
     return 0
 
