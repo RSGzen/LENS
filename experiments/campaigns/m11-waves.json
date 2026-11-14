@@ -53,10 +53,10 @@
     {
       "id": "w6",
       "campaign": "experiments/campaigns/m11-w6.json",
-      "expect": 30,
+      "expect": 36,
       "checkpoint_usd": 50,
       "stop_after": true,
-      "note": "W6 ablations A3 (depth-0) and A5 (decision layer off). 15 I5 instances x 2 arms. The file is a 5-query placeholder and refuses to start until the I5 instances replace the list. The A2 reference rows are the W5 runs of the same queries, so the file carries no reference arm."
+      "note": "W6 ablations A3 (depth-0) and A5 (gate-off) over **all 18** I5 instances x 2 arms = 36 runs on rig v22. The A2 reference rows are W5's v22 runs of the same query_id. Only the depth-0 arm carries gate verdicts, so E4's population gains 18 answers from this cell, not 36."
     }
   ]
 }

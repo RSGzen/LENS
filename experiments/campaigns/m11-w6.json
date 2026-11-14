@@ -1,7 +1,7 @@
 {
   "name": "m11-w6",
   "repeats": 1,
-  "note": "Ablations A3 (depth-0) and A5 (decision layer off) against the A2 reference rows already recorded in W5, joined on query_id. A4 (no-KG), A6 (KG raw) and A7 (role filter off) are retired: the graph was built 3 times and traversed 0 times in 24 recorded runs, so those arms compared the system with itself (Evaluation.md revision 3, §4.1). The query list below is the W1 dev set and is replaced by 15 of the 22 I5 instances (seed-chosen) once experiments/instruments/i5-gold-v1.jsonl exists; the expect count in m11-waves.json describes the current list, not the wave.",
+  "note": "Ablations A3 (depth-0) and A5 (decision layer off) against the A2 reference rows already recorded in W5, joined on query_id. A4 (no-KG), A6 (KG raw) and A7 (role filter off) are retired: the graph was built 3 times and traversed 0 times in 24 recorded runs, so those arms compared the system with itself. The query list is all **18** I5 instances rather than the 15 the plan assumed, so no instance is excluded and the join with W5's A2 rows is exact. 18 x 2 = 36 runs.",
   "arms": [
     {
       "name": "depth0",
@@ -48,30 +48,94 @@
   ],
   "queries": [
     {
-      "id": "aggregation",
+      "id": "i5-f1-beir",
       "expect": "answerable",
-      "text": "Across the retrieved papers, what methods do recursive language model systems use to aggregate information that exceeds a single context window, and how do they differ in where the aggregation happens?",
-      "note": "Dev query, kept so the wave file stays runnable. Replaced by the 15 seeded I5 instances before W6 (Evaluation.md §9 W6)."
+      "text": "Of these eight retrieval papers - arXiv 2603.22587, 2603.20513, 2603.13301, 2602.16932, 2604.27934, 2604.27724, 2604.27591, 2604.27283 - how many report a numeric result on the BEIR benchmark? Answer with one integer and cite the chunk that carries each number."
     },
     {
-      "id": "single-fact",
+      "id": "i5-f1-notes",
       "expect": "answerable",
-      "text": "Which paper introduces the OOLONG long-context aggregation benchmark, and what task does its trec_coarse subset use?"
+      "text": "Of these eight causal-discovery papers - arXiv 2602.16435, 2602.09207, 2602.08629, 2602.04907, 2604.28087, 2604.27495, 2604.27167, 2604.27011 - how many compare against NOTEARS with a numeric result? Answer with one integer and cite the chunk that carries each number."
     },
     {
-      "id": "comparison",
+      "id": "i5-f1-pope",
       "expect": "answerable",
-      "text": "Compare how two of the retrieved systems bound the cost or runtime of their recursive calls."
+      "text": "Of these eight vision-language hallucination papers - arXiv 2512.05546, 2511.16229, 2511.11182, 2510.10285, 2602.00559, 2601.22451, 2603.13251, 2602.01769 - how many report an absolute POPE score (F1 or accuracy, on any split)? Answer with one integer and cite the chunk that carries each score you counted."
     },
     {
-      "id": "negative",
+      "id": "i5-f1-sachs",
+      "expect": "answerable",
+      "text": "Of these eight causal-discovery papers - arXiv 2602.03353, 2512.24478, 2510.22031, 2508.12650, 2604.28087, 2604.27495, 2604.27167, 2604.27011 - how many report a numeric result on the Sachs dataset? Answer with one integer and cite the chunk that carries each number."
+    },
+    {
+      "id": "i5-f1-swebench",
+      "expect": "answerable",
+      "text": "Of these eight software-engineering agent papers - arXiv 2604.13120, 2604.11716, 2511.16004, 2509.25242, 2604.27264, 2604.27209, 2604.27006, 2604.25711 - how many report a resolve rate on SWE-bench Lite specifically? Answer with one integer and cite the chunk that carries each number."
+    },
+    {
+      "id": "i5-f2-01",
+      "expect": "answerable",
+      "text": "Among these three software-engineering agent papers - arXiv 2407.01489, 2404.05427, 2405.15793 - which reports the highest resolve rate on SWE-bench Lite, and what is the rate? Answer with the arXiv id and the percentage, and cite the chunk carrying the rate."
+    },
+    {
+      "id": "i5-f2-03",
+      "expect": "answerable",
+      "text": "Among these three software-engineering agents, each reporting its own best single-attempt result on SWE-bench Verified - arXiv 2504.21798, 2506.19290, 2411.00622 - which reports the highest resolve rate, and what is it? Answer with the arXiv id and the percentage, and cite the chunk carrying the rate."
+    },
+    {
+      "id": "i5-f3-instrument",
+      "expect": "answerable",
+      "text": "Which of these eight papers - arXiv 2506.15758, 2509.20634, 2012.10141, 2510.20129, 2604.28087, 2604.27495, 2604.27007, 2604.26919 - use an instrumental-variable argument in their own method? Answer with the sorted arXiv ids, comma-separated, and cite one chunk per paper you include."
+    },
+    {
+      "id": "i5-f3-kvcache",
+      "expect": "answerable",
+      "text": "Which of these eight long-context papers - arXiv 2604.19769, 2603.25730, 2603.20586, 2603.08727, 2604.26375, 2604.24806, 2604.17535, 2604.17428 - discuss KV-cache compression or eviction in their own method? Answer with the sorted arXiv ids, comma-separated, and cite one chunk per paper you include."
+    },
+    {
+      "id": "i5-f3-mmmu",
+      "expect": "answerable",
+      "text": "Which of these eight vision-language papers - arXiv 2604.08539, 2510.11978, 2507.18576, 2510.02677, 2604.27953, 2604.28039, 2604.27928, 2604.27128 - report a numeric result on MMMU (any split, but not MMMU-Pro and not a list of benchmarks to be evaluated)? Answer with the sorted arXiv ids, comma-separated, and cite one chunk per paper you include."
+    },
+    {
+      "id": "i5-f3-rerank",
+      "expect": "answerable",
+      "text": "Which of these eight retrieval papers - arXiv 2604.25924, 2604.24594, 2604.24219, 2604.22722, 2604.27934, 2604.27591, 2604.27283, 2604.26841 - describe a reranking stage in their own pipeline? Answer with the sorted arXiv ids, comma-separated, and cite one chunk per paper you include."
+    },
+    {
+      "id": "i5-f4-01",
+      "expect": "answerable",
+      "text": "In arXiv 2310.13576, what structural Hamming distance (SHD) does the method report on the Sachs dataset? Answer with the number and cite the chunk."
+    },
+    {
+      "id": "i5-f4-02",
+      "expect": "answerable",
+      "text": "In arXiv 2405.15793, how many task instances does the full SWE-bench test set contain? Answer with the number and cite the chunk."
+    },
+    {
+      "id": "i5-f4-03",
+      "expect": "answerable",
+      "text": "In arXiv 2603.01048, what average monetary cost per fix does the paper report on SWE-bench Lite? Answer with the amount and cite the chunk."
+    },
+    {
+      "id": "i5-f4-04",
+      "expect": "answerable",
+      "text": "In arXiv 2505.12260, what nDCG@10 does LightRetriever-Qwen2.5-7b achieve on BEIR? Answer with the number and cite the chunk."
+    },
+    {
+      "id": "i5-f4-05",
+      "expect": "answerable",
+      "text": "In arXiv 2604.08539, what percentage does OpenVLThinkerV2 achieve on MMMU? Answer with the number and cite the chunk."
+    },
+    {
+      "id": "i5-f5-01",
       "expect": "not-answerable",
-      "text": "What ablations does the LENS harness itself report for its knowledge-graph verifier budget?"
+      "text": "In arXiv 2501.99999, what retrieval latency does the reported system achieve? Answer with the number and cite the chunk. If the paper is not in this corpus, say so and state the scope you checked."
     },
     {
-      "id": "compound",
-      "expect": "answerable",
-      "text": "I am reviewing long-context evidence synthesis for a literature review. Which approaches decompose the query before retrieval, what constraints do they place on the evidence they keep, and what do they report about faithfulness of the citations they produce?"
+      "id": "i5-f5-02",
+      "expect": "not-answerable",
+      "text": "In arXiv 2505.12260, what learning rate does the paper report for training? Answer with the number and cite the chunk. If the paper does not state one, say so and name the sections you read."
     }
   ]
 }
