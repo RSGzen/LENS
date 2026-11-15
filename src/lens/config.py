@@ -405,6 +405,13 @@ RUN_HEARTBEAT_STALE_S = float(os.environ.get("LENS_RUN_HEARTBEAT_STALE_S", "300"
 # use it -- those keep evidence in a sandbox variable and print a digest.
 FLAT_EVIDENCE_TOKEN_LIMIT = int(os.environ.get("LENS_FLAT_EVIDENCE_TOKENS", "40000"))
 
+# Preselected evidence for the flat arm: a JSONL file of
+# ``{"chunk_uuid", "arxiv_id", "chunk_text"}`` rows. Empty means the arm calls
+# the funnel, which is the baseline's normal path. It exists for the
+# coverage-matched arm: the same single call, handed the chunks a loop assembled,
+# so the comparison isolates the loop rather than the retrieval.
+FLAT_EVIDENCE_FILE = os.environ.get("LENS_FLAT_EVIDENCE_FILE", "")
+
 # Inline budget for the flat **document** arm. It is separate because the 40,000
 # corpus figure is a frozen baseline: raising it would change what the corpus
 # baseline sees. The document arm needs the whole file, so the default holds a

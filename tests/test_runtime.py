@@ -1243,6 +1243,57 @@ class FlatBaselineTestCase(unittest.TestCase):
         self.assertIn("alpha", messages[1]["content"])
         self.assertIn("beta", messages[1]["content"])
 
+    def test_a_preselected_evidence_file_replaces_the_funnel(self) -> None:
+        # The coverage-matched arm: one call over the chunks a loop assembled, so
+        # the only difference from the loop is that it cannot loop. Skipping the
+        # funnel is the point -- running it would hand the arm a different set.
+        path = Path(self._tmp.name) / "evidence.jsonl"
+        path.write_text(
+            json.dumps({"chunk_uuid": "c9", "arxiv_id": "2401.00001", "chunk_text": "gamma"})
+            + "\n",
+            encoding="utf-8",
+        )
+
+        with patch.object(config, "FLAT_EVIDENCE_FILE", str(path)):
+            self.runtime.run_flat()
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+        ]
+        tools = [event.get("tool") for event in events if event.get("action") == "tool.dispatch"]
+        evidence = self.client.chat_calls[-1]["messages"][1]["content"]
+
+        self.assertEqual(tools, [])
+        self.assertIn("[c9] (arXiv:2401.00001) gamma", evidence)
+        self.assertNotIn("alpha", evidence)
+
+    def test_a_preselected_file_is_truncated_by_the_same_budget(self) -> None:
+        path = Path(self._tmp.name) / "evidence.jsonl"
+        path.write_text(
+            "\n".join(
+                json.dumps({"chunk_uuid": f"c{i}", "arxiv_id": "2401.00001", "chunk_text": "word"})
+                for i in range(5)
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        with (
+            patch.object(config, "FLAT_EVIDENCE_FILE", str(path)),
+            patch.object(config, "FLAT_EVIDENCE_TOKEN_LIMIT", 1),
+        ):
+            self.runtime.run_flat()
+
+        events = [
+            json.loads(line)
+            for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()
+        ]
+        notes = [event["extra"]["text"] for event in events if event.get("call_type") == "note"]
+
+        self.assertTrue(any("dropped for size" in text for text in notes))
+        self.assertTrue(any("preselected" in text for text in notes))
+
     def test_each_evidence_item_carries_its_paper_identifier(self) -> None:
         # A question that names papers by arXiv id is unanswerable from chunk text
         # alone: the ids are the only handle on which paper is which, and the RLM
@@ -1257,7 +1308,6 @@ class FlatBaselineTestCase(unittest.TestCase):
     def test_an_over_size_chunk_is_dropped_and_counted(self) -> None:
         with patch.object(config, "FLAT_EVIDENCE_TOKEN_LIMIT", 1):
             self.runtime.run_flat()
-
         events = [
             json.loads(line)
             for line in self.trajectory.trajectory_path.read_text(encoding="utf-8").splitlines()

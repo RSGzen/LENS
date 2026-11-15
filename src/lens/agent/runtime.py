@@ -363,16 +363,26 @@ class Runtime:
         The same funnel call the RLM arm makes, so the baseline is handed the same
         evidence. A chunk that would push the prompt past the context limit is
         dropped **and counted** — never silently cut.
-        """
-        buckets = self._query_buckets or {"query": self.query}
 
-        bundle = self._dispatch_flat("retrieval_funnel", {"buckets": buckets})
+        When ``FLAT_EVIDENCE_FILE`` is set the funnel is skipped and the file is
+        the evidence set. That is the coverage-matched arm: one call, the chunks a
+        loop assembled, no loop. The budget applies either way, so a file larger
+        than the arm's budget is truncated and counted rather than cut silently.
+        """
+        if config.FLAT_EVIDENCE_FILE:
+            rows = self._read_evidence_file(Path(config.FLAT_EVIDENCE_FILE))
+            source = "preselected"
+        else:
+            buckets = self._query_buckets or {"query": self.query}
+            bundle = self._dispatch_flat("retrieval_funnel", {"buckets": buckets})
+            rows = bundle.get("chunks") or []
+            source = "funnel"
 
         chunks: list[dict[str, Any]] = []
         dropped = 0
         budget = config.FLAT_EVIDENCE_TOKEN_LIMIT
 
-        for row in bundle.get("chunks") or []:
+        for row in rows:
             cost = count_tokens(str(row.get("chunk_text") or "")) + 8
 
             if cost > budget:
@@ -382,9 +392,36 @@ class Runtime:
             budget -= cost
             chunks.append(row)
 
-        self._note(f"flat evidence: {len(chunks)} chunks, {dropped} dropped for size")
+        self._note(f"flat evidence ({source}): {len(chunks)} chunks, {dropped} dropped for size")
 
         return chunks, dropped
+
+    @staticmethod
+    def _read_evidence_file(path: Path) -> list[dict[str, Any]]:
+        """Load a preselected evidence set: one JSON object per line, in order."""
+        if not path.is_file():
+            raise FileNotFoundError(f"flat evidence file not found: {path}")
+
+        rows: list[dict[str, Any]] = []
+
+        with path.open(encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"{path}:{line_number} is not JSON: {exc}") from exc
+
+                if not isinstance(row, dict) or not row.get("chunk_uuid"):
+                    raise ValueError(f"{path}:{line_number} has no chunk_uuid")
+
+                rows.append(row)
+
+        return rows
 
     def _flat_document_evidence(self) -> tuple[list[dict[str, Any]], int]:
         """Return ``(records, dropped)`` for the flat document arm.

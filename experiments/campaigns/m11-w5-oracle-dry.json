@@ -1,0 +1,37 @@
+{
+  "name": "m11-w5-oracle-dry",
+  "repeats": 1,
+  "note": "Dry check for the coverage-matched arm: two instances, unrecorded, union evidence.",
+  "arms": [
+    {
+      "name": "a0-oracle",
+      "env": {
+        "LENS_RECORDED": "0",
+        "LENS_MODE": "naive",
+        "LENS_PROMPT_VARIANT": "naive",
+        "LENS_GATE": "0",
+        "LENS_SUB_CALLS": "0",
+        "LENS_FLAT_EVIDENCE_TOKENS": "160000"
+      },
+      "note": "A0-oracle: the flat prompt, handed a preselected evidence set built from the recorded A2 run for the same instance. One call, no loop, no funnel. The arm exists to isolate the loop from the evidence."
+    }
+  ],
+  "queries": [
+    {
+      "id": "i5-f1-beir",
+      "expect": "answerable",
+      "text": "Of these eight retrieval papers - arXiv 2603.22587, 2603.20513, 2603.13301, 2602.16932, 2604.27934, 2604.27724, 2604.27591, 2604.27283 - how many report a numeric result on the BEIR benchmark? Answer with one integer and cite the chunk that carries each number.",
+      "env": {
+        "LENS_FLAT_EVIDENCE_FILE": "D:\\lens\\experiments\\instruments\\oracle\\i5-f1-beir.union.jsonl"
+      }
+    },
+    {
+      "id": "i5-f1-notes",
+      "expect": "answerable",
+      "text": "Of these eight causal-discovery papers - arXiv 2602.16435, 2602.09207, 2602.08629, 2602.04907, 2604.28087, 2604.27495, 2604.27167, 2604.27011 - how many compare against NOTEARS with a numeric result? Answer with one integer and cite the chunk that carries each number.",
+      "env": {
+        "LENS_FLAT_EVIDENCE_FILE": "D:\\lens\\experiments\\instruments\\oracle\\i5-f1-notes.union.jsonl"
+      }
+    }
+  ]
+}
