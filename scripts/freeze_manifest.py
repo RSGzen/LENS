@@ -104,7 +104,13 @@ def package_version(name: str) -> str | None:
 
 
 def instrument_hashes(directory: Path | None) -> dict[str, str]:
-    """Return ``{filename: sha256}`` for the instrument files present."""
+    """Return ``{relative path: sha256}`` for the instrument files present.
+
+    Nested instruments are included and keyed by their path inside the directory:
+    an arm whose evidence was generated into a subdirectory is as much a frozen
+    input as a top-level query file, and leaving it out would let the file change
+    without the freeze noticing.
+    """
     import hashlib
 
     if directory is None or not directory.is_dir():
@@ -112,9 +118,10 @@ def instrument_hashes(directory: Path | None) -> dict[str, str]:
 
     hashes: dict[str, str] = {}
 
-    for path in sorted(directory.iterdir()):
+    for path in sorted(directory.rglob("*")):
         if path.suffix in INSTRUMENT_SUFFIXES and path.is_file():
-            hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            key = path.relative_to(directory).as_posix()
+            hashes[key] = hashlib.sha256(path.read_bytes()).hexdigest()
 
     return hashes
 

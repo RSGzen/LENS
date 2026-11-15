@@ -423,6 +423,17 @@ class FreezeTests(unittest.TestCase):
         # A judged qrels is a label instrument, so ``.csv`` belongs here too.
         self.assertEqual(set(hashes), {"cag.jsonl", "queries.json", "rubric.md", "qrels.csv"})
 
+    def test_a_nested_instrument_is_hashed_under_its_relative_path(self) -> None:
+        # An arm's evidence can be generated into a subdirectory; the freeze has to
+        # see it, and a bare filename would collide with a top-level instrument.
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "oracle").mkdir()
+            (Path(tmp) / "oracle" / "i5-f1-beir.union.jsonl").write_text("{}\n", encoding="utf-8")
+
+            hashes = freeze_manifest.instrument_hashes(Path(tmp))
+
+        self.assertEqual(set(hashes), {"oracle/i5-f1-beir.union.jsonl"})
+
 
 class CampaignRowTests(unittest.TestCase):
     """The CSV is the campaign's only durable output, so its columns are tested."""
