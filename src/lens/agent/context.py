@@ -646,7 +646,7 @@ def context_trigger_tokens(remaining_tokens: int) -> int:
 
     Derived from the budget rather than from the model's window because the window
     is not what binds: with a ten-turn cap the largest prompt a run reaches is a few
-    tens of thousands of tokens against a 400,000-token window. The orchestrator
+    tens of thousands of tokens against a 1,048,576-token window. The orchestrator
     calls this **once**, at the start of the loop, and keeps the number: a trigger
     recomputed every turn shrank as the run spent down, so it fired again on each of
     the last turns and every firing re-wrote the start of the context, which is the
