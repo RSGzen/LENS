@@ -34,7 +34,7 @@ Two runtimes, **one-way imports**:
 | `src/lens/dataset/manifest.py` · `papers.py` · `chunks.py` · `fetch.py` · `paths.py` | Manifest builder (single-pass cs.AI filter), the two loaders, corpus download/convert, the path chain. | `config`, `chunking`, `embeddings` |
 | `src/lens/db/connect.py` · `schema.py` | Connection factory (`connect(readonly=…)` → psycopg, admin / `lens_ro`) and the idempotent pgvector migration. | `config` |
 | `src/lens/embeddings.py` · `reranking.py` | `nomic-embed-text-v1.5` (768 → 512, `halfvec`) and the `bge-reranker-v2-m3` cross-encoder; both lazy. | `config` |
-| `src/lens/tools/retrieval.py` | The T1 funnel (`retrieval_funnel` = `shallow_match`, `rerank_papers`, `deep_match`, `rerank_chunks`) and T2 fetches (`fetch_papers`, `fetch_chunks`). | `config`, DB driver, `embeddings`, `reranking` |
+| `src/lens/tools/retrieval.py` | The T1 funnel (`retrieval_funnel` = `shallow_match`, `rerank_papers`, `deep_match`, `rerank_chunks`) and T2 fetches (`fetch_papers`, `fetch_chunks`, `fetch_paper_chunks`). | `config`, DB driver, `embeddings`, `reranking` |
 | `src/lens/tools/kg.py` | `build_kg`: extraction, post-process, verifier hook, ontology filter, graph + summary, cache. | `config`, `kg_*`, `retrieval` |
 | `src/lens/kg_extract.py` · `kg_postprocess.py` · `kg_verify.py` · `kg_query.py` · `kg_gold.py` | GLiNER/GLiREL extraction, the ordered quality layer, the three-tier direction verifier, pure traversal, the gold worksheet. | `config`, `models` |
 | `src/lens/tools/evaluate.py` · `sql.py` | The three-tier stage gate and the final claim gate; the gated T3 `query(sql)`. | `clients`, DB driver, `trajectory` |
@@ -60,7 +60,7 @@ from `lens`, because the image ships them without the package.
 
 ## 2. Module dependency graph (auto-generated)
 
-Source: `docs/packages_lens.mmd` (pyreverse, regenerated 7 Nov 2026). Edges are
+Source: `docs/packages_lens.mmd` (pyreverse, regenerated 9 Nov 2026). Edges are
 file-level imports. The graph **is** complete as a file-level import graph: **62 analysed modules,
 160 imports**, covering `agent/`, `sandbox/`, `tools/`, `experiments/`, `ui/` and
 `run.py`.
@@ -693,14 +693,14 @@ sequenceDiagram
 ### 4.3 The harness, as built
 
 The harness is **built and live**: every module is filled and reviewed, and the loop
-has executed end-to-end against the real corpus. Suite: **1028 tests — 1027 pass,
-1 skip** at HEAD (1015 at the `m11-rigv17` freeze; 9 Nov 2026), no key and zero
+has executed end-to-end against the real corpus. Suite: **1,091 tests — 1,090 pass,
+1 skip** at HEAD (15 Nov 2026), no key and zero
 cost; `ruff check` and `ruff format --check` clean.
 
 Invariants fixed in the rework: the sandbox mounts **`<run_dir>/work`** only (run
 artifacts live one level up and cannot be rewritten by generated code); caps are
 **derived and ordered** (10 iterations · a compaction trigger fixed at the first
-turn · **325,000** tokens = 175k root + 150k sub-task allowance · **$0.50** per
+turn · **382,025** tokens = 232,025 root + 150,000 sub-task allowance · **$0.50** per
 query, which was $1.00 from 26 Oct to 6 Nov 2026 · 3 backtracks · 80 % wrap-up nudge
 · root output 8k · 120 s per exec block); a reported `$/query` comes from
 `Trajectory.totals()`, not `Budget`; `emit()` returns a container path; the KG
@@ -836,7 +836,7 @@ Tests: `tests/test_replay.py`; bundle contracts in `test_runstore.py`.
 
 ## 5. Notes and caveats
 
-- The generated package graph is **complete** (59 modules); the class map is curated
+- The generated package graph is **complete** (62 modules); the class map is curated
   by hand for the reason in §3, and the raw pyreverse output is kept as
   `docs/classes_lens.mmd`. Regenerating either file is one command from the repo
   root — `uv run --with pylint --no-project pyreverse -o mmd -d docs -p lens src/lens`

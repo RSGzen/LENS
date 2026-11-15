@@ -67,8 +67,11 @@ uv --version
 ```
 
 Image digest, uv version and certifi version are run inputs, not trivia: a
-rebuilt image with a different pip changes the artifact set. Put them in the run
-manifest (`manifest.json`) so a recorded run can be traced to an exact image.
+rebuilt image with a different pip changes the artifact set. The **run manifest**
+records the image id + digest and the interpreter (`manifest.created_by`); the
+**campaign freeze** records `uv` and `certifi` as well (`scripts/freeze_manifest.py`,
+`freeze.json`), because they are properties of the machine the wave ran on rather
+than of one run.
 
 The same three numbers are printable in one command, which is what a fresh machine
 needs before anything else is trusted:
