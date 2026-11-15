@@ -37,8 +37,18 @@ def split_context(text: str) -> list[dict[str, str]]:
     return records
 
 
-def check_context(text: str, records: list[Mapping[str, str]]) -> None:
-    """Raise when the records do not account for every line, or leak a label."""
+def check_context(
+    text: str,
+    records: list[Mapping[str, str]],
+    *,
+    budget: int = FLAT_DOCUMENT_TOKENS,
+) -> None:
+    """Raise when the records do not account for every line, or leak a label.
+
+    ``budget`` is the flat arm's inline cap **for this length**: the 128k bridge
+    keeps the frozen 140,000, and a longer rung raises it so the flat arm is not
+    truncated by a number chosen for a shorter document.
+    """
     lines = [line for line in text.splitlines() if line.strip()]
 
     if len(records) != len(lines):
@@ -54,8 +64,8 @@ def check_context(text: str, records: list[Mapping[str, str]]) -> None:
 
     tokens = count_tokens(joined)
 
-    if tokens > FLAT_DOCUMENT_TOKENS:
-        raise ValueError(f"context is {tokens} tokens, over the {FLAT_DOCUMENT_TOKENS} budget")
+    if tokens > budget:
+        raise ValueError(f"context is {tokens} tokens, over the {budget} budget")
 
 
 def document_name(context_window_id: int) -> str:
