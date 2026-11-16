@@ -596,6 +596,7 @@ def build_kg(
             )
 
     stage_counts: dict[str, int] = {"raw": triples_raw}
+    stage_counts["raw_chunks"] = len({t["chunk_uuid"] for t in triples_kept})
     if coref:
         triples_kept = resolve_coref(triples_kept, chunk_texts)
     stage_counts["after_coref"] = len(triples_kept)
@@ -615,6 +616,7 @@ def build_kg(
             stats=postprocess_stats,
         )
     stage_counts["after_postprocess"] = len(triples_kept)
+    stage_counts["chunks_after_postprocess"] = len({t["chunk_uuid"] for t in triples_kept})
 
     verify_stats = None
     if verifier is not None and config.KG_VERIFY_ENABLED:
@@ -624,8 +626,11 @@ def build_kg(
     ontology_stats: dict[str, Any] = {}
     triples_kept = filter_ontology(triples_kept, stats=ontology_stats)
     stage_counts["after_ontology"] = len(triples_kept)
+    stage_counts["chunks_after_ontology"] = len({t["chunk_uuid"] for t in triples_kept})
+    stage_counts["edge_chunks_before_dedup"] = len({t["chunk_uuid"] for t in triples_kept})
     triples_kept = dedup_triples(triples_kept)
     stage_counts["after_dedup"] = len(triples_kept)
+    stage_counts["edge_chunks"] = len({t["chunk_uuid"] for t in triples_kept})
     graph = build_graph(triples_kept)
 
     payload = {
