@@ -142,7 +142,7 @@ def _sample_chunk_ids(conn, args: argparse.Namespace) -> list[str]:
 def main() -> None:
     setup_file_logging("lens.kg_probe", "kg_probe")
 
-    parser = argparse.ArgumentParser
+    parser = argparse.ArgumentParser()
     parser.add_argument("--papers", type=int, default=DEFAULT_PAPERS)
     parser.add_argument("--sample", choices=("head", "random", "query"), default="head")
     parser.add_argument(

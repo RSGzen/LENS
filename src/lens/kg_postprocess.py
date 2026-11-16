@@ -317,6 +317,7 @@ def resolve_directionality(
     *,
     context_key: str = "chunk_uuid",
     cycle_break: bool = True,
+    stats: dict[str, Any] | None = None,
 ) -> list[Triple]:
     """Drop self-loops and resolve contradictory/symmetric edges (see module docstring)."""
     # 1) self-loops are never meaningful here.
@@ -361,7 +362,16 @@ def resolve_directionality(
     ]
 
     if cycle_break:
+        after_pairs = len(selected)
         selected = _break_cycles(selected, context_key)
+    else:
+        after_pairs = len(selected)
+    if stats is not None:
+        stats["directionality"] = {
+            "in": len(triples),
+            "after_pairs": after_pairs,
+            "out": len(selected),
+        }
     return selected
 
 
@@ -435,5 +445,7 @@ def postprocess(
     if stats is not None:
         stats["role_dropped"] = dropped
     if directionality:
-        out = resolve_directionality(out, context_key=context_key, cycle_break=cycle_break)
+        out = resolve_directionality(
+            out, context_key=context_key, cycle_break=cycle_break, stats=stats
+        )
     return out

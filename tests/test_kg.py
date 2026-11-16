@@ -144,6 +144,19 @@ class FilterOntologyTest(unittest.TestCase):
         bad = triple("SQuAD", "Dataset", "evaluated_on", "BERT", "Method")
         self.assertEqual(filter_ontology([bad]), [])
 
+    def test_drop_counts_by_rule(self) -> None:
+        stats: dict = {}
+        kept = filter_ontology(
+            [
+                triple("BERT", "Method", "evaluated_on", "SQuAD", "Dataset"),
+                triple("A", "Method", "frobnicates", "B", "Method"),
+                triple("SQuAD", "Dataset", "evaluated_on", "BERT", "Method"),
+            ],
+            stats=stats,
+        )
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(stats["ontology_dropped"], {"relation": 1, "head_type": 1, "tail_type": 0})
+
 
 class GraphTest(unittest.TestCase):
     def _graph(self):
@@ -287,6 +300,11 @@ class BuildKgTest(unittest.TestCase):
 
         self.assertEqual(out["stats"]["triples_raw"], 2)
         self.assertEqual(out["stats"]["triples_kept"], 2)
+        self.assertEqual(out["stats"]["stage_counts"]["raw"], 2)
+        self.assertEqual(out["stats"]["stage_counts"]["after_dedup"], 2)
+        self.assertEqual(
+            out["stats"]["ontology_dropped"], {"relation": 0, "head_type": 0, "tail_type": 0}
+        )
         self.assertEqual(out["summary"]["n_nodes"], 3)
         self.assertEqual(out["summary"]["n_edges"], 2)
         g = graph_from_nodelink(out["graph"])

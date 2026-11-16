@@ -179,7 +179,7 @@ def dedup_triples(triples: Sequence[Triple]) -> list[Triple]:
     return normalized_triples
 
 
-def filter_ontology(triples: Sequence[Triple]) -> list[Triple]:
+def filter_ontology(triples: Sequence[Triple], stats: dict[str, Any] | None = None) -> list[Triple]:
     """Drop off-ontology triples.
 
     Keep a triple only when:
@@ -188,24 +188,34 @@ def filter_ontology(triples: Sequence[Triple]) -> list[Triple]:
       * ``tail_type`` is one of its allowed ``tail`` types.
     Also drop malformed triples (missing/empty head or tail). Return the kept list
     in input order.
+
+    ``stats`` (optional) receives ``{"relation", "head_type", "tail_type"}`` drop
+    counts, so an ablation can say which rule removed the graph.
     """
     allowed_triples = []
+    dropped = {"relation": 0, "head_type": 0, "tail_type": 0}
 
     for triple in triples:
         t_relation = triple["relation"]
 
         if t_relation not in list(RELATION_SCHEMA.keys()):
+            dropped["relation"] += 1
             continue
 
         t_r_dict = RELATION_SCHEMA[t_relation]
 
         if triple["head_type"] not in list(t_r_dict["head"]):
+            dropped["head_type"] += 1
             continue
 
         if triple["tail_type"] not in list(t_r_dict["tail"]):
+            dropped["tail_type"] += 1
             continue
 
         allowed_triples.append(triple)
+
+    if stats is not None:
+        stats["ontology_dropped"] = dropped
 
     return allowed_triples
 
@@ -585,10 +595,13 @@ def build_kg(
                 }
             )
 
+    stage_counts: dict[str, int] = {"raw": triples_raw}
     if coref:
         triples_kept = resolve_coref(triples_kept, chunk_texts)
+    stage_counts["after_coref"] = len(triples_kept)
     if span_filter:
         triples_kept = filter_spans(triples_kept)
+    stage_counts["after_span"] = len(triples_kept)
 
     if postprocess:
         triples_kept = kg_postprocess(
@@ -601,12 +614,18 @@ def build_kg(
             cycle_break=config.KG_CYCLE_BREAK,
             stats=postprocess_stats,
         )
+    stage_counts["after_postprocess"] = len(triples_kept)
 
     verify_stats = None
     if verifier is not None and config.KG_VERIFY_ENABLED:
         triples_kept, verify_stats = verifier.verify(triples_kept, chunk_texts)
+    stage_counts["after_verify"] = len(triples_kept)
 
-    triples_kept = dedup_triples(filter_ontology(triples_kept))
+    ontology_stats: dict[str, Any] = {}
+    triples_kept = filter_ontology(triples_kept, stats=ontology_stats)
+    stage_counts["after_ontology"] = len(triples_kept)
+    triples_kept = dedup_triples(triples_kept)
+    stage_counts["after_dedup"] = len(triples_kept)
     graph = build_graph(triples_kept)
 
     payload = {
@@ -624,6 +643,9 @@ def build_kg(
             "coref": coref,
             "role_filter": role_filter,
             "role_dropped": postprocess_stats.get("role_dropped", 0),
+            "directionality": postprocess_stats.get("directionality"),
+            "ontology_dropped": ontology_stats.get("ontology_dropped"),
+            "stage_counts": stage_counts,
             "verify": verify_stats.as_dict() if verify_stats else None,
         },
     }

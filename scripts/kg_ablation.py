@@ -55,7 +55,7 @@ def _reset_peak_vram() -> None:
 def main() -> None:
     setup_file_logging("lens.kg_ablation", "kg_ablation")
 
-    parser = argparse.ArgumentParser
+    parser = argparse.ArgumentParser()
     parser.add_argument("--chunks", required=True, help="saved chunk-id JSON")
     parser.add_argument("--labels", choices=tuple(ENTITY_LABEL_SETS), default="descriptive")
     parser.add_argument("--min-score", type=float, default=0.5)

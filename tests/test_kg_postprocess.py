@@ -276,6 +276,7 @@ class PipelineTest(unittest.TestCase):
         )
         self.assertEqual(out, [])
         self.assertEqual(stats["role_dropped"], 1)
+        self.assertIn("directionality", stats)
 
     def test_role_filter_can_be_disabled(self) -> None:
         out = postprocess(
