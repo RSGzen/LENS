@@ -257,6 +257,35 @@ class RunStoreTestCase(unittest.TestCase):
         refs = runstore.referenced_refs(run_dir / "trajectory.jsonl")
         self.assertEqual(refs, ["sha256:" + self.digest_a, "sha256:" + self.digest_b])
 
+    def test_the_light_import_script_imports_a_directory_and_is_idempotent(self) -> None:
+        # A demo machine must be able to install a bundle without importing the
+        # model stack, so the script calls runstore directly. It also has to be
+        # safe to repeat: the same directory may be pointed at twice.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "import_bundles", Path(__file__).resolve().parents[1] / "scripts" / "import_bundles.py"
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        self._make_runnable()
+        bundles = self.root / "bundles"
+        bundles.mkdir()
+        bundle = runstore.export_run("run-src", bundles, path=self.root)
+        (bundles / "notes.txt").write_text("not a bundle\n", encoding="utf-8")
+
+        target = self.root / "target"
+        target.mkdir()
+
+        self.assertEqual(module.collect_bundles([bundles]), [bundle])
+        self.assertEqual(module.main([str(bundles), "--runs-root", str(target)]), 0)
+        self.assertTrue((target / "run-src" / "answer.md").is_file())
+
+        # Re-running skips rather than failing, and still exits 0.
+        self.assertEqual(module.main([str(bundles), "--runs-root", str(target)]), 0)
+
     def test_export_includes_only_referenced_blobs(self) -> None:
         self._make_runnable()
         dest = self.root / "out"
