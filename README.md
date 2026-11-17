@@ -239,9 +239,13 @@ Host-mediated sub-task calls (`sub_extract`, `sub_summarise`, `sub_classify`)
 render as their own cards with the item count, latency, result summary and a
 full-payload download.
 
-<img src="docs/images/answer.png" alt="The answer, its claim ledger and the resolved citations" width="860" />
+<img src="docs/images/answer-1.png" alt="Claim Ledger: coverage, status and one row per claim" width="860" />
 
-<sub><strong>The answer.</strong> The claim ledger above it, the paper-title chips in the text, and the citation join below: every cited chunk id, and whether it resolved.</sub>
+<img src="docs/images/answer-2.png" alt="The answer, with paper-title chips in place of raw ids" width="860" />
+
+<img src="docs/images/answer-3.png" alt="The citations: every cited id, its paper and whether it resolved" width="860" />
+
+<sub><strong>The answer.</strong> Three views of one answer: the claim ledger (coverage, status and one row per claim), the answer itself with paper-title chips in place of raw ids, and the citation join at the end of it.</sub>
 
 **Live Query** runs the pipeline for real and streams the CLI output into the page.
 It needs the GPU, database, Docker and key.
