@@ -1,0 +1,4 @@
+# The viewer is captured and documented in dark mode, and the README banner is
+# dark. Pinning the theme keeps a screenshot and a fresh session identical.
+[theme]
+base = "dark"

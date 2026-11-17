@@ -6,8 +6,13 @@ LENS answers systematic literature review questions over a GROBID-structured
 arXiv cs.AI corpus. A run segments the question, retrieves evidence in two
 stages, optionally builds a knowledge graph over the retrieved chunks, and lets a
 root model write and execute Python against that evidence inside a Docker
-sandbox. Every claim in the answer cites a `chunk_uuid` that resolves back to the
-retrieved text.
+sandbox. Answers cite `chunk_uuid` values that resolve to the retrieved chunk
+text, and every run can be replayed from its own trajectory in the bundled
+viewer.
+
+<img src="docs/images/overview.png" alt="Recorded Runs: a finished run replayed from its trajectory" width="860" />
+
+<sub><strong>Recorded Runs.</strong> A finished run replays from its own trajectory: the question as asked, the caps it ran under, per-turn meters and the context chart. No model is called and nothing is re-run.</sub>
 
 ## Requirements
 
@@ -120,7 +125,8 @@ The chunk budget `C` is global, not per paper: no paper is guaranteed a share of
 it. A long or strongly matching paper can take most of the candidates, and at
 larger `n` weaker papers can lose all of theirs — at `n = 50`, 24 of 25 measured
 queries lost at least one paper's chunks. A run can also call `fetch_papers`,
-`fetch_chunks`, `build_kg` and, in a development run, the gated `query(sql)`.
+`fetch_chunks`, `fetch_paper_chunks` (every chunk of one named paper), `build_kg`
+and, in a development run, the gated `query(sql)`.
 
 The model writes Python and the sandbox executes it. A tool call inside that code
 travels over RPC to the host, where the tool runs against the corpus. Each turn
@@ -136,11 +142,11 @@ the JSON schema and the output cap, hydrates chunk text from ids the root alread
 holds, and stamps the ids on the way back, so an invented id cannot become
 evidence.
 
-Caps for every run: 10 iterations, 325,000 tokens (input plus output, sub-tasks
+Caps for every run: 10 iterations, 382,025 tokens (input plus output, sub-tasks
 included), $0.50, 120 seconds per code block, 3 backtracks and 40 sub-task calls.
 A run ends at a cap, at `FINAL_ANSWER:`, or after at most three rejections from the
-final gate. The stop reason is recorded, so a partial answer is reported as a
-partial answer.
+final gate; only a rejection that names an individual claim buys another turn. The
+stop reason is recorded, so a partial answer is reported as a partial answer.
 
 ## Inspect a run
 
@@ -202,6 +208,9 @@ uv sync --extra ui
 streamlit run src/lens/ui/app.py
 ```
 
+The viewer is pinned to the dark theme by `.streamlit/config.toml`, so a local
+session matches the screenshots below.
+
 To view recordings on a machine with no corpus, no database and no key, point the
 viewer at a directory of imported runs:
 
@@ -215,6 +224,10 @@ turn timeline with code and tool calls, an evidence panel, and the answer with i
 resolved citations. It has no live controls, and every view is captioned as a
 recording.
 
+<img src="docs/images/trace.png" alt="One turn of a recorded run: the code, the tool calls and their payloads" width="860" />
+
+<sub><strong>One turn.</strong> The code the model wrote, every tool call with its arguments and latency, and the full payload behind each result.</sub>
+
 Citation ids in the answer render as short paper-title chips. Hovering a chip
 shows the full title, authors, year and the exact id; the citation table below
 keeps the full id as the copy surface. Two read-only lookup pages ask the corpus
@@ -226,12 +239,16 @@ Host-mediated sub-task calls (`sub_extract`, `sub_summarise`, `sub_classify`)
 render as their own cards with the item count, latency, result summary and a
 full-payload download.
 
-![Recorded Runs page](docs/images/recorded-runs.png)
+<img src="docs/images/answer.png" alt="The answer, its claim ledger and the resolved citations" width="860" />
+
+<sub><strong>The answer.</strong> The claim ledger above it, the paper-title chips in the text, and the citation join below: every cited chunk id, and whether it resolved.</sub>
 
 **Live Query** runs the pipeline for real and streams the CLI output into the page.
 It needs the GPU, database, Docker and key.
 
-![Live Query page](docs/images/live-query.png)
+<img src="docs/images/live-query.png" alt="Live Query page: a query runs and streams the CLI output" width="860" />
+
+<sub><strong>Live Query.</strong> The same pipeline run for real: the page streams the CLI output and then opens the finished run in Recorded Runs.</sub>
 
 Runs can be renamed in the viewer. The name is stored in `aliases.json` next to the
 run store and never enters the run's artifacts, so a label cannot change what the
@@ -245,12 +262,13 @@ uv run ruff format --check .
 python -m unittest discover -s tests
 ```
 
-The suite is **1028 tests** (1027 pass, 1 skip; 9 Nov 2026) and needs no API key,
-no database and no Docker. Tests that touch the database are excluded from
+The suite is **1,093 tests** (1,092 pass, 1 skip; 17 Nov 2026) and needs no API
+key, no database and no Docker. Tests that touch the database are excluded from
 discovery and live in `tests/DESTRUCTIVE_db_tests/`; they drop the `papers` and
 `chunks` tables, so run them only against a throwaway database.
 
-Two checks need Docker, the database and a key, because they exercise a live run:
+Two checks sit outside the suite. `verify_sandbox.py` needs Docker; `check_run.py`
+needs only a recorded run:
 
 ```powershell
 python scripts/verify_sandbox.py   # container boundary: health, egress, persistence, mount
@@ -280,11 +298,15 @@ These are enforced by tests rather than by convention:
 - Funnel cost grows with the papers and chunks it returns, so raising `n` or `C`
   buys coverage at a proportional time cost.
 - The gate thresholds are conventions (0.5 for the whole answer, 0.7 for a single
-  claim), not calibrated values. A calibration pass is pending.
+  claim), not calibrated values. A calibration pass was attempted and is not
+  fittable: none of 24 sampled answers carried a verifiable quote for every claim
+  unit.
 - The claim verifier is sound but incomplete: it checks the span, the value and
   the comparison direction. A claim it cannot reach is `unverifiable`, not false,
   so a paraphrase-heavy answer will have low coverage.
 - The viewer is single-user and runs one live query at a time.
+- The knowledge graph is optional, and no run in the evaluation campaign traversed
+  it.
 - Entity resolution in the knowledge graph is exact-string only.
 
 ## Documentation
