@@ -472,11 +472,11 @@ def render_header(view: data.RunView) -> None:
     st.markdown(f"**{manifest.query or '(no query recorded)'}**")
 
     columns = st.columns(5)
-    columns[0].metric("status", manifest.status)
-    columns[1].metric("turns", len(view.turns))
-    columns[2].metric("cost (chat + gate)", f"${view.cost_usd:.4f}")
+    columns[0].metric("Status", manifest.status)
+    columns[1].metric("Turns", len(view.turns))
+    columns[2].metric("Cost (Chat + Gate)", f"${view.cost_usd:.4f}")
     columns[3].metric("+ 5.5 % fee", f"${view.cost_with_fee:.4f}")
-    columns[4].metric("cap", f"${cap:.2f}" if cap is not None else "not recorded")
+    columns[4].metric("Cap", f"${cap:.2f}" if cap is not None else "not recorded")
 
     if cap:
         st.progress(
@@ -528,18 +528,18 @@ def render_meters(view: data.RunView) -> None:
     cursor = st.session_state["cursor"]
 
     top = st.columns(5)
-    top[0].metric("tokens in (chat)", f"{summary['tokens_in']:,}")
-    top[1].metric("cached tokens", f"{summary['cached_tokens']:,}")
-    top[2].metric("cache hit", _cache_text(summary["cached_tokens"], summary["tokens_in"]))
-    top[3].metric("tokens out", f"{summary['tokens_out']:,}")
-    top[4].metric("reasoning tokens", f"{summary['reasoning_tokens']:,}")
+    top[0].metric("Tokens In (chat)", f"{summary['tokens_in']:,}")
+    top[1].metric("Cached Tokens", f"{summary['cached_tokens']:,}")
+    top[2].metric("Cache Hit", _cache_text(summary["cached_tokens"], summary["tokens_in"]))
+    top[3].metric("Tokens Out", f"{summary['tokens_out']:,}")
+    top[4].metric("Reasoning Tokens", f"{summary['reasoning_tokens']:,}")
 
     bottom = st.columns(5)
-    bottom[0].metric("host tools", summary["tool_calls"])
-    bottom[1].metric("sub-tasks", summary["sub_tasks"])
-    bottom[2].metric("code blocks", summary["code_blocks"])
-    bottom[3].metric("gate tokens", f"{summary['jev_tokens_in']:,}")
-    bottom[4].metric("gates pass/fail", f"{summary['gates_passed']} / {summary['gates_failed']}")
+    bottom[0].metric("Host Tools", summary["tool_calls"])
+    bottom[1].metric("Sub-tasks", summary["sub_tasks"])
+    bottom[2].metric("Code Blocks", summary["code_blocks"])
+    bottom[3].metric("Gate Tokens", f"{summary['jev_tokens_in']:,}")
+    bottom[4].metric("Gates Pass/Fail", f"{summary['gates_passed']} / {summary['gates_failed']}")
 
     series = view.tokens_in_series[: cursor + 1]
     cached = view.cached_series[: cursor + 1]
@@ -552,7 +552,7 @@ def render_meters(view: data.RunView) -> None:
             height=220,
         )
         st.caption(
-            "Prompt tokens per turn — the size of the context the model re-read. "
+            "Prompt tokens per turn —> Size of the context the model re-read. "
             "The cached line is the part the provider served from its cache; it is "
             "best-effort, so a byte-identical prefix can still return 0 %. This "
             "chart rises with the conversation; the claim under test is evidence "
@@ -586,17 +586,17 @@ def render_gate_summary(view: data.RunView) -> None:
     cursor = st.session_state["cursor"]
     rows = [
         {
-            "turn": turn,
-            "stage": call.stage or "",
-            "rule that decided": call.decision or "",
-            "P(answer)": None if call.confidence is None else round(call.confidence, 2),
+            "Turn": turn,
+            "Stage": call.stage or "",
+            "Decision Rule": call.decision or "",
+            "P(Answer)": None if call.confidence is None else round(call.confidence, 2),
             "tau_agg": call.tau_agg if call.tau_agg is not None else TAU_AGGREGATE,
-            "top claim P": (
+            "Top claim P": (
                 round(max(call.claim_scores.values()), 2) if call.claim_scores else None
             ),
             "tau_claim": call.tau_claim if call.tau_claim is not None else TAU_CLAIM,
-            "claims failed": len(call.claims_failed),
-            "verdict": call.verdict,
+            "Claims Failed": len(call.claims_failed),
+            "Verdict": call.verdict,
         }
         for turn, calls in sorted(view.gates.items())
         if turn <= cursor
@@ -606,7 +606,7 @@ def render_gate_summary(view: data.RunView) -> None:
     if not rows:
         return
 
-    st.markdown("**Gate verdicts**")
+    st.markdown("**Gate Verdicts**")
     st.dataframe(rows, hide_index=True, width="stretch")
     st.caption(
         "One row per decision-layer call. **rule that decided** is the threshold the "
@@ -662,11 +662,11 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
         # the number always, the trace only when it exists.
         if turn.reasoning_tokens:
             share = (
-                f" · {100 * turn.reasoning_tokens / turn.tokens_out:.0f}% of output"
+                f" · {100 * turn.reasoning_tokens / turn.tokens_out:.0f}% of Output"
                 if turn.tokens_out
                 else ""
             )
-            st.caption(f"reasoning: {turn.reasoning_tokens:,} tokens{share}")
+            st.caption(f"Reasoning: {turn.reasoning_tokens:,} tokens{share}")
 
         if turn.reasoning_text:
             extra = ""
@@ -720,7 +720,7 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
                 render_sub_task(run_id, task, f"{turn.turn}-sub-{call_id}-{slot}")
 
         if turn.observation:
-            st.markdown("**Observation — what the model actually saw**")
+            st.markdown("**Observation: From Model's View**")
             st.code(turn.observation, language="text")
 
         if gates:
@@ -732,7 +732,7 @@ def render_turn(run_id: str, turn: Turn, gates: Sequence[data.GateCall] = ()) ->
             chips.append("emits: " + ", ".join(f"`{name}`" for name in turn.emits))
 
         if turn.jev_cost_usd:
-            chips.append(f"gate: ${turn.jev_cost_usd:.6f} ({turn.jev_tokens_in or 0} tokens in)")
+            chips.append(f"Gate: ${turn.jev_cost_usd:.6f} ({turn.jev_tokens_in or 0} tokens in)")
 
         if turn.latency_ms:
             chips.append(_duration(turn.latency_ms))
@@ -1027,7 +1027,7 @@ def render_evidence(view: data.RunView) -> None:
     rows = data.evidence_upto(view, cursor)
     newest = {row.get("chunk_uuid") for row in view.evidence.get(cursor, [])}
 
-    st.markdown(f"### Evidence hydrated so far — {len(rows)} chunk(s)")
+    st.markdown(f"### Evidence Hydration Status — {len(rows)} chunk(s)")
 
     if not rows:
         st.caption(
@@ -1059,13 +1059,13 @@ def render_claims(view: data.RunView) -> None:
     if ledger is None:
         return
 
-    st.markdown("## Claim ledger")
+    st.markdown("## Claim Ledger")
     counts = ledger.counts
     st.caption(
-        f"coverage **{ledger.coverage:.0%}** · "
-        f"{counts.get('grounded', 0)} grounded · "
-        f"{counts.get('contradicted', 0)} contradicted · "
-        f"{counts.get('unverifiable', 0)} unverifiable · "
+        f"Coverage **{ledger.coverage:.0%}** · "
+        f"{counts.get('grounded', 0)} Grounded · "
+        f"{counts.get('contradicted', 0)} Contradicted · "
+        f"{counts.get('unverifiable', 0)} Unverifiable · "
         f"{ledger.units} units · ${ledger.cost_usd:.4f} · "
         f"{ledger.tokens_out:,} output tokens"
     )
@@ -1099,8 +1099,8 @@ def render_answer(view: data.RunView) -> None:
 
     if report.citations:
         st.markdown(
-            f"**Citations — {counts['cited']} cited · {counts['resolved']} resolved · "
-            f"{counts['unresolved']} unresolved**"
+            f"**Citations — {counts['cited']} Cited · {counts['resolved']} Resolved · "
+            f"{counts['unresolved']} Unresolved**"
         )
         st.dataframe(
             [
@@ -1130,7 +1130,7 @@ def render_answer(view: data.RunView) -> None:
         # One dropdown rather than an expander per id: a collapsed expander still
         # builds its DOM, and a run citing thirty-seven chunks would build thirty-seven
         # of them with the whole text inside.
-        with st.expander(f"Source text behind the citations ({len(chunks)} chunks)"):
+        with st.expander(f"Source Text of Citations ({len(chunks)} Chunks)"):
             labels = [
                 f"{row['chunk_uuid']} · {row['arxiv_id']} · "
                 f"{row['section_type']} · {row['chars']:,} chars"
@@ -1348,7 +1348,7 @@ def render_import() -> None:
     ``verify_bundle`` re-hashes every blob before anything is installed, so a
     tampered bundle is refused rather than rendered.
     """
-    with st.expander("Import a recorded bundle (.lens)"):
+    with st.expander("Import a Recorded Bundle (.lens)"):
         st.caption(
             "Verification happens first: every blob is re-hashed against its "
             "filename, so an edited or truncated bundle installs nothing."
